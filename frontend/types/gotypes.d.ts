@@ -2691,6 +2691,16 @@ declare global {
         text: string;
     };
 
+    // wshrpc.CommandPairCloseWorkerData
+    type CommandPairCloseWorkerData = {
+        workertab: string;
+    };
+
+    // wshrpc.CommandPairCloseWorkerRtnData
+    type CommandPairCloseWorkerRtnData = {
+        judges: string[];
+    };
+
     // wshrpc.CommandPairGetData
     type CommandPairGetData = {
         pairid: string;
@@ -5060,6 +5070,9 @@ declare global {
         name: string;
         workertab: string;
         pairid: string;
+        ts?: number;
+        session?: string;
+        workersession?: string;
     };
 
     // wshrpc.PairSide

@@ -433,7 +433,7 @@ func TestPairListCarriesTheRestingJudges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []wshrpc.PairResting{{Tab: pairJudgeTab, Name: "judge", WorkerTab: pairWorkerTab, PairId: view.Id}}
+	want := []wshrpc.PairResting{{Tab: pairJudgeTab, Name: "judge", WorkerTab: pairWorkerTab, PairId: view.Id, Ts: view.CreatedTs}}
 	if len(list.Pairs) != 0 || !reflect.DeepEqual(list.Resting, want) {
 		t.Fatalf("list = %+v, want no pair and %+v resting", list, want)
 	}

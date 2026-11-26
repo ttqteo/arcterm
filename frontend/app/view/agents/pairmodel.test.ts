@@ -11,6 +11,8 @@ import {
     pairOf,
     parseSeen,
     pausedStateText,
+    restsUnder,
+    resumableJudgeOf,
     timelineRows,
     waitingOnJudge,
     withDraft,
@@ -352,14 +354,20 @@ describe("pairOf", () => {
 });
 
 describe("hiddenJudgesOf", () => {
-    const resting = (tab: string, workertab: string): PairResting => ({
+    const resting = (tab: string, workertab: string, more: Partial<PairResting> = {}): PairResting => ({
         tab,
         name: "Judge: " + tab.slice(0, 4),
         workertab,
         pairid: "ended-" + tab.slice(0, 4),
+        ts: 1,
+        ...more,
     });
     const asleep = { since: 1, freedBytes: 0 };
-    const row = (id: string, sleeping?: { since: number; freedBytes: number }) => ({ id, sleeping });
+    const row = (id: string, sleeping?: { since: number; freedBytes: number }, transcriptPath?: string) => ({
+        id,
+        sleeping,
+        transcriptPath,
+    });
 
     it("is the worker's resting judges that are on the roster and asleep, in the list's order", () => {
         const list = [resting(JUDGE, WORKER), resting(JUDGE2, WORKER)];
@@ -367,13 +375,19 @@ describe("hiddenJudgesOf", () => {
         expect(hiddenJudgesOf(WORKER, list, roster)).toEqual([list[0], list[1]]);
     });
 
-    it("leaves out a judge something woke: it shows as a plain row, so nothing closes it", () => {
+    it("puts the judge of the newest round first", () => {
+        const list = [resting(JUDGE, WORKER, { ts: 5 }), resting(JUDGE2, WORKER, { ts: 9 })];
+        const roster = [row(WORKER), row(JUDGE, asleep), row(JUDGE2, asleep)];
+        expect(hiddenJudgesOf(WORKER, list, roster)).toEqual([list[1], list[0]]);
+    });
+
+    it("leaves out a judge something woke: it shows as a plain row", () => {
         const list = [resting(JUDGE, WORKER), resting(JUDGE2, WORKER)];
         const roster = [row(WORKER), row(JUDGE), row(JUDGE2, asleep)];
         expect(hiddenJudgesOf(WORKER, list, roster)).toEqual([list[1]]);
     });
 
-    it("leaves out a resting judge that is off the roster: there is no tab to close", () => {
+    it("leaves out a resting judge that is off the roster: there is no tab to wake", () => {
         const list = [resting(JUDGE, WORKER)];
         expect(hiddenJudgesOf(WORKER, list, [row(WORKER)])).toEqual([]);
     });
@@ -384,7 +398,73 @@ describe("hiddenJudgesOf", () => {
         expect(hiddenJudgesOf(WORKER, list, roster)).toEqual([list[1]]);
     });
 
+    it("finds the judge of a worker resumed in a new tab by its session", () => {
+        const list = [resting(JUDGE, "old-tab", { workersession: "sess-w" })];
+        const roster = [row(WORKER, undefined, "/p/sess-w.jsonl"), row(JUDGE, asleep)];
+        expect(hiddenJudgesOf(WORKER, list, roster)).toEqual([list[0]]);
+        // another session's worker does not take it
+        expect(hiddenJudgesOf(WORKER, list, [row(WORKER, undefined, "/p/other.jsonl"), row(JUDGE, asleep)])).toEqual(
+            []
+        );
+    });
+
     it("is empty with no resting judge at all", () => {
         expect(hiddenJudgesOf(WORKER, [], [row(WORKER)])).toEqual([]);
+    });
+});
+
+describe("restsUnder", () => {
+    const r: PairResting = { tab: JUDGE, name: "j", workertab: "old-tab", pairid: "p", ts: 1, workersession: "sess-w" };
+
+    it("is the worker by its tab, or by its session in another tab", () => {
+        expect(restsUnder(r, { id: "old-tab", transcriptPath: undefined })).toBe(true);
+        expect(restsUnder(r, { id: WORKER, transcriptPath: "/p/sess-w.jsonl" })).toBe(true);
+        expect(restsUnder(r, { id: WORKER, transcriptPath: "/p/other.jsonl" })).toBe(false);
+        expect(restsUnder(r, { id: WORKER, transcriptPath: undefined })).toBe(false);
+    });
+
+    it("never matches on a session the pair never took", () => {
+        expect(restsUnder({ ...r, workersession: undefined }, { id: WORKER, transcriptPath: "/p/.jsonl" })).toBe(false);
+    });
+});
+
+describe("resumableJudgeOf", () => {
+    const resting = (tab: string, more: Partial<PairResting> = {}): PairResting => ({
+        tab,
+        name: "Judge: w",
+        workertab: "old-tab",
+        pairid: "ended-" + tab.slice(0, 4),
+        ts: 1,
+        session: "sess-" + tab.slice(0, 4),
+        workersession: "sess-w",
+        ...more,
+    });
+    const worker = { id: WORKER, transcriptPath: "/p/sess-w.jsonl" };
+
+    it("is the newest judge of the resumed worker's session whose tab is gone", () => {
+        const older = resting(JUDGE, { ts: 3 });
+        const newer = resting(JUDGE2, { ts: 7 });
+        expect(resumableJudgeOf([older, newer], [worker], WORKER)).toEqual(newer);
+    });
+
+    it("is none while the judge's tab is on the roster: that one is woken or picked", () => {
+        expect(resumableJudgeOf([resting(JUDGE)], [worker, { id: JUDGE, transcriptPath: "/p/x.jsonl" }], WORKER)).toBe(
+            null
+        );
+    });
+
+    it("is none when another tab holds the judge's session already", () => {
+        const live = { id: "elsewhere", transcriptPath: "/p/sess-4c6b.jsonl" };
+        expect(resumableJudgeOf([resting(JUDGE)], [worker, live], WORKER)).toBeNull();
+    });
+
+    it("is none for a judge closed while this same worker tab stayed: the person closed it", () => {
+        expect(resumableJudgeOf([resting(JUDGE, { workertab: WORKER })], [worker], WORKER)).toBeNull();
+    });
+
+    it("is none for a judge with no session, another session's judge, or a worker with no transcript", () => {
+        expect(resumableJudgeOf([resting(JUDGE, { session: undefined })], [worker], WORKER)).toBeNull();
+        expect(resumableJudgeOf([resting(JUDGE, { workersession: "other" })], [worker], WORKER)).toBeNull();
+        expect(resumableJudgeOf([resting(JUDGE)], [{ id: WORKER, transcriptPath: undefined }], WORKER)).toBeNull();
     });
 });

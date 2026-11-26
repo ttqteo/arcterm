@@ -58,6 +58,25 @@ export function judgeLaunchOpts(a: {
     };
 }
 
+/** The launch of a judge whose tab closed with its worker, for that worker resumed in a new tab: claude resuming the judge's
+ *  own session on opus, in the worker's folder (where the judge first opened, so claude finds the session), with no task:
+ *  the pair's brief, sent when it pairs, is its next prompt, as when a resting judge is woken. */
+export function judgeResumeOpts(a: {
+    workerName: string;
+    project: string;
+    folder: string;
+    session: string;
+}): LaunchAgentOpts {
+    return {
+        runtime: "claude",
+        startupCommand: `${runtimeStartupCommand("claude")} --resume ${a.session} --model opus`,
+        task: "",
+        projectPath: a.folder,
+        projectName: a.project,
+        label: judgeLabel(a.workerName),
+    };
+}
+
 /** Where a new judge opens: the worker's own folder (its worktree when it has one, so the judge reads the same code), else
  *  the project's root. Null with neither: a judge launched with no folder would open in the wrong place. */
 export function judgeFolder(
@@ -70,12 +89,13 @@ export function judgeFolder(
 export type JudgeChoice = { id: string; name: string; short: string; state: string };
 
 /** The judge the menu offers first, as Wake: the resting judge of `workerId` (a judge arcterm launched whose pair ended and
- *  that sleeps, hidden, until a new round) that is on the roster and asleep, or null. The list is newest first, so with
+ *  that sleeps, hidden, until a new round) that is on the roster and asleep, or null. A worker resumed in a new tab finds
+ *  it by its session (pairmodel.ts restsUnder). The list is newest first, so with
  *  several the first is the one of the latest round. A resting judge that something woke is a plain agent again, and the
  *  live list offers it like any other. */
 export function restingJudgeOf(
     resting: readonly PairResting[],
-    agents: readonly Pick<AgentVM, "id" | "sleeping">[],
+    agents: readonly Pick<AgentVM, "id" | "sleeping" | "transcriptPath">[],
     workerId: string
 ): PairResting | null {
     return hiddenJudgesOf(workerId, resting, agents)[0] ?? null;
@@ -176,16 +196,17 @@ function addFailed(worker: Pick<AgentVM, "name">, e: unknown): void {
     });
 }
 
-/** Open a new judge for `worker` (board K2's first row): brief it, launch it, and pair once it has reported in. The launch
- *  takes the focus (its process starts when its terminal mounts), so the judge's tab shows while it boots; once paired the
- *  focus goes back to the worker and the conversation opens. A person who went elsewhere while it booted is left there.
- *  `from` names the reply to judge (the brief and the pair both carry it). Every failure is a toast, and nothing is
- *  paired: a `from` the transcript does not hold fails the brief, before anything is launched. */
-export async function openNewJudge(
+// launches a judge for `worker` (the options are made once its folder is known), waits for it to report in, and pairs. The
+// launch takes the focus (its process starts when its terminal mounts), so the judge's tab shows while it boots; once
+// paired the focus goes back to the worker and the conversation opens. A person who went elsewhere while it booted is left
+// there. Every failure is a toast, and nothing is paired.
+async function launchAndPair(
     model: AgentsViewModel,
     worker: AgentVM,
     project: string,
-    from: string = ""
+    from: string,
+    briefed: boolean,
+    optsFor: (folder: string) => Promise<LaunchAgentOpts>
 ): Promise<void> {
     try {
         const folder = judgeFolder(
@@ -195,14 +216,7 @@ export async function openNewJudge(
         if (folder == null) {
             throw new Error(`no folder found for ${worker.name}`);
         }
-        const brief = await RpcApi.PairBriefCommand(TabRpcClient, {
-            workertab: worker.id,
-            ...(from !== "" ? { from } : {}),
-        });
-        const judgeTab = await launchAgent(
-            model,
-            judgeLaunchOpts({ workerName: worker.name, project, folder, brief: brief.text })
-        );
+        const judgeTab = await launchAgent(model, await optsFor(folder));
         const boot = await waitForBoot(model, judgeTab);
         if (boot !== "up") {
             pushToast({
@@ -215,7 +229,10 @@ export async function openNewJudge(
             });
             return;
         }
-        const view = await RpcApi.PairStartCommand(TabRpcClient, pairStartData(worker.id, judgeTab, true, true, from));
+        const view = await RpcApi.PairStartCommand(
+            TabRpcClient,
+            pairStartData(worker.id, judgeTab, briefed, true, from)
+        );
         const at = globalStore.get(model.focusIdAtom);
         if (at === judgeTab || at === worker.id) {
             globalStore.set(model.focusIdAtom, worker.id);
@@ -225,6 +242,39 @@ export async function openNewJudge(
     } catch (e) {
         addFailed(worker, e);
     }
+}
+
+/** Open a new judge for `worker` (board K2's first row): brief it, launch it, and pair once it has reported in
+ *  (launchAndPair). `from` names the reply to judge (the brief and the pair both carry it): a `from` the transcript does
+ *  not hold fails the brief, before anything is launched. */
+export function openNewJudge(
+    model: AgentsViewModel,
+    worker: AgentVM,
+    project: string,
+    from: string = ""
+): Promise<void> {
+    return launchAndPair(model, worker, project, from, true, async (folder) => {
+        const brief = await RpcApi.PairBriefCommand(TabRpcClient, {
+            workertab: worker.id,
+            ...(from !== "" ? { from } : {}),
+        });
+        return judgeLaunchOpts({ workerName: worker.name, project, folder, brief: brief.text });
+    });
+}
+
+/** Resume the judge of `worker`'s earlier rounds whose tab closed with it (resumableJudgeOf: the worker was resumed in a new
+ *  tab), and pair once it has reported in. It keeps what it read; it is not briefed at launch, so the pair sends the brief
+ *  as its first prompt, and it is `launched`, so it rests again when this round ends. `from` is the reply to judge. */
+export function resumeJudge(
+    model: AgentsViewModel,
+    worker: AgentVM,
+    project: string,
+    judge: PairResting,
+    from: string = ""
+): Promise<void> {
+    return launchAndPair(model, worker, project, from, false, async (folder) =>
+        judgeResumeOpts({ workerName: worker.name, project, folder, session: judge.session ?? "" })
+    );
 }
 
 // pairs `worker` with an agent that is already up and opens the conversation; a toast on failure

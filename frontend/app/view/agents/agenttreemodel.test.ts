@@ -529,7 +529,14 @@ describe("buildAgentTree with a pair", () => {
         updatedts: 0,
         ...extra,
     });
-    const resting = (tab: string, workertab = "w"): PairResting => ({ tab, name: tab, workertab, pairid: "old" });
+    const resting = (tab: string, workertab = "w", workersession?: string): PairResting => ({
+        tab,
+        name: tab,
+        workertab,
+        pairid: "old",
+        ts: 1,
+        workersession,
+    });
     const asleep = (a: AgentVM): AgentVM => ({ ...a, sleeping: { since: 1, freedBytes: 0 } });
     const build = (
         agents: AgentVM[],
@@ -662,6 +669,14 @@ describe("buildAgentTree with a pair", () => {
         it("stays a plain row when its worker is no longer on the roster, so it cannot be hidden and unreachable", () => {
             const lone = [asleep(vm("j", "idle", WAVE)), vm("y", "idle", WAVE)];
             expect(shape(build(lone, [], [resting("j")]))).toEqual(["group", "j", "y"]);
+        });
+
+        it("is left out under its worker resumed in a new tab, found by the session", () => {
+            const resumed: AgentVM = { ...vm("w2", "idle", WAVE), transcriptPath: "/p/sess-w.jsonl" };
+            const lone = [resumed, asleep(vm("j", "idle", WAVE)), vm("y", "idle", WAVE)];
+            // (a transcript path files the resumed worker in a group of its own: only whether j shows is under test)
+            expect(shape(build(lone, [], [resting("j", "w-closed", "sess-w")]))).not.toContain("j");
+            expect(shape(build(lone, [], [resting("j", "w-closed", "sess-other")]))).toContain("j");
         });
 
         it("is no one's started run or waiter while it is hidden", () => {

@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The judge menu (board K2) and the agent header's pair controls (board C of the tree-and-toggle follow-up). The menu is
-// Wake the judge of the earlier rounds when one rests asleep, Open a new judge, then the project's live agents that are in
-// no pair. It opens from ⚖ Judge this reply under a reply in Chat (JudgeReplyMenu, which the conversation draws once and
+// Wake the judge of the earlier rounds when one rests asleep (or Resume it, when its tab closed with the worker and the worker
+// was resumed in a new tab), Open a new judge, then the project's live agents that are in no pair. It opens from ⚖ Judge this reply under a reply in Chat (JudgeReplyMenu, which the conversation draws once and
 // anchors at the pressed button; spec docs/superpowers/specs/2026-11-26-judge-on-reply-design.md) and starts the pair from
 // that reply, and from the small + of a paired worker's header (another judge for the same pair, which joins the pair as
 // it is). The header carries no pair control for an agent in no pair: ⚖ is the way in. A paired worker's header has its Pair
@@ -29,8 +29,8 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import { centerModeAtom, pairSelAtom, showTerminal } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
-import { judgeChoices, openNewJudge, pickJudge, restingJudgeOf, wakeJudge } from "./pairlaunch";
-import { liveName, newCount, pairButtonLabel, type PairRole } from "./pairmodel";
+import { judgeChoices, openNewJudge, pickJudge, restingJudgeOf, resumeJudge, wakeJudge } from "./pairlaunch";
+import { liveName, newCount, pairButtonLabel, resumableJudgeOf, type PairRole } from "./pairmodel";
 import { pairOnScreen, togglePairOf } from "./pairopen";
 import { pairSeenAtom, usePairs, usePairView, useRestingJudges } from "./pairstore";
 
@@ -49,6 +49,7 @@ function MenuBody({
     onNew,
     onPick,
     onWake,
+    onResume,
     onClose,
 }: {
     model: AgentsViewModel;
@@ -61,6 +62,8 @@ function MenuBody({
     onNew: () => void;
     onPick: (judgeTab: string) => void;
     onWake: (judgeTab: string) => void;
+    /** resume the judge whose tab closed with this worker's earlier tab */
+    onResume: (judge: PairResting) => void;
     onClose: () => void;
 }) {
     const agents = useAtomValue(model.agentsAtom);
@@ -70,6 +73,11 @@ function MenuBody({
     const wake = useMemo(() => restingJudgeOf(restingJudges, agents, worker.id), [restingJudges, agents, worker.id]);
     // the roster's name for it (its title as the tree shows it), else the one the server stored
     const wakeName = wake != null ? agents.find((a) => a.id === wake.tab)?.name || wake.name : "";
+    // with none to wake, the judge of this conversation's rounds before it was resumed in this tab, its own tab closed
+    const resume = useMemo(
+        () => (wake == null ? resumableJudgeOf(restingJudges, agents, worker.id) : null),
+        [wake, restingJudges, agents, worker.id]
+    );
     const choices = useMemo(
         () => judgeChoices(agents, worker.id, project, pairs, restingJudges),
         [agents, worker.id, project, pairs, restingJudges]
@@ -118,6 +126,21 @@ function MenuBody({
                     <span className="max-w-full truncate">Wake {wakeName}</span>
                     <span className="text-[11.5px] text-muted">
                         judge of your earlier rounds, keeps what it read · asleep
+                    </span>
+                </button>
+            ) : null}
+            {resume != null ? (
+                <button
+                    type="button"
+                    role="menuitem"
+                    data-pair-resume-judge={resume.session}
+                    onClick={() => onResume(resume)}
+                    title={resume.name}
+                    className={cn(ITEM, "flex-col items-start gap-[2px] py-[8px]")}
+                >
+                    <span className="max-w-full truncate">Resume {resume.name}</span>
+                    <span className="text-[11.5px] text-muted">
+                        judge of this conversation's earlier rounds, keeps what it read · closed
                     </span>
                 </button>
             ) : null}
@@ -251,6 +274,10 @@ export function JudgeReplyMenu({
                 onClose(false);
                 fireAndForget(() => wakeJudge(worker, judgeTab, from));
             }}
+            onResume={(judge) => {
+                onClose(false);
+                fireAndForget(() => resumeJudge(model, worker, project, judge, from));
+            }}
             onClose={() => onClose(true)}
         />
     );
@@ -317,6 +344,10 @@ function AddAnotherJudgeButton({
                 onWake={(judgeTab) => {
                     close(false);
                     fireAndForget(() => wakeJudge(agent, judgeTab));
+                }}
+                onResume={(judge) => {
+                    close(false);
+                    fireAndForget(() => resumeJudge(model, agent, project, judge));
                 }}
                 onClose={() => close(true)}
             />

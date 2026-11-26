@@ -44,6 +44,7 @@ import {
     judgeFolder,
     judgeLabel,
     judgeLaunchOpts,
+    judgeResumeOpts,
     openNewJudge,
     pairStartData,
     pickJudge,
@@ -90,6 +91,21 @@ const pairInfo = (worker: string, judges: string[]): PairInfo => ({
     messagecount: 0,
     lastts: 0,
     updatedts: 0,
+});
+
+describe("judgeResumeOpts", () => {
+    it("resumes the judge's own session on opus in the worker's folder, with no task and the judge's label", () => {
+        expect(
+            judgeResumeOpts({ workerName: "Plan oracle", project: "arcterm", folder: "/w/arcterm", session: "abc-123" })
+        ).toStrictEqual({
+            runtime: "claude",
+            startupCommand: "claude --resume abc-123 --model opus",
+            task: "",
+            projectPath: "/w/arcterm",
+            projectName: "arcterm",
+            label: "Judge: Plan oracle",
+        });
+    });
 });
 
 describe("judgeLabel and judgeLaunchOpts", () => {

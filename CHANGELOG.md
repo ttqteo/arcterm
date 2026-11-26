@@ -36,6 +36,10 @@ and a picture given to a line that is not big.
 
 - A diagram opened full size no longer stutters when you scroll it: a two-finger swipe or a mouse wheel scrolls it the
   way a page scrolls, smooth even while agents are busy. Zoom with a pinch, cmd + wheel, or + and -.
+- Closing an agent now closes the judges arcterm opened for it, awake or asleep, and ends its pair. Before, a judge that
+  was still awake stayed behind as a stray row with nobody to judge. A live agent you picked as a judge stays open.
+- When you resume a conversation that had a judge, ⚖ under a reply offers "Resume Judge: …" first. It reopens that same
+  judge with what it read in the earlier rounds, so you don't have to brief a new one.
 
 ## 1.11.0 — 2026-11-26
 

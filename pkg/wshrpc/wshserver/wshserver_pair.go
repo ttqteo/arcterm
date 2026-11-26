@@ -124,6 +124,11 @@ func (ws *WshServer) PairUnpairCommand(ctx context.Context, data wshrpc.CommandP
 	return getPairManager().Unpair(ctx, data.PairId)
 }
 
+// PairCloseWorkerCommand ends the pair of a working agent whose tab is closing and names the judges to close with it.
+func (ws *WshServer) PairCloseWorkerCommand(ctx context.Context, data wshrpc.CommandPairCloseWorkerData) (*wshrpc.CommandPairCloseWorkerRtnData, error) {
+	return &wshrpc.CommandPairCloseWorkerRtnData{Judges: getPairManager().CloseWorker(data.WorkerTab)}, nil
+}
+
 // PairResumeCommand puts a stopped pair back to relaying and delivers what is still queued; it adds no message.
 func (ws *WshServer) PairResumeCommand(ctx context.Context, data wshrpc.CommandPairGetData) error {
 	return getPairManager().Resume(ctx, data.PairId)

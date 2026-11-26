@@ -18,6 +18,8 @@ type PairCommands interface {
 	PairRunNowCommand(ctx context.Context, data CommandPairRunNowData) error                              // let a held command through
 	PairUnpairCommand(ctx context.Context, data CommandPairGetData) error
 	PairResumeCommand(ctx context.Context, data CommandPairGetData) error // put a stopped pair back to relaying and deliver what is queued
+	// the working agent's tab is closing: end its pair, and name the judges arcterm launched for it, to close with it
+	PairCloseWorkerCommand(ctx context.Context, data CommandPairCloseWorkerData) (*CommandPairCloseWorkerRtnData, error)
 }
 
 // PairSide is one agent of a pair, by its tab (the cockpit agent id, which survives sleep and an app restart).
@@ -48,10 +50,25 @@ type PairInfo struct {
 // PairResting is a judge arcterm launched for a job whose newest pair has ended: it rests (asleep, or about to be) and
 // is hidden under its worker's row while that worker is on the roster, until ⚖ under a reply wakes it for a new round.
 type PairResting struct {
-	Tab       string `json:"tab"`       // the judge's tab
-	Name      string `json:"name"`      // as the roster names it ("Judge: <worker>")
-	WorkerTab string `json:"workertab"` // the working agent of the pair it last judged
-	PairId    string `json:"pairid"`    // that pair
+	Tab       string `json:"tab"`          // the judge's tab
+	Name      string `json:"name"`         // as the roster names it ("Judge: <worker>")
+	WorkerTab string `json:"workertab"`    // the working agent of the pair it last judged
+	PairId    string `json:"pairid"`       // that pair
+	Ts        int64  `json:"ts,omitempty"` // when that pair was made (ms)
+	// the judge's session id and its working agent's, "" until the pair took one: a working agent resumed in a new tab is
+	// the same session, so ⚖ finds its judge again by it (and resumes the judge's own session when its tab is gone)
+	Session       string `json:"session,omitempty"`
+	WorkerSession string `json:"workersession,omitempty"`
+}
+
+type CommandPairCloseWorkerData struct {
+	WorkerTab string `json:"workertab"`
+}
+
+// CommandPairCloseWorkerRtnData is the judges to close with a working agent: the ones arcterm launched for it, those of
+// its pair that was live and those that rest from its ended rounds.
+type CommandPairCloseWorkerRtnData struct {
+	Judges []string `json:"judges"`
 }
 
 type CommandPairListRtnData struct {
