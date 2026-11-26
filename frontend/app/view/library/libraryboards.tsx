@@ -9,6 +9,8 @@
 //                          The agent is gone, so there is no ask box, and Open conversation reads the agent's session.
 //                          Open beside Chat… hands it to a live Claude agent of its project, which takes it over
 //                          (BoardTakeOverCommand), and opens it beside that agent's Chat
+// Open in split, on a row's hover and in the open board's header, puts any board in a cell on the Agent surface: beside
+// its agent while it runs, else beside the agent in focus, where its header's chat picker hands it to a chat to ask.
 // Delete board, on a row's hover and in the open board's header, moves it to ~/.arc/trash (boarddelete.ts).
 // Only one canvas per board: the split beside Chat drops its own while another surface shows, so this one never doubles up
 // with it. Above the canvas sits the board's strip (the drawings row and the Edit switch, the same as in the split), and
@@ -19,7 +21,7 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { ChevronDown, RefreshCw, Search, Trash2 } from "lucide-react";
+import { ChevronDown, Columns2, RefreshCw, Search, Trash2 } from "lucide-react";
 import { AnimatePresence, motion, MotionConfig } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AgentsViewModel } from "../agents/agents";
@@ -39,6 +41,8 @@ import {
     boardsScope,
     boardsSelectionIn,
     noTakeoverText,
+    splitAnchor,
+    splitTitle,
     takeoverAgents,
     type BoardRow,
 } from "./libraryboardsmodel";
@@ -120,6 +124,57 @@ function Thumb({ row }: { row: BoardRow }) {
 
 // --- the list
 
+// Open in split: the board as a cell beside an agent on the Agent surface (libraryboardsmodel.ts splitAnchor), a row of its
+// own in the Agent tree while it stays open. A row's copy is an icon on hover or focus; the open board's is a word in its
+// header. Disabled with no agent to sit beside.
+function OpenInSplitButton({
+    model,
+    row,
+    variant,
+}: {
+    model: AgentsViewModel;
+    row: BoardRow;
+    variant: "icon" | "text";
+}) {
+    const roster = useAtomValue(model.agentsAtom);
+    const focusId = useAtomValue(model.focusIdAtom);
+    const anchor = splitAnchor(row, focusId, roster);
+    const title = splitTitle(row, anchor);
+    const open = () => {
+        if (anchor != null) {
+            openBoard(model, anchor, row.project, row.id);
+        }
+    };
+    if (variant === "icon") {
+        return (
+            <button
+                type="button"
+                data-library-board-split={row.id}
+                onClick={open}
+                disabled={anchor == null}
+                title={title}
+                aria-label={`Open ${row.name} in split`}
+                className="flex h-7 w-7 flex-none cursor-pointer items-center justify-center rounded-[7px] border border-edge-strong bg-surface-raised text-muted hover:border-ink-faint hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-50 disabled:hover:border-edge-strong disabled:hover:text-muted"
+            >
+                <Columns2 size={13} aria-hidden />
+            </button>
+        );
+    }
+    return (
+        <button
+            type="button"
+            data-library-board-open-split
+            onClick={open}
+            disabled={anchor == null}
+            title={title}
+            className="flex flex-none cursor-pointer items-center gap-1 text-[12px] text-accent hover:text-accenthover disabled:cursor-default disabled:text-muted"
+        >
+            <Columns2 size={12} strokeWidth={2} aria-hidden />
+            Open in split
+        </button>
+    );
+}
+
 // Delete board: the confirm, then the trash. A row's copy shows on hover or focus; the open board's sits in its header.
 function DeleteBoardButton({ model, row, className }: { model: AgentsViewModel; row: BoardRow; className?: string }) {
     return (
@@ -192,11 +247,10 @@ function BoardListRow({
                     </span>
                 </span>
             </button>
-            <DeleteBoardButton
-                model={model}
-                row={row}
-                className="absolute right-3 top-2.5 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-            />
+            <div className="absolute right-3 top-2.5 flex gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
+                <OpenInSplitButton model={model} row={row} variant="icon" />
+                <DeleteBoardButton model={model} row={row} />
+            </div>
         </div>
     );
 }
@@ -242,6 +296,7 @@ function BoardDetail({ model, row }: { model: AgentsViewModel; row: BoardRow }) 
                     {row.alive ? "" : " · hand edits still save"}
                 </span>
                 <div className="flex-1" />
+                <OpenInSplitButton model={model} row={row} variant="text" />
                 {sessionId ? (
                     <button
                         type="button"
