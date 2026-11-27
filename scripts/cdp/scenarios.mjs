@@ -79,6 +79,10 @@ import chatJudgeReplyScenarios from "./scenarios-chat-judge-reply.mjs";
 import chatReadPictureScenarios from "./scenarios-chat-read-picture.mjs";
 import agentSubagentsScenarios from "./scenarios-agent-subagents.mjs";
 import brainstormBoardPickScenarios from "./scenarios-brainstorm-board-pick.mjs";
+import protoChipsScenarios from "./scenarios-proto-chips.mjs";
+import protoPaneScenarios from "./scenarios-proto-pane.mjs";
+import protoRailScenarios from "./scenarios-proto-rail.mjs";
+import { writeProtoTopic } from "./proto-fixtures.mjs";
 import brainstormBuilderScenarios from "./scenarios-brainstorm-builder.mjs";
 import brainstormFindingsScenarios from "./scenarios-brainstorm-findings.mjs";
 import brainstormJudgeScenarios from "./scenarios-brainstorm-judge.mjs";
@@ -36176,7 +36180,19 @@ async function arrangeCanvasBoards(h, prefix, topic, boards) {
         const label = name.replace(/\.dc\.html$/, "");
         writeFileSync(join(project, name), `<!doctype html><title>${label}</title><p>${label} board</p>`);
     }
-    const ctx = { cwd };
+    return openCanvasOwner(h, { cwd });
+}
+
+// the clickable prototype of proto-fixtures.mjs as this topic's design folder, and the same terminal to own it
+async function arrangeProtoCanvas(h, prefix, topic) {
+    const cwd = mkdtempSync(join(tmpdir(), prefix));
+    writeProtoTopic(cwd, topic);
+    return openCanvasOwner(h, { cwd });
+}
+
+// a plain terminal made a roster agent and focused, which reveals the canvas in ctx.cwd. A failure is on ctx
+// (launchError, focusError, inRoster), never thrown
+async function openCanvasOwner(h, ctx) {
     // a throw past this point still returns ctx, so teardown removes whatever was already made
     try {
         await openCanvasTerminal(h, ctx);
@@ -66442,6 +66458,53 @@ const BS_KIT = {
     openPalette,
 };
 
+// what the clickable prototype's scenarios (scenarios-proto-chips.mjs, -proto-pane.mjs, -proto-rail.mjs; plan
+// docs/superpowers/plans/2026-11-27-prototype-feedback.md) need of this file. Their fixture is ./proto-fixtures.mjs.
+// A scenario that needs more than this adds it here once, in the task that owns this kit, not in its own module
+const CANVAS_KIT = {
+    // an agent's canvas: a temp design folder (boards of canvas.json, or the prototype) and a terminal that owns it, the
+    // header's Chat | Terminal | Canvas swap, the tabs as drawn, a key press, and the teardown of all of it
+    arrangeCanvasBoards,
+    arrangeProtoCanvas,
+    teardownCanvasBoards,
+    openCanvasTerminal,
+    clickCanvasSwap,
+    clickCanvasTab,
+    canvasTabFrames,
+    pressCanvasKey,
+    CANVAS_PANE,
+    CANVAS_SWAP,
+    CANVAS_TABS,
+    CANVAS_TABS_WAIT_MS,
+    CANVAS_ROSTER_WAIT_MS,
+    // the Canvas gallery: its Library tab, a project registered mid-run (h.rpc createproject, then waitForProjectInConfig) so
+    // the topic lists, the card cursor and its keys (Enter opens the viewer, Esc returns), the frames drawn, the teardown
+    openLibraryTab,
+    waitForProjectInConfig,
+    cgPress,
+    cgCursorOn,
+    cgLeaveGallery,
+    cgTeardown,
+    cgRemove,
+    CG_CARDS,
+    CG_CURSOR,
+    CG_FRAMES,
+    // a line typed to the agent, read from the page's own agentprompt calls and from the terminal's scrollback (install
+    // the recorder first, remove it in teardown)
+    BS_TYPED_INSTALL,
+    BS_TYPED_REMOVE,
+    bsMark,
+    bsTyped,
+    bsNothingTyped,
+    bsTermText,
+    // waits, a skipped step, the wavesrv service route and the reveal route
+    polishWaitFor,
+    polishNap,
+    skipStep,
+    waveService,
+    UI_ROUTE,
+};
+
 // what the Transcript tab's scenario (scenarios-rail-transcript.mjs) needs of this file: the fixture roster file, the real
 // terminal block behind a fixture agent, the reload, and the key chord
 const RT_KIT = {
@@ -76841,6 +76904,11 @@ export const SCENARIOS = [
     ...codeBlameDraftScenarios(CODE_KIT),
     ...diffFileKeysScenarios(FILES_KIT),
     ...brainstormBoardPickScenarios(BS_KIT),
+    // the clickable prototype (docs/superpowers/plans/2026-11-27-prototype-feedback.md): chips, the pane's Try | Mark and the
+    // rail's opened board; the rail's also reads the brainstorm helpers
+    ...protoChipsScenarios(CANVAS_KIT),
+    ...protoPaneScenarios(CANVAS_KIT),
+    ...protoRailScenarios({ ...BS_KIT, ...CANVAS_KIT }),
     ...paletteBrainstormResumeScenarios(BS_KIT),
     ...briefActScenarios(JARVIS_KIT),
     ...agentHeaderScenarios(RT_KIT),
