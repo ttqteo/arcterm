@@ -50492,12 +50492,36 @@ const chatQuote = {
                     got = notes.find((n) => (n.body ?? "").includes(${JSON.stringify(`(agent:${A})`)})) ?? null;
                     return got != null;
                 });
-                return got && { title: got.title, body: got.body };`
+                return got && { id: got.id, title: got.title, body: got.body };`
             );
+            // the toast's Open shows the palette's Notes list, the new note its first row
+            const opened11 = await h.ev(`(() => {
+                const b = [...document.querySelectorAll("[data-notification-toast]")]
+                    .filter((t) => (t.textContent || "").includes("Added to Notes"))
+                    .flatMap((t) => [...t.querySelectorAll("button")])
+                    .find((b) => b.textContent.trim() === "Open");
+                if (!b) return false;
+                b.click();
+                return true;
+            })()`);
+            const listed11 =
+                opened11 && (await polishWaitFor(h, `document.querySelector("[data-palette-notes] [data-note-row]")?.getAttribute("data-note-row") === ${JSON.stringify(note11?.id ?? "")}`, 5000));
+            await polishNap(300);
+            await h.shot("cdp-shots/chat-quote-11-notes.png");
+            if (await h.ev(`!!document.querySelector("[data-palette-notes]")`)) {
+                await h.cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+                await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+            }
             rec(
-                "11. Add note makes a note named by the passage whose body is where it was said, then the passage quoted, and a toast says so",
-                sel11 && up11 && pressed11 && toast11 && note11?.title === CQ_PASSAGE && wantBody(CQ_PASSAGE).test(note11?.body ?? ""),
-                { sel11, up11, pressed11, toast11, note11 }
+                "11. Add note makes a note named by the passage whose body is where it was said, then the passage quoted; its toast's Open shows the Notes list with that note first",
+                sel11 &&
+                    up11 &&
+                    pressed11 &&
+                    toast11 &&
+                    note11?.title === CQ_PASSAGE &&
+                    wantBody(CQ_PASSAGE).test(note11?.body ?? "") &&
+                    listed11,
+                { sel11, up11, pressed11, toast11, note11, opened11, listed11 }
             );
         } catch (e) {
             rec("the scenario threw", false, String(e?.stack ?? e));

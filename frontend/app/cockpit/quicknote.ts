@@ -15,3 +15,12 @@ export function openNewNote(model: { paletteOpenAtom: PrimitiveAtom<boolean> }):
     globalStore.set(paletteNewNoteAtom, true);
     globalStore.set(model.paletteOpenAtom, true);
 }
+
+// The Notes list, from the Open on Chat's "Added to Notes" toast: it lists newest first with an empty query, so the note
+// just added is the selected row and its preview shows.
+export const paletteNotesListAtom = atom(false) as PrimitiveAtom<boolean>;
+
+export function openNotesList(model: { paletteOpenAtom: PrimitiveAtom<boolean> }): void {
+    globalStore.set(paletteNotesListAtom, true);
+    globalStore.set(model.paletteOpenAtom, true);
+}

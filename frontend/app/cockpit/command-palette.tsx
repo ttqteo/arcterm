@@ -178,7 +178,7 @@ import {
     type NavState,
     type ScopeId,
 } from "./palette-scope";
-import { paletteNewNoteAtom } from "./quicknote";
+import { paletteNewNoteAtom, paletteNotesListAtom } from "./quicknote";
 import { usePaletteBrainstorms } from "./use-palette-brainstorms";
 
 type CommandRow = PaletteItem & { group: string };
@@ -415,8 +415,11 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
         // the rail's Note button and Mod+Shift+N open straight into a new note, over the Notes list (quicknote.ts)
         const newNote = globalStore.get(paletteNewNoteAtom);
         globalStore.set(paletteNewNoteAtom, false);
+        // and the Open on Chat's "Added to Notes" toast onto the Notes list, the new note first
+        const notesList = globalStore.get(paletteNotesListAtom);
+        globalStore.set(paletteNotesListAtom, false);
         const nav0 = { ...initialNav(globalStore.get(model.surfaceAtom)), query: seed ?? "" };
-        setNav(newNote ? pickScope(nav0, "notes") : nav0);
+        setNav(newNote || notesList ? pickScope(nav0, "notes") : nav0);
         setSymbolOpen(seed === "@");
         setOpenGen((g) => g + 1);
         setDraft(newNote ? newDraft("") : null);

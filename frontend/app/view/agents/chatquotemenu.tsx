@@ -14,6 +14,7 @@
 
 import { pushToast } from "@/app/cockpit/notificationstore";
 import { saveNoteDraft } from "@/app/cockpit/palette-notesstore";
+import { openNotesList } from "@/app/cockpit/quicknote";
 import { contextMenuAtom } from "@/app/store/contextmenu";
 import { globalStore } from "@/app/store/jotaiStore";
 import { createIdea } from "@/app/view/jarvis/effortstore";
@@ -113,14 +114,21 @@ async function saveIdea(text: string, save: SaveTarget) {
     }
 }
 
-// a note in the palette's Notes, the same title and body. Its toast has no Open: the router's "note" is a vault
-// memory note (openref.ts loadNote), and the palette opens on its surface's scope with no way to land on one note
+// a note in the palette's Notes, the same title and body. Its Open shows the Notes list, the new note first (the
+// router's "note" is a vault memory note, openref.ts loadNote, not one of these)
 async function saveNote(text: string, save: SaveTarget) {
     const title = selectionTitle(text);
     try {
         const body = savedBody(text, save.from, new Date());
         await saveNoteDraft({ id: null, title, body, saved: { title: "", body: "" } });
-        pushToast({ title: "Added to Notes", message: title, level: "info", check: true });
+        const model = save.model;
+        pushToast({
+            title: "Added to Notes",
+            message: title,
+            level: "info",
+            check: true,
+            ...(model != null ? { action: { label: "Open", run: () => openNotesList(model) } } : {}),
+        });
     } catch (e) {
         failed("add the note", e);
     }
