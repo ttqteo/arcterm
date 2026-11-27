@@ -79,6 +79,8 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- A board's drawing chip you clicked no longer lights up with a cut-off blue outline when you hold Shift to scroll
+  sideways.
 - A long chunk title in the rail's Initiative tab reads across the whole row when you select it: Work on this sits on
   its own line under the title, no longer beside it squeezing the title into a narrow column of short lines.
 - The context ring under Chat's input drops right after a compaction: it shows what the compaction left (14k), not
