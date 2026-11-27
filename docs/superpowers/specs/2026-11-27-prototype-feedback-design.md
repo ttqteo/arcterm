@@ -152,7 +152,9 @@ reports `arc-canvas-height`). That script, moved to an embedded `pkg/canvasserve
   one sent). `rect` is the slot's first visible element in page CSS px; `picked` is the letter showing.
 - applies `{type: "arc-canvas-slot-pick", picks: {[id]: letter}}` from the parent by rewriting one `<style>`
   in `<head>`: a default rule hides every variant after the first in each slot not picked, and for each picked id
-  a rule `[data-dc-slot="<id>"] > [data-dc-variant]:not([data-dc-variant="<L>"]) {display: none !important}`.
+  a rule `[data-dc-slot="<id>"]:has(> [data-dc-variant="<L>"]) > [data-dc-variant]:not([data-dc-variant="<L>"])
+  {display: none !important}`, so a same-id slot that lacks the letter keeps its default instead of hiding every
+  variant.
 
 Why here: it works with every canvas's copy of `support.js` (each canvas has its own old copy), swaps without
 re-rendering anything, so the screen's state is kept for free; a pick by id holds on every screen of the
@@ -169,8 +171,10 @@ support.js"; this equivalent path is the deviation, recorded).
 - **Chips are drawn by `BoardFrameView`**, which all three large views share (CanvasPane, the rail's opened
   board, the gallery viewer): no call site changes. A chip sits on the slot's top-right edge, straddling it as
   in board D; hovering the chip outlines the slot region dashed. Chips stay clickable in Mark mode (above the
-  mark layer, and a press on one starts no mark). Rail tiles and gallery thumbnails don't use BoardFrameView
-  and stay static.
+  mark layer, and a press on one starts no mark). The chip's pressed letter is what the board last reported
+  showing, not the stored pick. Rail tiles and gallery thumbnails don't use BoardFrameView, and a BoardFrameView
+  drawn as a tile (CanvasPane's and the chat pick modal's All grid) draws no chips: all stay static. The gallery
+  thumbnail and the Copy shot hide the chips while they capture, as a mark's picture does.
 - **Copy stays English**, as all of arcterm's UI: the toggle reads **Try | Mark** (Mark is today's word and key
   `m`); the sent line reads `marks on Later.dc.html, screen "Để sau", slot danh sách = B: 1 …`. Screen and slot
   names come from the board in the design's language. Why: arcterm has no Vietnamese UI (initiatives decision of
@@ -180,7 +184,9 @@ support.js"; this equivalent path is the deviation, recorded).
 - **Marks keep their context:** each mark stores its `MarkContext` (screen + each slot's id, label and
   letter at draw time) and a clean picture of the board: when a mark is drawn, the frame gets
   `data-canvas-capturing`, every Arc overlay in it (marks, draft, chips, the layer's outline) hides for that
-  frame, the window is captured and cropped to the board's visible part, then the overlays come back. At send,
+  frame, the window is captured and cropped to the board's visible part, then the overlays come back. Window
+  capture can fail (a Mac without Screen Recording, a dev browser with no Tauri host): the mark is kept with no
+  picture, and a group with no picture is captured at send as today, so drawing a mark never needs it. At send,
   marks are grouped by context in order of first appearance; each group's newest picture gets the group's boxes
   and numbers drawn onto it (accent color read from the theme token) and is written as its own `NNN.png`; one
   line names each group's picture and context, groups joined by ` | `. Why compose at send: removing a mark or
@@ -198,4 +204,6 @@ support.js"; this equivalent path is the deviation, recorded).
 - **Screens are parts, not boards:** `boardsFromCanvasJson` drops entries with `part_of` (so tabs, the gallery
   viewer and the rail never show a screen as a board), the Go gallery listing (`pkg/storage/canvases.go`) leaves
   them out of a canvas's boards, the skill tells the agent never to list a screen file in a part's `boards`, and
-  the plan reviewer's board item excepts a file with `part_of` (the prototype's step covers it).
+  the plan reviewer's board item excepts a file with `part_of` (the prototype's step covers it). A screen's
+  modification time still counts as its canvas's (the pane's poller and the Go listing's `ModTs`), so editing
+  only a screen file reloads the prototype.
