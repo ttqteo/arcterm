@@ -47,6 +47,24 @@ const ASK_B = "and on the other branch?";
 const FIVE = ["Reply", "Copy", "Save as idea", "Save for later", "Add note"];
 const WAIT_MS = 15000;
 
+// Whether the picker's rect sits where floating-ui's bottom-start, offset 6, flip and shift put it for a point. Vertically
+// it is below the point (top 6px under it) or, when that overflows, above it (bottom 6px over it). Horizontally it is
+// either of two alignments:
+//   start  the left edge on the point, shifted in from the right edge to `vw - width - 8`
+//   end    the right edge on the point: flip's cross axis picks it when the start alignment would run past the right edge
+//          (a press at x 1206 in a 1455px viewport opens a 330px picker over 875..1205)
+// Pure, so a node one-liner can call it (the module exports it).
+export function placedAt(picker, at) {
+    if (picker == null || at == null) return false;
+    const { rect, vw } = picker;
+    const left = Math.min(Math.max(at.x, 8), vw - rect.width - 8);
+    const below = Math.abs(rect.top - (at.y + 6)) <= 6;
+    const above = Math.abs(rect.bottom - (at.y - 6)) <= 6;
+    const startAligned = Math.abs(rect.left - left) <= 6;
+    const endAligned = Math.abs(rect.right - at.x) <= 6;
+    return (startAligned || endAligned) && (below || above);
+}
+
 export default function (kit) {
     const { waveService, polishWaitFor, polishNap, ahReload, GRID_KEY, GRID_EMPTY } = kit;
     const { makeTab, closeTabs } = AC.tabFixtures({ waveService });
@@ -167,15 +185,6 @@ export default function (kit) {
     const chunkOf = (effort, label) => (effort?.chunks ?? []).find((c) => c.label === label) ?? null;
     // the first note of a saved item: where it was said (the conversation's id is kept, so no tab address), then the passage
     const wantBody = (name, text) => new RegExp(`^From agent "${name}", \\d{4}-\\d{2}-\\d{2}\\n\\n> ${text}$`);
-    // whether the picker's rect sits where floating-ui's bottom-start, offset 6, flip and shift put it for a point
-    function placedAt(picker, at) {
-        if (picker == null || at == null) return false;
-        const { rect, vw } = picker;
-        const left = Math.min(Math.max(at.x, 8), vw - rect.width - 8);
-        const below = Math.abs(rect.top - (at.y + 6)) <= 6;
-        const above = Math.abs(rect.bottom - (at.y - 6)) <= 6;
-        return Math.abs(rect.left - left) <= 6 && (below || above);
-    }
     // the open picker: its place, its children in order (the Recent heading, each row by oref, the project's heading, the
     // actions), its filter's placeholder
     const readPicker = (h, title) =>

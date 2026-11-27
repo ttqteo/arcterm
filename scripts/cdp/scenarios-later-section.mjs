@@ -84,6 +84,20 @@ const READ = `(() => {
     };
 })()`;
 
+// the Brief's toast as drawn: its kind, its message and whether it holds Undo. The message is read without the Undo button,
+// whose label sits in the same element (the toast's textContent reads "Done · Push DEV to originUndo"). Null with no toast.
+export const READ_TOAST = `(() => {
+    const t = document.querySelector('[data-jarvis-brief-toast]');
+    if (!t) return null;
+    const message = t.cloneNode(true);
+    message.querySelectorAll('[data-jarvis-toast-undo]').forEach((b) => b.remove());
+    return {
+        kind: t.dataset.jarvisBriefToast,
+        text: (message.textContent ?? '').replace(/\\s+/g, ' ').trim(),
+        undo: !!t.querySelector('[data-jarvis-toast-undo]'),
+    };
+})()`;
+
 const rowCount = (r) => (r?.groups ?? []).reduce((n, g) => n + g.rows.length, 0);
 const labelsOf = (r) => (r?.groups ?? []).map((g) => g.rows.map((x) => x.label));
 
@@ -267,9 +281,7 @@ export default function (kit) {
                 // 3. the tick: done on the server, the row leaves, the strip stays at 1; Undo brings the row back
                 await clickIn(h, TICK_LABEL, "data-later-tick");
                 const ticked = await waitRegion(h, (r) => rowCount(r) === 3, 4000);
-                const toast = await h.ev(
-                    `(() => { const t = document.querySelector('[data-jarvis-brief-toast]'); return { text: (t?.textContent ?? '').replace(/\\s+/g, ' ').trim(), undo: !!t?.querySelector('[data-jarvis-toast-undo]') }; })()`
-                );
+                const toast = (await h.ev(READ_TOAST)) ?? { kind: null, text: "", undo: false };
                 let done = null;
                 for (let waited = 0; waited < 4000 && done?.status !== "done"; waited += 200) {
                     done = await serverChunk(h, ctx.oids.a, TICK_LABEL);
@@ -331,9 +343,7 @@ export default function (kit) {
                 await clickIn(h, ENDED_LABEL, "data-later-ask");
                 let toast5 = null;
                 for (let waited = 0; waited < 4000; waited += 200) {
-                    toast5 = await h.ev(
-                        `(() => { const t = document.querySelector('[data-jarvis-brief-toast]'); return t ? { kind: t.dataset.jarvisBriefToast, text: (t.textContent ?? '').replace(/\\s+/g, ' ').trim() } : null; })()`
-                    );
+                    toast5 = await h.ev(READ_TOAST);
                     if (toast5?.text) break;
                     await nap(200);
                 }
