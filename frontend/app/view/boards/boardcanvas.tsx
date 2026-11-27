@@ -11,7 +11,8 @@
 // A board is a row of drawings, each an Excalidraw frame (boarddrawings.ts). The canvas publishes the row, the drawing in
 // view and the selection's drawing (boardDrawingsAtom), eases to a drawing the row picks (boardPickAtom), and follows
 // the newest drawing: a new one landing while it is the one in view is fitted, else marked new in the row. A board
-// drawn before drawings is wrapped in one "Earlier drawings" frame as it opens.
+// drawn before drawings is wrapped in one "Earlier drawings" frame as it opens. The strip's Copy view, Export and
+// Delete call this canvas directly (boardcommands.ts).
 //
 // A dense drawing fitted to the canvas shows its text at 6 or 7px, so it reads one part at a time (boardparts.ts): while
 // the text is too small to read, the part under the pointer shows a Read label, and a click on it (or → and ←, or the
@@ -24,12 +25,21 @@ import { cubicBezier } from "@/app/element/pulse";
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
+import { arrayToBase64 } from "@/util/util";
+import type { ExcalidrawElement, ExcalidrawFrameElement } from "@excalidraw/excalidraw/element/types";
 import type { AppState, BinaryFiles, ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { useAtom, useAtomValue } from "jotai";
 import { Moon, Sun } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 import "./boardcanvas.css";
+import {
+    drawingAfterDelete,
+    drawingIds,
+    exportFileName,
+    registerBoardCommands,
+    setDeleted,
+    type ExportKind,
+} from "./boardcommands";
 import {
     afterLanding,
     askedDrawing,
@@ -63,12 +73,12 @@ import {
     type PartElement,
     type Viewport,
 } from "./boardparts";
+import { copyBoardView } from "./boardshot";
 import {
     boardDrawingsAtom,
     boardEditingAtom,
     boardPickAtom,
     boardThemeAtom,
-    boardTidyAtom,
     boardViewportAtom,
     loadBoardConvert,
     pointExcalidrawAtLocalFonts,
@@ -211,9 +221,8 @@ function OpenBoard({ project, boardId, highlightIds, onSelection, part: partProp
     // a pick in the drawings row; one made before this canvas opened is not for it
     const pick = useAtomValue(boardPickAtom(boardId));
     const seenPickRef = useRef(pick);
-    // a press of Tidy, the same way: one made before this canvas opened is not for it
-    const tidy = useAtomValue(boardTidyAtom(boardId));
-    const seenTidyRef = useRef(tidy);
+    // the wrapper, which Copy view reads Excalidraw's canvas from
+    const rootRef = useRef<HTMLDivElement>(null);
     // How the board opens, set as the file loads: a board never opened here, or left following its newest drawing, is
     // fitted to that drawing (fitOnOpen, pending until the view has a size); any other returns to the view it was left in.
     const fitOnOpenRef = useRef(false);
@@ -739,87 +748,118 @@ function OpenBoard({ project, boardId, highlightIds, onSelection, part: partProp
         fitDrawing(target, false);
     }, [ready, pick]);
 
-    // the layout module (dagre) loads once the board shows, so a press of Tidy starts at once
-    useEffect(() => {
-        if (ready) {
-            import("./boardlayout").catch((e) => console.warn("boards: the layout module did not load", e));
-        }
-    }, [ready]);
-
-    // A press of the strip's Tidy: the shapes slide to the drawing's new layout over durMacro while the view eases to fit
-    // it (at once under reduced motion), and the last frame lands it as one undo step and saves it. The frames are
-    // captured EVENTUALLY, so that one undo step goes back to where they started.
-    useEffect(() => {
+    // Delete on the strip: the drawing and everything in it go as one undo step, the view eases to the drawing before it
+    // and the file saves it. The toast's Undo brings it back (Ctrl+Z only reaches Excalidraw in Edit).
+    function deleteDrawing(drawingId: string): boolean {
         const api = apiRef.current;
         const mod = excalidraw;
-        if (!ready || api == null || mod == null || tidy == null || tidy === seenTidyRef.current) {
+        if (api == null || mod == null) {
+            return false;
+        }
+        const before = api.getSceneElementsIncludingDeleted();
+        const ids = drawingIds(before, drawingId);
+        const drawings = drawingsOf(before);
+        const gone = drawings.find((d) => d.id === drawingId);
+        if (ids.size === 0 || gone == null) {
+            return false;
+        }
+        api.updateScene({
+            elements: setDeleted(before, ids, true, Date.now()),
+            captureUpdate: mod.CaptureUpdateAction.IMMEDIATELY,
+        });
+        fitDrawing(drawingAfterDelete(drawings, drawingId) ?? undefined, false);
+        updateParts();
+        save().catch((e) => console.warn("boards: saving the delete failed", boardId, e));
+        pushToast({
+            title: "Drawing deleted",
+            message: gone.title !== "" ? `${gone.n}. ${gone.title}` : `Drawing ${gone.n}`,
+            level: "info",
+            check: true,
+            action: {
+                label: "Undo",
+                run: () => {
+                    if (apiRef.current !== api) {
+                        return;
+                    }
+                    const now = api.getSceneElementsIncludingDeleted();
+                    api.updateScene({
+                        elements: setDeleted(now, ids, false, Date.now()),
+                        captureUpdate: mod.CaptureUpdateAction.IMMEDIATELY,
+                    });
+                    fitDrawing(
+                        drawingsOf(api.getSceneElements()).find((d) => d.id === drawingId),
+                        false
+                    );
+                    updateParts();
+                    save().catch((e) => console.warn("boards: saving the undone delete failed", boardId, e));
+                },
+            },
+        });
+        return true;
+    }
+
+    // Export on the strip: the drawing in view, cut to its frame, in the board's theme on its ground (PNG at twice its
+    // size, SVG with its fonts inlined), to a file the person picks
+    async function exportDrawing(drawingId: string, kind: ExportKind): Promise<string | null> {
+        const api = apiRef.current;
+        const mod = excalidraw;
+        if (api == null || mod == null) {
+            throw new Error("the board is not open");
+        }
+        const live = api.getSceneElements();
+        const frame = live.find((el): el is ExcalidrawFrameElement => el.id === drawingId && el.type === "frame");
+        const drawing = drawingsOf(live).find((d) => d.id === drawingId);
+        if (frame == null || drawing == null) {
+            throw new Error("that drawing is no longer on the board");
+        }
+        const { save: pickFile } = await import("@tauri-apps/plugin-dialog");
+        const path = await pickFile({
+            defaultPath: exportFileName(drawing, kind),
+            filters: [{ name: kind === "png" ? "PNG image" : "SVG image", extensions: [kind] }],
+        });
+        if (path == null) {
+            return null;
+        }
+        const elements = live.filter((el) => el.id === drawingId || el.frameId === drawingId);
+        const files = api.getFiles() as BinaryFiles;
+        const appState = {
+            exportBackground: true,
+            exportWithDarkMode: theme === "dark",
+            viewBackgroundColor: "#ffffff",
+        };
+        let bytes: Uint8Array;
+        if (kind === "png") {
+            const blob = await mod.exportToBlob({
+                elements,
+                files,
+                appState,
+                exportingFrame: frame,
+                mimeType: "image/png",
+                getDimensions: (width, height) => ({ width: width * 2, height: height * 2, scale: 2 }),
+            });
+            bytes = new Uint8Array(await blob.arrayBuffer());
+        } else {
+            const svg = await mod.exportToSvg({ elements, files, appState, exportingFrame: frame });
+            bytes = new TextEncoder().encode(new XMLSerializer().serializeToString(svg));
+        }
+        await RpcApi.FileWriteCommand(TabRpcClient, { info: { path }, data64: arrayToBase64(bytes) });
+        return path;
+    }
+
+    // the strip's Copy view, Export and Delete, answered by this canvas while it is the newest of its board's
+    useEffect(() => {
+        if (!ready) {
             return;
         }
-        seenTidyRef.current = tidy;
-        let frame: number | null = null;
-        let land: (() => void) | null = null;
-        (async () => {
-            const { tidyDrawing, tidyFrame } = await import("./boardlayout");
-            if (apiRef.current !== api) {
-                return;
-            }
-            const before = api.getSceneElementsIncludingDeleted();
-            const next = tidyDrawing(before, tidy.drawingId, Date.now());
-            if (next == null) {
-                pushToast({
-                    title: "Nothing to tidy",
-                    message: "This drawing has fewer than two shapes to lay out.",
-                    level: "info",
-                });
-                return;
-            }
-            land = () => {
-                frame = null;
-                land = null;
-                api.updateScene({ elements: next, captureUpdate: mod.CaptureUpdateAction.IMMEDIATELY });
-                updateParts();
-                save().catch((e) => console.warn("boards: saving the tidy failed", boardId, e));
-            };
-            fitDrawing(
-                drawingsOf(next).find((d) => d.id === tidy.drawingId),
-                false
-            );
-            if (reducedMotion()) {
-                land();
-                return;
-            }
-            const start = performance.now();
-            const ms = MOTION.durMacro * 1000;
-            const step = (now: number) => {
-                if (apiRef.current !== api) {
-                    return;
-                }
-                const t = Math.min(1, (now - start) / ms);
-                if (t >= 1) {
-                    land();
-                    return;
-                }
-                api.updateScene({
-                    elements: tidyFrame(before, next, easeFluid(t)),
-                    captureUpdate: mod.CaptureUpdateAction.EVENTUALLY,
-                });
-                frame = requestAnimationFrame(step);
-            };
-            frame = requestAnimationFrame(step);
-        })().catch((e) => console.warn("boards: tidying the drawing failed", boardId, e));
-        // A second press mid-slide lands this one at once, so the next tidy starts from the landed layout and nothing is
-        // left half-way. The canvas closing drops it instead: the load effect's cleanup, which runs first, has let go of
-        // the api, and the file still holds the drawing as it was.
-        return () => {
-            if (frame != null) {
-                cancelAnimationFrame(frame);
-                frame = null;
-                if (apiRef.current === api) {
-                    land?.();
-                }
-            }
-        };
-    }, [ready, tidy]);
+        return registerBoardCommands(boardId, {
+            copyView: () => {
+                const root = rootRef.current;
+                return root == null ? Promise.reject(new Error("the board is not open")) : copyBoardView(root);
+            },
+            exportDrawing,
+            deleteDrawing,
+        });
+    }, [ready, boardId, theme]);
 
     // Show
     useEffect(() => {
@@ -908,6 +948,7 @@ function OpenBoard({ project, boardId, highlightIds, onSelection, part: partProp
     const viewport = startViewRef.current;
     return (
         <div
+            ref={rootRef}
             className="arc-board absolute inset-0 overflow-hidden"
             data-board-canvas={boardId}
             data-board-ready={ready ? "true" : "false"}
