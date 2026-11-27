@@ -20,6 +20,7 @@ import {
     PanelRightClose,
     PanelRightOpen,
     Shapes,
+    Trash2,
     X,
 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
@@ -42,6 +43,8 @@ export interface BoardHeaderProps {
     parts?: readonly BoardPart[];
     part?: number | null;
     onPart?: (part: number | null) => void;
+    // while a part is read: takes its shapes off the board (a part drawn by mistake); the toast holds an Undo
+    onDeletePart?: (part: BoardPart) => void;
 }
 
 function HeaderButton({
@@ -254,6 +257,7 @@ export function BoardHeader({
     parts = [],
     part = null,
     onPart,
+    onDeletePart,
 }: BoardHeaderProps) {
     const expandLabel = expanded ? "Collapse" : "Expand";
     const reading = part != null && onPart != null ? parts[part] : undefined;
@@ -294,6 +298,15 @@ export function BoardHeader({
                     data-board-parts-stepper={reading == null ? "" : undefined}
                     className="flex flex-none items-center"
                 >
+                    {reading != null && onDeletePart != null ? (
+                        <HeaderButton
+                            label="Delete this part (Undo on its toast)"
+                            attr="data-board-part-delete"
+                            onClick={() => onDeletePart(reading)}
+                        >
+                            <Trash2 size={13} strokeWidth={2} />
+                        </HeaderButton>
+                    ) : null}
                     {reading != null ? (
                         <button
                             type="button"

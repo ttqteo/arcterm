@@ -748,31 +748,27 @@ function OpenBoard({ project, boardId, highlightIds, onSelection, part: partProp
         fitDrawing(target, false);
     }, [ready, pick]);
 
-    // Delete on the strip: the drawing and everything in it go as one undo step, the view eases to the drawing before it
-    // and the file saves it. The toast's Undo brings it back (Ctrl+Z only reaches Excalidraw in Edit).
-    function deleteDrawing(drawingId: string): boolean {
+    // These shapes off the board as one undo step, saved, with a toast whose Undo brings them back (Ctrl+Z only reaches
+    // Excalidraw in Edit). `moved` places the view once they are gone, `back` once Undo restored them.
+    function deleteWithUndo(
+        ids: ReadonlySet<string>,
+        toast: { title: string; message: string },
+        moved: () => void,
+        back: () => void
+    ): boolean {
         const api = apiRef.current;
         const mod = excalidraw;
-        if (api == null || mod == null) {
-            return false;
-        }
-        const before = api.getSceneElementsIncludingDeleted();
-        const ids = drawingIds(before, drawingId);
-        const drawings = drawingsOf(before);
-        const gone = drawings.find((d) => d.id === drawingId);
-        if (ids.size === 0 || gone == null) {
+        if (api == null || mod == null || ids.size === 0) {
             return false;
         }
         api.updateScene({
-            elements: setDeleted(before, ids, true, Date.now()),
+            elements: setDeleted(api.getSceneElementsIncludingDeleted(), ids, true, Date.now()),
             captureUpdate: mod.CaptureUpdateAction.IMMEDIATELY,
         });
-        fitDrawing(drawingAfterDelete(drawings, drawingId) ?? undefined, false);
-        updateParts();
+        moved();
         save().catch((e) => console.warn("boards: saving the delete failed", boardId, e));
         pushToast({
-            title: "Drawing deleted",
-            message: gone.title !== "" ? `${gone.n}. ${gone.title}` : `Drawing ${gone.n}`,
+            ...toast,
             level: "info",
             check: true,
             action: {
@@ -781,21 +777,60 @@ function OpenBoard({ project, boardId, highlightIds, onSelection, part: partProp
                     if (apiRef.current !== api) {
                         return;
                     }
-                    const now = api.getSceneElementsIncludingDeleted();
                     api.updateScene({
-                        elements: setDeleted(now, ids, false, Date.now()),
+                        elements: setDeleted(api.getSceneElementsIncludingDeleted(), ids, false, Date.now()),
                         captureUpdate: mod.CaptureUpdateAction.IMMEDIATELY,
                     });
-                    fitDrawing(
-                        drawingsOf(api.getSceneElements()).find((d) => d.id === drawingId),
-                        false
-                    );
-                    updateParts();
+                    back();
                     save().catch((e) => console.warn("boards: saving the undone delete failed", boardId, e));
                 },
             },
         });
         return true;
+    }
+
+    // Delete on the strip: the drawing and everything in it, the view eased to the drawing before it
+    function deleteDrawing(drawingId: string): boolean {
+        const api = apiRef.current;
+        if (api == null) {
+            return false;
+        }
+        const before = api.getSceneElementsIncludingDeleted();
+        const drawings = drawingsOf(before);
+        const gone = drawings.find((d) => d.id === drawingId);
+        if (gone == null) {
+            return false;
+        }
+        return deleteWithUndo(
+            drawingIds(before, drawingId),
+            {
+                title: "Drawing deleted",
+                message: gone.title !== "" ? `${gone.n}. ${gone.title}` : `Drawing ${gone.n}`,
+            },
+            () => {
+                fitDrawing(drawingAfterDelete(drawings, drawingId) ?? undefined, false);
+                updateParts();
+            },
+            () => {
+                fitDrawing(
+                    drawingsOf(api.getSceneElements()).find((d) => d.id === drawingId),
+                    false
+                );
+                updateParts();
+            }
+        );
+    }
+
+    // Delete on the header while a part is read: its shapes (boardparts.ts ids), the view back on the whole drawing
+    function deletePart(p: BoardPart): boolean {
+        const live = new Set(apiRef.current?.getSceneElements().map((el) => el.id) ?? []);
+        const ids = new Set(p.ids.filter((id) => live.has(id)));
+        const placeWhole = () => {
+            closePart();
+            updateParts();
+            wholeDrawing();
+        };
+        return deleteWithUndo(ids, { title: "Part deleted", message: p.label }, placeWhole, placeWhole);
     }
 
     // Export on the strip: the drawing in view, cut to its frame, in the board's theme on its ground (PNG at twice its
@@ -858,6 +893,7 @@ function OpenBoard({ project, boardId, highlightIds, onSelection, part: partProp
             },
             exportDrawing,
             deleteDrawing,
+            deletePart,
         });
     }, [ready, boardId, theme]);
 

@@ -1177,6 +1177,36 @@ export default function (kit) {
                 );
             });
 
+            await run("8c. reading a part, the ask line asks about it; the header's Delete takes the part's shapes off the board, the view goes back to the whole drawing with one part fewer, and the toast's Undo brings it back", async (name) => {
+                const CV = `${SPLIT(B3)} ${CANVAS(B3)}`;
+                const attr = (key) => h.ev(`document.querySelector(${q(CV)})?.dataset.${key} ?? null`);
+                const live = (id) => canvasPage(`return (app()?.scene.getNonDeletedElements() ?? []).some((e) => e.id === ${q(id)});`);
+                await openBoardOn(B3);
+                const ready = await canvasReady(B3);
+                const counted = await until(async () => (await text(`${SPLIT(B3)} [data-board-parts-count]`)) === "3 parts");
+                const wholeHint = await text(`${SPLIT(B3)} [data-board-ask-selected]`);
+                const opened = (await click(`${SPLIT(B3)} [data-board-parts-next]`)) && (await until(async () => (await attr("boardPart")) === "0"));
+                const askHint = await until(async () => (await text(`${SPLIT(B3)} [data-board-ask-selected]`)) === "Asking about Harness");
+                await polishNap(400);
+                await shot("8c-asking-part");
+                const deleted = await click(`${SPLIT(B3)} [data-board-part-delete]`);
+                const gone = await until(async () => !(await live("harness-a")));
+                const whole = await until(async () => (await attr("boardPart")) === "" && (await text(`${SPLIT(B3)} [data-board-parts-count]`)) === "2 parts");
+                const offFile = await until(async () => ((await boardFile(h, B3))?.elements ?? []).some((e) => e.id === "harness-a" && e.isDeleted));
+                await polishNap(400);
+                await shot("8c-part-deleted");
+                const undone = await h.ev(`(() => { const b = [...document.querySelectorAll("[data-notification-action]")].at(-1); if (!b) return false; b.click(); return true; })()`);
+                const back = await until(async () => (await live("harness-a")) && (await text(`${SPLIT(B3)} [data-board-parts-count]`)) === "3 parts");
+                const inFile = await until(async () => ((await boardFile(h, B3))?.elements ?? []).some((e) => e.id === "harness-a" && !e.isDeleted));
+                await click(`${SPLIT(B3)} [data-board-close]`);
+                await until(async () => (await box(SPLIT(B3))) == null);
+                rec(
+                    name,
+                    ready && counted && wholeHint === "Press Edit to ask about shapes" && opened && askHint && deleted && gone && whole && offFile && undone && back && inFile,
+                    { ready, counted, wholeHint, opened, askHint, deleted, gone, whole, offFile, undone, back, inFile }
+                );
+            });
+
             let gave = null;
             // --- 9. a full 2x2: the board takes the last other cell, the agent and the focused tab keep theirs ---
             await run("9. in a full 2x2 Open gives the board the last other cell: the agent keeps its cell, that tab keeps running", async (name) => {

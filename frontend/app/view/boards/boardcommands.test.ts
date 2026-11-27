@@ -97,6 +97,7 @@ describe("registerBoardCommands", () => {
         copyView: async () => {},
         exportDrawing: async () => null,
         deleteDrawing: () => true,
+        deletePart: () => true,
     });
 
     it("answers with the newest canvas of the board, and the one before once it goes", () => {
