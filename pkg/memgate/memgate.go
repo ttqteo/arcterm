@@ -186,13 +186,22 @@ func workSteps(command string, out []workStep) []workStep {
 	return out
 }
 
+// valueFlags are the options, by program, that take the next word as their value and may come before the first
+// operand. Without them `git -C D:/repo push` keyed as `git D:/repo`: every git command in that repo shared one
+// pattern, so one heavy push made each `git status` there wait for the push's peak (2026-11-27).
+var valueFlags = map[string][]string{
+	"git": {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env", "--super-prefix"},
+	"make": {"-C", "-f", "-I", "-o", "-W", "--directory", "--file", "--makefile", "--include-dir", "--old-file",
+		"--assume-old", "--new-file", "--assume-new", "--what-if"},
+}
+
 // unknownPattern is the key of a step whose program memgate has no rule for: the program and its first word that is
-// not a flag. Empty for a step that does no work.
+// not a flag or a flag's value (valueFlags). Empty for a step that does no work.
 func unknownPattern(name string, args []string) string {
 	if name == "" || noWork[name] {
 		return ""
 	}
-	if op, _ := firstOperand(args); op != "" {
+	if op, _ := firstOperand(dropValueFlags(args, valueFlags[name])); op != "" {
 		return name + " " + op
 	}
 	return name

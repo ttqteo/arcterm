@@ -57,8 +57,15 @@ type entry struct {
 
 // file is jobpeaks.json.
 type file struct {
-	Keys []entry `json:"keys"`
+	// Version is the keying the file was written with. Version 0 keyed an unknown command's flag value as its
+	// operand (`git -C D:/repo push` as `git D:/repo`): load drops those files' unknown keys, which relearn at
+	// their next heavy run.
+	Version int     `json:"version,omitempty"`
+	Keys    []entry `json:"keys"`
 }
+
+// version is the keying this build writes (file.Version).
+const version = 1
 
 // Store is the peak store. It is safe for concurrent use. Record holds the lock across its (small) file writes on
 // purpose: writes then go out in the order the records came, and the learned file never lags the keys it is derived
@@ -72,6 +79,8 @@ type Store struct {
 	// learnedOut is the set the learned file last held, written by this store: nil until a write succeeded, so a
 	// failed write is tried again at the next record rather than assumed done.
 	learnedOut []string
+	// stale: load dropped keys of an older file version, so Open writes the file back at once
+	stale bool
 }
 
 // Open reads the store at path (jobpeaks.json) and drops the keys idle for more than Expiry. A missing file is an
@@ -85,7 +94,7 @@ func Open(path, learnedPath string, now func() time.Time) *Store {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.load()
-	if s.tidy(now()) {
+	if s.tidy(now()) || s.stale {
 		s.save()
 	}
 	s.syncLearned()
@@ -248,6 +257,11 @@ func (s *Store) load() {
 		return
 	}
 	for _, e := range f.Keys {
+		if f.Version < 1 && !e.Known {
+			log.Printf("[jobpeaks] dropped %q (%s): keyed the old way", e.Pattern, e.Project)
+			s.stale = true
+			continue
+		}
 		e.Peaks = slices.DeleteFunc(slices.Clone(e.Peaks), func(p uint64) bool { return p == 0 })
 		if len(e.Peaks) > keep {
 			e.Peaks = e.Peaks[:keep]
@@ -265,7 +279,7 @@ func (s *Store) save() {
 	if s.path == "" {
 		return
 	}
-	f := file{Keys: make([]entry, 0, len(s.keys))}
+	f := file{Version: version, Keys: make([]entry, 0, len(s.keys))}
 	for _, e := range s.keys {
 		f.Keys = append(f.Keys, *e)
 	}

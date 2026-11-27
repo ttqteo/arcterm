@@ -579,6 +579,44 @@ func TestPersistReadsOnlyWhatItCanTrust(t *testing.T) {
 	}
 }
 
+func TestPersistVersion0DropsItsUnknownKeysAndRewritesTheFile(t *testing.T) {
+	e := newEnv(t)
+	if err := os.MkdirAll(filepath.Dir(e.peaks), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// a file from before version 1 keyed `git -C D:/repo push` as `git D:/repo`: that key goes, the table's stays
+	body := `{"keys":[
+	  {"pattern":"task check:ts","project":"/p","known":true,"peaks":[500],"last":"2026-11-27T09:00:00Z"},
+	  {"pattern":"git D:/repo","project":"/p","peaks":[11964993536],"last":"2026-11-27T09:00:00Z"}
+	]}`
+	if err := os.WriteFile(e.peaks, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := e.open()
+	if got, basis := s.Estimate("task check:ts", "/p", 3*gb); got != 600 || !basis.Measured {
+		t.Fatalf("table key: %d %+v, want kept", got, basis)
+	}
+	if learned := s.Learned(); len(learned) != 0 {
+		t.Fatalf("learned = %v, want the old unknown key dropped", learned)
+	}
+	data, err := os.ReadFile(e.peaks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f file
+	if err := json.Unmarshal(data, &f); err != nil {
+		t.Fatal(err)
+	}
+	if f.Version != version || len(f.Keys) != 1 || f.Keys[0].Pattern != "task check:ts" {
+		t.Fatalf("file = %s, want version %d and only the table key: Open writes it back", data, version)
+	}
+	// a version-1 file keeps its unknown keys
+	s.Record("gradle build", "/p", false, 2*gb)
+	if !e.open().Learned()["gradle build"] {
+		t.Fatal("a version-1 file lost its learned key on reopen")
+	}
+}
+
 func TestEstimateNilStoreIsTheTable(t *testing.T) {
 	var s *Store
 	s.Record("task check:ts", "/p", true, gb) // no panic

@@ -82,6 +82,9 @@ and a picture given to a line that is not big.
   rerun passes, the run merges by itself. Before, it answered "run … is cancelled" and the run could only be merged
   with `wsh runs land --force`.
 - A fork's tab is named "Fork: <title>" rather than "<title> (fork)", so it reads as a fork at the start of its row.
+- `git status` or `git log` in a repo no longer waits in Heavy jobs for gigabytes of free RAM because one heavy
+  `git -C <repo> push` was measured there: a learned git or make command is now known by its subcommand (`git push`),
+  not by the folder after `-C`. Commands learned the old way are forgotten once and relearned at their next heavy run.
 
 ### Fixed
 
