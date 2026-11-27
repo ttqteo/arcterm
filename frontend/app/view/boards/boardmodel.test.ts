@@ -7,7 +7,6 @@ import {
     needsNunito,
     nunitoTextIds,
     parseBoardFile,
-    selectionLabel,
     serializeBoard,
     shapeCount,
     withReadableFont,
@@ -520,28 +519,6 @@ describe("applyAnswer drawings", () => {
         expect(fresh).toMatchObject({ id: drawingId, customData: { arcDrawing: 2 } });
         // the new drawing sits right of the wrapped one
         expect(fresh.x).toBeGreaterThan(earlier.x + earlier.width);
-    });
-});
-
-describe("selectionLabel", () => {
-    it("names the first selected shape", () => {
-        const els = [
-            ...labelled("wavesrv", 0, 0, "wavesrv"),
-            text("note", 0, 200, "a note"),
-            rect("r1", 0, 300, 10, 10),
-            rect("r2", 0, 400, 10, 10),
-            rect("r3", 0, 500, 10, 10),
-        ];
-        expect(selectionLabel(els, ["wavesrv"])).toBe("wavesrv");
-        // a selected container's own bound text is not counted again
-        expect(selectionLabel(els, ["wavesrv", "wavesrv-label"])).toBe("wavesrv");
-        expect(selectionLabel(els, ["note"])).toBe("a note");
-        expect(selectionLabel(els, ["wavesrv", "r1", "r2"])).toBe("wavesrv and 2 more");
-        expect(selectionLabel(els, ["r1", "wavesrv", "r2"])).toBe("wavesrv and 2 more");
-        expect(selectionLabel(els, ["r1", "r2", "r3"])).toBe("3 shapes");
-        expect(selectionLabel(els, ["r1"])).toBe("1 shape");
-        expect(selectionLabel(els, [])).toBeNull();
-        expect(selectionLabel(els, ["missing"])).toBeNull();
     });
 });
 

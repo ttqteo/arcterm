@@ -147,7 +147,7 @@ export const springFoldWidth: Variants = {
 };
 
 // Spring fold in height: springFoldWidth on the vertical axis, for a panel stacked under what it sits beside (a board's
-// turns column under its canvas). Clips only while it moves, so a focus ring past its edge shows once it has opened.
+// status line under its canvas). Clips only while it moves, so a focus ring past its edge shows once it has opened.
 export const springFoldHeight: Variants = {
     initial: { opacity: 0, height: 0, overflow: "hidden" },
     animate: {

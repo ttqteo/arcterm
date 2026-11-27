@@ -80,14 +80,6 @@ function hash53(str: string): string {
     return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16);
 }
 
-// originalText, not text: resizing a container rewraps text, and resizing is not an edit.
-function elementText(el: ExcalidrawElement): string {
-    if (el.type !== "text") {
-        return "";
-    }
-    return el.originalText ?? el.text ?? "";
-}
-
 // --- geometry
 
 export interface Bounds {
@@ -595,42 +587,7 @@ export function applyAnswer(
     };
 }
 
-function oneLine(s: string): string {
-    return s.replace(/\s+/g, " ").trim();
-}
-
-// "wavesrv", "wavesrv and 2 more" (the first selected shape with words), "3 shapes" when none has words; a
-// selected container's own bound text is part of it, not one more.
-export function selectionLabel(elements: readonly ExcalidrawElement[], selectedIds: readonly string[]): string | null {
-    const shown = live(elements);
-    const byId = new Map(shown.map((el) => [el.id, el]));
-    const labels = new Map<string, string>();
-    for (const el of shown) {
-        if (el.type === "text" && el.containerId != null) {
-            labels.set(el.containerId, elementText(el));
-        }
-    }
-    const chosen = new Set(selectedIds);
-    const shapes = [...chosen]
-        .map((id) => byId.get(id))
-        .filter((el) => el != null && !(el.type === "text" && el.containerId != null && chosen.has(el.containerId)));
-    if (shapes.length === 0) {
-        return null;
-    }
-    const name = shapes
-        .map((el) => oneLine(el.type === "text" ? elementText(el) : (labels.get(el.id) ?? "")))
-        .find((s) => s !== "");
-    if (name == null) {
-        return plural(shapes.length, "shape");
-    }
-    return shapes.length === 1 ? name : `${name} and ${shapes.length - 1} more`;
-}
-
 // a labelled box is one shape; a drawing's frame is not a shape
 export function shapeCount(elements: readonly ExcalidrawElement[]): number {
     return live(elements).filter((el) => !isBoundText(el) && !isFrame(el) && el.type !== "selection").length;
-}
-
-function plural(n: number, word: string): string {
-    return `${n} ${word}${n === 1 ? "" : "s"}`;
 }

@@ -137,11 +137,6 @@ are in that file. Tick a line here when it holds, then remove it; a part left em
   chip to the next (no jump, no second marker, none left behind); a drawing that lands while the row is visible → its
   chip fades in at the row's end rather than popping. Open the same board in Library and beside Chat at once → each
   strip's marker slides in its own strip only. Scroll sideways in a row with many chips → the current chip stays in view.
-- [ ] (arcterm) Kael sync 11-25: **Show in view mode outlines the shapes without handles.** Open a board (view mode,
-  no drawing toolbar) and press Show on a drawn turn → the turn's shapes get a selection outline, with no resize or
-  rotate handles and no style panel beside the canvas, and the ask box still says "Press Edit to ask about shapes". Press
-  Edit → the toolbar comes back, the outline gets its handles only when you select the shapes yourself, and Edit again
-  clears the selection. (`boards-split` 17b checks the selection and that no panel is drawn, not how the outline looks.)
 - [ ] (arcterm) Kael sync 11-25: a real agent's quick run nests under it in the Agent tree (the CDP scenario
   `run-nesting` draws a dev-mock roster with seeded runs, and this run's agent ran no CDP, so neither the live nesting
   nor the row's move has been watched). In an agent's tab have it run `wsh runs start --project <dir> "<goal>"` → once

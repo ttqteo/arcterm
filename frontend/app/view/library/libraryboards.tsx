@@ -5,8 +5,8 @@
 // newest first, a thumbnail on each row, with the open board beside it.
 //   a live agent's board   its row shows the board alone over the Agent surface's centre, through the router
 //                          (openref.ts), as its tree row does; the split stays as it was, and Library too
-//   an ended agent's board its canvas (hand edits still save) and the whole talk, replies copied under what was forwarded.
-//                          The agent is gone, so there is no ask box, and Open conversation reads the agent's session.
+//   an ended agent's board its canvas (hand edits still save), the status line under it (boardstatus.tsx), and Open
+//                          conversation, which reads the agent's session.
 //                          Open beside Chat… hands it to a live Claude agent of its project, which takes it over
 //                          (BoardTakeOverCommand), and opens it beside that agent's Chat
 // Open in split, on a row's hover and in the open board's header, puts any board in a cell on the Agent surface: beside
@@ -26,13 +26,13 @@ import { AnimatePresence, motion, MotionConfig } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AgentsViewModel } from "../agents/agents";
 import { sessionKey } from "../agents/sessionsruns";
-import { rerouteBoardTurn, retryBoardTurn, stopBoardTurn } from "../boards/boardactions";
+import { retryBoardTurn, stopBoardTurn } from "../boards/boardactions";
 import { BoardCanvas } from "../boards/boardcanvas";
 import { parseBoardFile } from "../boards/boardmodel";
 import { openBoard } from "../boards/boardsplitstore";
+import { BoardStatus } from "../boards/boardstatus";
 import { loadBoardConvert, loadBoardList, useBoardList, useBoardTalk } from "../boards/boardstore";
 import { BoardStrip } from "../boards/boardstrip";
-import { BoardTurns } from "../boards/boardturns";
 import { openTarget } from "../jarvis/openref";
 import { confirmDeleteBoard, DELETE_BOARD_LABEL } from "./boarddelete";
 import {
@@ -48,7 +48,7 @@ import {
 } from "./libraryboardsmodel";
 import { libraryBoardSelAtom, showLibraryBoard, showLibrarySession } from "./librarystore";
 
-const ENDED_LINE = "The agent ended, so you can't ask here";
+const ENDED_LINE = "Its agent has ended.";
 
 function errorText(e: unknown): string {
     return e instanceof Error ? e.message : String(e);
@@ -259,8 +259,6 @@ function BoardListRow({
 
 function BoardDetail({ model, row }: { model: AgentsViewModel; row: BoardRow }) {
     const talk = useBoardTalk(row.project, row.id);
-    // Show: a new array each press, so the same shapes can be shown again
-    const [highlight, setHighlight] = useState<string[] | null>(null);
     const [error, setError] = useState<string | null>(null);
     const target = { project: row.project, boardId: row.id };
     const sessionId = talk?.agent?.sessionid;
@@ -268,7 +266,7 @@ function BoardDetail({ model, row }: { model: AgentsViewModel; row: BoardRow }) 
     // canvas's own line in its place
     const empty = row.shapes === 0 && row.loaderror === "" && talk != null && talk.turns.length === 0;
 
-    // a rejection shows above the footer line; the next action that goes clears it
+    // a rejection shows on the status line; the next action that goes clears it
     async function act(fn: () => Promise<void>): Promise<void> {
         try {
             await fn();
@@ -279,11 +277,7 @@ function BoardDetail({ model, row }: { model: AgentsViewModel; row: BoardRow }) 
     }
 
     return (
-        <div
-            data-library-board-open={row.id}
-            data-owns-keys
-            className="@container flex min-h-0 min-w-0 flex-1 flex-col"
-        >
+        <div data-library-board-open={row.id} data-owns-keys className="flex min-h-0 min-w-0 flex-1 flex-col">
             <div className="flex h-10 flex-none items-center gap-2.5 border-b border-edge-mid px-4 text-[12px]">
                 <span
                     data-library-board-title
@@ -309,98 +303,81 @@ function BoardDetail({ model, row }: { model: AgentsViewModel; row: BoardRow }) 
                 ) : null}
                 <DeleteBoardButton model={model} row={row} />
             </div>
-            {/* wide enough (640px) the canvas has the turns beside it; narrower they stack, the turns scrolling in what is left */}
-            <div className="flex min-h-0 flex-1 flex-col @[640px]:flex-row">
-                {/* the strip (the drawings row and Edit) sits directly above the canvas, in the canvas's column */}
-                <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-                    <BoardStrip boardId={row.id} />
-                    <div className="relative min-h-0 min-w-0 flex-1">
-                        <BoardCanvas project={row.project} boardId={row.id} highlightIds={highlight} />
-                        <MotionConfig reducedMotion="user">
-                            <AnimatePresence initial={false}>
-                                {empty ? (
-                                    <motion.div
-                                        key="empty"
-                                        data-board-empty
-                                        variants={layerFade}
-                                        initial="initial"
-                                        animate="animate"
-                                        exit="exit"
-                                        // over the canvas, which stays under it: a press goes through to draw on it
-                                        className="pointer-events-none absolute inset-0 flex items-center justify-center px-6 text-center text-[13px] leading-[1.5] text-muted"
-                                    >
-                                        Nothing drawn yet. Press Edit to draw on it.
-                                    </motion.div>
-                                ) : null}
-                            </AnimatePresence>
-                        </MotionConfig>
-                    </div>
-                </div>
-                <div className="flex max-h-[45%] min-h-0 flex-none flex-col border-t border-edge-mid @[640px]:max-h-none @[640px]:w-[300px] @[640px]:border-l @[640px]:border-t-0">
-                    <BoardTurns
-                        talk={talk}
-                        mode="full"
-                        // Send to agent needs a live agent: this board's is gone. Draw instead and Retry still ask the drawer.
-                        canForward={false}
-                        onShow={(turn) => setHighlight([...(turn.shapeids ?? [])])}
-                        onOtherWay={(turn) => void act(() => rerouteBoardTurn(target, turn.id))}
-                        onStop={() => void act(() => stopBoardTurn(target))}
-                        onRetry={(turn) => void act(() => retryBoardTurn(target, turn.id))}
-                    />
-                    {error != null ? (
-                        <div
-                            role="alert"
-                            data-library-board-error
-                            className="mx-3.5 mb-1.5 flex-none text-[11.5px] leading-[1.4] text-error [overflow-wrap:anywhere]"
-                        >
-                            {error}
-                        </div>
-                    ) : null}
-                    {row.alive ? (
-                        // the roster filled in after the row was picked: the agent is running, so its board opens on the Agent surface
-                        <div className="flex flex-none items-center gap-2 px-3.5 pb-3 text-[12px] text-muted">
-                            <span data-library-board-running>The agent is running.</span>
-                            <button
-                                type="button"
-                                data-library-board-open-beside-chat
-                                onClick={() =>
-                                    void openTarget(model, { kind: "board", project: row.project, boardId: row.id })
-                                }
-                                className="cursor-pointer text-accent hover:text-accenthover"
+            {/* the strip (the drawings row and Edit) directly above the canvas; under it the status line, then the line
+                saying where the board can be asked about */}
+            <BoardStrip boardId={row.id} />
+            <div className="relative min-h-0 min-w-0 flex-1">
+                <BoardCanvas project={row.project} boardId={row.id} />
+                <MotionConfig reducedMotion="user">
+                    <AnimatePresence initial={false}>
+                        {empty ? (
+                            <motion.div
+                                key="empty"
+                                data-board-empty
+                                variants={layerFade}
+                                initial="initial"
+                                animate="animate"
+                                exit="exit"
+                                // over the canvas, which stays under it: a press goes through to draw on it
+                                className="pointer-events-none absolute inset-0 flex items-center justify-center px-6 text-center text-[13px] leading-[1.5] text-muted"
                             >
-                                Open on Agent
-                            </button>
-                        </div>
-                    ) : (
-                        <div className="flex flex-none flex-col gap-1.5 px-3.5 pb-3 text-[12px]">
-                            <span data-library-board-ended className="text-ink-faint">
-                                {ENDED_LINE}
-                            </span>
-                            <OpenBesideChat
-                                model={model}
-                                row={row}
-                                onPick={(tabId) =>
-                                    void act(async () => {
-                                        await RpcApi.BoardTakeOverCommand(TabRpcClient, {
-                                            project: row.project,
-                                            boardid: row.id,
-                                            tabid: tabId,
-                                        });
-                                        // beside the Chat of the agent just picked, as the button says
-                                        openBoard(model, tabId, row.project, row.id);
-                                    })
-                                }
-                            />
-                        </div>
-                    )}
-                </div>
+                                Nothing drawn yet. Press Edit to draw on it.
+                            </motion.div>
+                        ) : null}
+                    </AnimatePresence>
+                </MotionConfig>
+            </div>
+            <BoardStatus
+                talk={talk}
+                error={error}
+                onStop={() => void act(() => stopBoardTurn(target))}
+                onRetry={(turn) => void act(() => retryBoardTurn(target, turn.id))}
+            />
+            <div className="flex-none border-t border-edge-mid">
+                {row.alive ? (
+                    // the roster filled in after the row was picked: the agent is running, so its board opens on the Agent surface
+                    <div className="flex flex-none items-center gap-2 px-3.5 py-2 text-[12px] text-muted">
+                        <span data-library-board-running>The agent is running.</span>
+                        <button
+                            type="button"
+                            data-library-board-open-beside-chat
+                            onClick={() =>
+                                void openTarget(model, { kind: "board", project: row.project, boardId: row.id })
+                            }
+                            className="cursor-pointer text-accent hover:text-accenthover"
+                        >
+                            Open on Agent
+                        </button>
+                    </div>
+                ) : (
+                    <div className="flex flex-none flex-wrap items-center gap-x-2.5 gap-y-1 px-3.5 py-2 text-[12px]">
+                        <span data-library-board-ended className="text-ink-faint">
+                            {ENDED_LINE}
+                        </span>
+                        <OpenBesideChat
+                            model={model}
+                            row={row}
+                            onPick={(tabId) =>
+                                void act(async () => {
+                                    await RpcApi.BoardTakeOverCommand(TabRpcClient, {
+                                        project: row.project,
+                                        boardid: row.id,
+                                        tabid: tabId,
+                                    });
+                                    // beside the Chat of the agent just picked, as the button says
+                                    openBoard(model, tabId, row.project, row.id);
+                                })
+                            }
+                        />
+                    </div>
+                )}
             </div>
         </div>
     );
 }
 
 // An ended agent's board, handed to a live Claude agent of its project: the menu lists them, and with none it says to
-// start one. The menu opens upward, as the button sits at the foot of the turns column.
+// start one. The menu opens upward, as the button sits at the foot of the open board.
 function OpenBesideChat({
     model,
     row,

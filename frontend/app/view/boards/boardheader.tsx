@@ -18,8 +18,6 @@ import {
     Maximize2,
     MessageSquare,
     Minimize2,
-    PanelRightClose,
-    PanelRightOpen,
     Shapes,
     Trash2,
     X,
@@ -39,8 +37,6 @@ export interface BoardHeaderProps {
     chat?: { id: string; title: string; alive: boolean };
     chats?: readonly { id: string; name: string }[]; // the live Claude chats of the board's project, to move it to
     onChat?: (tabId: string) => void;
-    turnsFolded?: boolean;
-    onToggleTurns?: () => void;
     onClose: () => void;
     parts?: readonly BoardPart[];
     part?: number | null;
@@ -255,8 +251,6 @@ export function BoardHeader({
     chat,
     chats,
     onChat,
-    turnsFolded = false,
-    onToggleTurns,
     parts = [],
     part = null,
     onPart,
@@ -372,19 +366,6 @@ export function BoardHeader({
             ) : null}
             {chat != null && chats != null && onChat != null ? (
                 <ChatPicker chat={chat} chats={chats} onChat={onChat} />
-            ) : null}
-            {onToggleTurns != null ? (
-                <HeaderButton
-                    label={turnsFolded ? "Show turns" : "Hide turns"}
-                    attr="data-board-turns-toggle"
-                    onClick={onToggleTurns}
-                >
-                    {turnsFolded ? (
-                        <PanelRightOpen size={14} strokeWidth={2} />
-                    ) : (
-                        <PanelRightClose size={14} strokeWidth={2} />
-                    )}
-                </HeaderButton>
             ) : null}
             {onToggleExpanded != null ? (
                 <HeaderButton label={expandLabel} attr="data-board-expand" onClick={onToggleExpanded}>

@@ -49,15 +49,17 @@ and a picture given to a line that is not big.
 - Buttons on a board's strip, beside Edit: Copy view puts the board on the clipboard as a picture, just as it shows at
   its zoom; Export saves the drawing in view as a PNG or SVG file; and while Edit is on, Delete removes the drawing in
   view, with an Undo on its toast.
-- While you read one part of a board (‹ 3/13 ›), the ask line under its turns asks about that part: its shapes go with
-  your question as if you had selected them, and the line says "Asking about" and the part's name. With Edit on, a
-  trash button beside the stepper deletes the part (one drawn by mistake), with an Undo on its toast.
+- While you read one part of a board (‹ 3/13 ›) with Edit on, a trash button beside the stepper deletes the part (one
+  drawn by mistake), with an Undo on its toast.
 
 ### Changed
 
 - An agent can now fix a drawing on a board in place, or delete one, instead of drawing a corrected copy beside it:
   ask it to fix "Part 1" and the drawer edits that drawing.
 - A board's Tidy button is gone.
+- A board no longer has a turns column or an ask box, so the canvas gets the whole cell: ask about a board in Chat
+  with `@board`. A line under the canvas shows only while the drawer works (Stop once it runs long) or when the latest
+  drawing failed (why, and Retry). Library → Boards drops its turns column the same way.
 - When a board's drawer answers in a way Arc can't use (a label over 12 words, a reply that is not one JSON object),
   it is told why and asked once more, so fewer drawings end in "Couldn't draw" and need the agent to ask again.
 - A board's drawer starts a fresh session once its talk has grown long, instead of re-reading the whole day's

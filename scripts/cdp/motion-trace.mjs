@@ -8,9 +8,9 @@
 // those frames into motions, and prints each with its frame count and length; a change drawn in one frame is a SNAP.
 // The arc:ux-check skill (skills/ux-check/) is where an agent is sent here from.
 //
-//   node scripts/cdp/motion-trace.mjs --selector "[data-board-turns-column], [data-board-turns-strip]" \
-//       --do "document.querySelector('[data-board-turns-toggle]').click()" \
-//       --do "document.querySelector('[data-board-turns-strip]').click()" --out /tmp/turns
+//   node scripts/cdp/motion-trace.mjs --selector "[data-board-cell], [data-board-status]" \
+//       --do "document.querySelector('[data-board-expand]').click()" \
+//       --do "document.querySelector('[data-board-expand]').click()" --out /tmp/board-expand
 //
 // --selector  CSS for the elements to watch (a comma list watches several kinds; each is told apart by its tag and
 //             data-* attribute names).

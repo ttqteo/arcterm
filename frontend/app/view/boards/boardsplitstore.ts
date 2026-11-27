@@ -64,26 +64,6 @@ export function setBoardMax(ref: BoardSplit, on: boolean): void {
     globalStore.set(boardMaxAtom(boardKey(ref)), on);
 }
 
-// The turns column folded to a strip, per board and kept across launches (by board key).
-const turnsFoldedStoreAtom = atomWithStorage<Record<string, boolean>>("board.turns.folded", {}, undefined, {
-    getOnInit: true,
-}) as PrimitiveAtom<Record<string, boolean>>;
-
-export const turnsFoldedAtom = atomFamily((key: string) =>
-    atom(
-        (get) => get(turnsFoldedStoreAtom)?.[key] === true,
-        (get, set, folded: boolean) => {
-            const next = { ...(get(turnsFoldedStoreAtom) ?? {}) };
-            if (folded) {
-                next[key] = true;
-            } else {
-                delete next[key];
-            }
-            set(turnsFoldedStoreAtom, next);
-        }
-    )
-);
-
 // what openBoard needs of AgentsViewModel; spelled out so it can be tested without one
 export interface BoardOpenModel extends GridModel {
     openTerminal(agentId: string): void;

@@ -2,9 +2,12 @@
 // 2026-11-22-board-cells-design.md). The agent's tree lists the board as a row under it; clicking the row opens it as a
 // cell right of the agent's, `[data-board-cell]` inside a `[data-board-cell-of="<project>/<board>"]` wrapper that is a
 // sibling of the agent's `[data-agent-terminal]` cell, never inside it. A board cell is a cell of its own (more than one
-// can be open); these steps open one at a time, openBoardOn closing the others first. Its header, turns and ask box are the steps below, each a screenshot plus
-// a DOM assert. Beside Chat only the latest turn shows, so a step that reads one turn's row puts that turn last; a dense
-// board (B3) reads one part at a time (8b), a small one (B1) reads whole once expanded and gets its parts back collapsed.
+// can be open); these steps open one at a time, openBoardOn closing the others first. Its header and status line are the
+// steps below, each a screenshot plus a DOM assert. There is no turns column and no ask box: questions about a board go
+// through Chat's `@board`. Under the canvas one status line (`[data-board-status]`) shows the turn the drawer is on, the
+// next one queued, or the latest turn when it failed; with none of those it is not there, so a step that reads it puts
+// that turn last (statusTurn picks from the talk). A dense board (B3) reads one part at a time (8b), a small one (B1)
+// reads whole once expanded and gets its parts back collapsed.
 //
 // Steps 17 and 18 are the drawings (docs/superpowers/specs/2026-11-25-kael-sync-boards-drawings-design.md): a board opens
 // in Excalidraw's view mode with an Edit switch in the strip above it (17), and each drawer answer is a numbered frame, a
@@ -15,7 +18,7 @@
 // Two fixture claude agents over real tabs (no controller, so nothing runs) and a mock roster for them; the first has a
 // short transcript so Chat has something to show beside the board. The board commands are stubbed in the page
 // (boards-fixtures.mjs): no real drawer runs and wavesrv holds no board. A turn's state is whatever the step puts in the
-// fixture talk, and a button's call is read back from the stub's record.
+// fixture talk, and a button's call (Stop, Retry) is read back from the stub's record.
 
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -152,7 +155,7 @@ const runningTurn = (now, over = {}) => ({
 export default function (kit) {
     const { waveService, polishNap, ahReload, GRID_KEY, GRID_EMPTY } = kit;
     const { makeTab, closeTabs } = AC.tabFixtures({ waveService });
-    const LS_KEYS = [GRID_KEY, "agent.chatmode", "agent.openboards", "board.turns.folded", "agent.header.buttons"];
+    const LS_KEYS = [GRID_KEY, "agent.chatmode", "agent.openboards", "agent.header.buttons"];
 
     const rosterRows = (ctx) =>
         [ctx.agent, ctx.other, ctx.third, ctx.fourth].filter(Boolean).map((tab, i) => ({
@@ -331,20 +334,25 @@ export default function (kit) {
                 return h.ev(`performance.memory?.usedJSHeapSize ?? null`);
             };
             const mb = (bytes) => (bytes == null ? null : Math.round((bytes / 1048576) * 10) / 10);
-            // what the open board's turns read as, in the order drawn
-            const turnRows = () =>
-                h.ev(`[...document.querySelectorAll(${q(`${BOARD} [data-board-turn]`)})].map((row) => ({
-                    id: row.getAttribute("data-board-turn"),
-                    state: row.getAttribute("data-board-turn-state"),
-                    label: (row.querySelector("[data-board-turn-label]")?.textContent ?? "").trim(),
-                    labelClass: row.querySelector("[data-board-turn-label]")?.className ?? "",
-                    note: (row.querySelector("[data-board-turn-note]")?.textContent ?? "").trim(),
-                    reason: (row.querySelector("[data-board-turn-reason]")?.textContent ?? "").trim(),
-                    reply: (row.querySelector("[data-board-turn-reply]")?.textContent ?? "").trim(),
-                    buttons: [...row.querySelectorAll("button")].map((b) => b.textContent.trim()),
-                    text: row.textContent.replace(/\\s+/g, " ").trim(),
-                }))`);
-            const rowOf = (rows, id) => rows.find((r) => r.id === id);
+            // the status line under the open board's canvas as it reads, or null when there is none (it shows only while the
+            // drawer works or the latest turn failed); its state is the line's data-board-status
+            const statusLine = () =>
+                h.ev(`(() => {
+                    const el = document.querySelector(${q(`${BOARD} [data-board-status]`)});
+                    if (el == null) return null;
+                    const label = el.querySelector("[data-board-status-label]");
+                    return {
+                        state: el.getAttribute("data-board-status"),
+                        turn: el.getAttribute("data-board-status-turn"),
+                        label: (label?.textContent ?? "").trim(),
+                        labelClass: label?.className ?? "",
+                        text: (el.querySelector("[data-board-status-text]")?.textContent ?? "").trim(),
+                        reason: (el.querySelector("[data-board-status-reason]")?.textContent ?? "").trim(),
+                        error: (el.querySelector("[data-board-status-error]")?.textContent ?? "").trim(),
+                        buttons: [...el.querySelectorAll("button")].map((b) => b.textContent.trim()),
+                    };
+                })()`);
+            const statusCount = () => count(`${BOARD} [data-board-status]`);
             // the terminal pane's box: Chat's cell halves when the board joins it, but the pane itself is never re-parented
             // or remounted (kept: a flag on its node, read back after every change of the grid)
             const termBox = () => box(`${CELL} .cockpit-focus-pane`);
@@ -432,9 +440,9 @@ export default function (kit) {
                 await polishNap(300);
                 return ok;
             };
-            // the board's mode as drawn: the canvas's flag, Excalidraw's own, its drawing toolbar and style panel, the Edit
-            // switch and the ask box's line. The drawing toolbar is probed by .App-toolbar-container, which both layouts
-            // render only while the drawing tools show: the phone layout's bottom footer.App-toolbar stays in view mode
+            // the board's mode as drawn: the canvas's flag, Excalidraw's own, its drawing toolbar and style panel and the Edit
+            // switch. The drawing toolbar is probed by .App-toolbar-container, which both layouts render only while the
+            // drawing tools show: the phone layout's bottom footer.App-toolbar stays in view mode
             const readMode = async (id) => {
                 const m = await canvasPage(`
                     const c = document.querySelector('${BOARD} [data-board-canvas="${id}"]');
@@ -446,8 +454,7 @@ export default function (kit) {
                         selected: selected(),
                     };`);
                 const edit = await h.ev(`document.querySelector(${q(`${SPLIT(id)} [data-board-edit]`)})?.getAttribute("aria-pressed") ?? null`);
-                const hint = await text(`${SPLIT(id)} [data-board-ask-selected]`);
-                return { ...m, edit, hint };
+                return { ...m, edit };
             };
             // a left-button drag from a point, px right and px down, as a pointer would
             const dragBy = async (from, px) => {
@@ -468,6 +475,9 @@ export default function (kit) {
                 await feedBoardUpdate(h, { project: PROJECT, boardid: boardId, what: "answer" });
                 const ackOf = async () => (await boardCalls(h, "BoardAnswerAckCommand")).find((c) => c.answerid === answerId);
                 const acked = await until(async () => (await ackOf()) != null);
+                // the answering turn put the status line up, and the answered one takes it away: the canvas has its full
+                // height back before a step measures where the view ended
+                await until(async () => (await statusCount()) === 0, 4000);
                 return { acked, ack: await ackOf() };
             };
             // the live frames a board's saved file holds
@@ -609,116 +619,73 @@ export default function (kit) {
                 );
             });
 
-            // --- 2. beside Chat only the latest turn shows, one line, with "N earlier" for the rest ---
-            await run("2. one turn shows beside Chat: a drawn one with Show, a forwarded one reading forwarded · answered in Chat", async (name) => {
+            // --- 2. the status line: there only while the drawer works or the latest turn failed ---
+            await run("2. with no turn answering, the status line shows only a failed latest turn (Couldn't draw, its reason, Retry); drawn, forwarded, stopped and an earlier failed turn show none", async (name) => {
                 const now = Date.now();
-                // as fixed: the agent's drawn request is the latest
-                const base = await turnRows();
-                const baseEarlier = await text(`${BOARD} [data-board-turns-earlier]`);
-                // your drawn ask last
-                await putTurns(h, B1, lastTurn(now, TA));
-                await until(async () => rowOf(await turnRows(), TA) != null);
-                const rowsA = await turnRows();
-                const a = rowOf(rowsA, TA);
-                const clicked = await click(`${SPLIT(B1)} [data-board-turn="${TA}"] [data-board-turn-show]`);
-                const shown = await until(() => h.ev(`document.querySelector(${q(`${SPLIT(B1)} ${CANVAS(B1)}`)})?.dataset.boardHighlight === "tauri-host,auth-key"`));
-                const highlight = await h.ev(`document.querySelector(${q(`${SPLIT(B1)} ${CANVAS(B1)}`)})?.dataset.boardHighlight ?? null`);
-                const picked = await canvasPage(`return selected();`);
-                // Show selected the shapes, but a board opens in view mode, where the ask box does not name a selection
-                const asking = await text(`${SPLIT(B1)} [data-board-ask-selected]`);
-                await shot("2-turns-show");
-                // the forwarded question last
-                await putTurns(h, B1, lastTurn(now, TB));
-                await until(async () => rowOf(await turnRows(), TB) != null);
-                const rowsB = await turnRows();
-                const b = rowOf(rowsB, TB);
+                const reason = "the drawer could not read the transcript";
+                const failedTurn = runningTurn(now, { state: "failed", reason, answeredts: now - 1000 });
+                // a failed latest turn first: the line shows, so a later "none" is the line gone and not one that never drew
+                await putTurns(h, B1, [...baseTurns(now), failedTurn]);
+                const shown = await until(async () => (await statusLine())?.state === "failed");
+                const failed = await statusLine();
+                const lines = await statusCount();
+                const stopHidden = (await count(`${SPLIT(B1)} [data-board-status-stop]`)) === 0;
+                await shot("2-status-failed");
+                // no line with only drawn and forwarded turns, nor with a stopped one last, nor when a drawn turn follows the
+                // failed one; each is put and given a moment, as the line leaves on an exit animation
+                const none = async (turns) => {
+                    await putTurns(h, B1, turns);
+                    await until(async () => (await statusCount()) === 0);
+                    await polishNap(400);
+                    return (await statusCount()) === 0;
+                };
+                const base = baseTurns(now);
+                const afterDrawn = await none([base[0], base[1], failedTurn, base[2]]);
+                const onlyDrawn = await none(base);
+                const forwardedLast = await none(lastTurn(now, TB));
+                const stoppedLast = await none([...base, runningTurn(now, { state: "stopped", answeredts: now - 1000 })]);
+                // as the steps after expect: the base talk, no line
+                await putTurns(h, B1, base);
                 rec(
                     name,
-                    base.length === 1 &&
-                        base[0].id === TC &&
-                        base[0].state === "drawn" &&
-                        base[0].buttons.join() === "Show" &&
-                        baseEarlier === "2 earlier" &&
-                        rowsA.length === 1 &&
-                        a?.state === "drawn" &&
-                        a.label === "Drawn" &&
-                        a.text.includes("+2 shapes") &&
-                        a.buttons.includes("Show") &&
-                        a.buttons.includes("Send to agent") &&
-                        rowsB.length === 1 &&
-                        b?.state === "forwarded" &&
-                        b.note === "forwarded · answered in Chat" &&
-                        // the copied reply is for the expanded column, not the narrow one
-                        b.reply === "" &&
-                        b.buttons.join() === "Draw instead" &&
-                        clicked &&
-                        shown &&
-                        highlight === "tauri-host,auth-key" &&
-                        picked.join() === "auth-key,tauri-host" &&
-                        asking === "Press Edit to ask about shapes",
-                    { base, baseEarlier, rowsA, rowsB, highlight, picked, asking }
+                    shown &&
+                        failed?.state === "failed" &&
+                        failed.turn === TD &&
+                        failed.label === "Couldn't draw" &&
+                        failed.labelClass.includes("text-error") &&
+                        failed.text === "add the build step" &&
+                        failed.reason === `${reason} · nothing changed` &&
+                        failed.buttons.join() === "Retry" &&
+                        lines === 1 &&
+                        stopHidden &&
+                        afterDrawn &&
+                        onlyDrawn &&
+                        forwardedLast &&
+                        stoppedLast,
+                    { failed, lines, stopHidden, afterDrawn, onlyDrawn, forwardedLast, stoppedLast }
                 );
             });
 
-            // --- 3. send the other way: each button asks wavesrv to reroute its turn ---
-            await run("3. Send to agent and Draw instead each call BoardRerouteCommand with the turn id", async (name) => {
-                const now = Date.now();
-                await putTurns(h, B1, lastTurn(now, TA));
-                await until(async () => rowOf(await turnRows(), TA) != null);
-                const sent = await click(`${SPLIT(B1)} [data-board-turn="${TA}"] [data-board-turn-other]`);
-                await putTurns(h, B1, lastTurn(now, TB));
-                await until(async () => rowOf(await turnRows(), TB) != null);
-                const drawn = await click(`${SPLIT(B1)} [data-board-turn="${TB}"] [data-board-turn-other]`);
-                await until(async () => (await boardCalls(h, "BoardRerouteCommand")).length === 2);
-                const calls = await boardCalls(h, "BoardRerouteCommand");
-                const errors = await count(`${BOARD} [data-board-error]`);
-                await shot("3-reroute");
-                rec(
-                    name,
-                    sent &&
-                        drawn &&
-                        calls.length === 2 &&
-                        calls[0].turnid === TA &&
-                        calls[1].turnid === TB &&
-                        calls.every((c) => c.project === PROJECT && c.boardid === B1) &&
-                        errors === 0,
-                    { calls, errors }
-                );
-            });
-
-            // --- 4. select a shape on the canvas: the ask box names it, and Ask sends it along ---
-            await run("4. in Edit, selecting a shape reads Selected <label> in the ask box, and Ask sends on, selectedids and the shape's drawing", async (name) => {
-                // a board opens in view mode, where a selection is not the ask's: Edit first
+            // --- 4. select a shape on the canvas in Edit: a press in the board cell is no focus change ---
+            await run("4. in Edit, a click on a shape selects it and is no focus change: the agent stays the selected one, the header stays its own, the keyboard is not handed to an xterm", async (name) => {
+                // a board opens in view mode, where a click does not select: Edit first
                 const editOn = await setEdit(B1, true);
-                // B1's loose shapes were wrapped in one frame when it opened: the drawing a selected shape belongs to
+                // B1's loose shapes were wrapped in one frame when it opened
                 const drawings = await framesNow();
-                // Show in step 2 left two shapes selected: with none selected the box says how to select
                 await canvasPage(`app().updateScene({ appState: { selectedElementIds: {} } }); return true;`);
-                await until(async () => (await text(`${SPLIT(B1)} [data-board-ask-selected]`)) === "Select shapes to ask about them");
-                const none = await text(`${SPLIT(B1)} [data-board-ask-selected]`);
-                // Show scrolled to its shapes with an animation: take the position once the view has settled
-                await polishNap(900);
+                await polishNap(300);
                 // near the lower-right corner, as step 17a clicks: in a narrow half cell a one-box part's Read label sits
                 // over the box's middle, and a click there opens Read instead of selecting the shape
                 const at = await canvasPage(`return pointIn("auth-key", 0.85, 0.8);`);
                 await clickAt(at);
-                const selectedText = await until(async () => (await text(`${SPLIT(B1)} [data-board-ask-selected]`)) === "Selected auth key");
+                const selectedOk = await until(async () => (await canvasPage(`return selected();`)).join() === "auth-key");
                 const picked = await canvasPage(`return selected();`);
                 // a press inside the board cell is no focus change: the agent stays the selected one, the header stays its
                 // own, and the keyboard is not handed to an xterm
                 const afterPress = await state();
                 const headerAfterPress = await headerOf();
                 const inXterm = await h.ev(`!!document.activeElement?.closest?.(".xterm")`);
-                await typeInto(`${SPLIT(B1)} [data-board-ask-input]`, "why does it change?");
-                const afterTyping = await state();
-                const headerAfterTyping = await headerOf();
-                const asking = await h.ev(`!!document.activeElement?.closest?.(${q(`${BOARD} [data-board-ask-input]`)}) || document.activeElement?.matches?.(${q(`${BOARD} [data-board-ask-input]`)})`);
-                const enabled = await h.ev(`!document.querySelector(${q(`${SPLIT(B1)} [data-board-ask-send]`)})?.disabled`);
-                await shot("4-selected-ask");
-                const clicked = await click(`${SPLIT(B1)} [data-board-ask-send]`);
-                await until(async () => (await boardCalls(h, "BoardAskCommand")).length === 1);
-                const calls = await boardCalls(h, "BoardAskCommand");
-                const emptied = await until(() => h.ev(`document.querySelector(${q(`${SPLIT(B1)} [data-board-ask-input]`)})?.value === ""`));
+                await shot("4-selected");
                 // back to view mode, as every board opens: the steps after read B1 as a viewer
                 const editOff = await setEdit(B1, false);
                 rec(
@@ -727,112 +694,103 @@ export default function (kit) {
                         editOff &&
                         drawings.length === 1 &&
                         drawings[0].name === EARLIER &&
-                        none === "Select shapes to ask about them" &&
-                        selectedText &&
+                        selectedOk &&
                         picked.join() === "auth-key" &&
                         afterPress.focus === A &&
-                        afterTyping.focus === A &&
                         headerBefore != null &&
                         headerAfterPress === headerBefore &&
-                        headerAfterTyping === headerBefore &&
-                        !inXterm &&
-                        asking &&
-                        enabled &&
-                        clicked &&
-                        calls.length === 1 &&
-                        calls[0].project === PROJECT &&
-                        calls[0].boardid === B1 &&
-                        calls[0].question === "why does it change?" &&
-                        calls[0].on === "auth key" &&
-                        calls[0].selectedids?.join() === "auth-key" &&
-                        calls[0].drawingid === drawings[0]?.id &&
-                        emptied,
-                    { none, at, picked, focus: [afterPress.focus, afterTyping.focus], header: [headerBefore, headerAfterPress, headerAfterTyping], inXterm, asking, calls, drawings, emptied }
+                        !inXterm,
+                    { at, picked, focus: afterPress.focus, header: [headerBefore, headerAfterPress], inXterm, drawings }
                 );
             });
 
             // --- 5. a turn that answers, is slow, or fails ---
-            await run("5a. an answering turn shows its seconds in green and Ask is disabled", async (name) => {
+            await run("5a. an answering turn reads Answering · Ns in green on the status line, with no Stop", async (name) => {
                 const now = Date.now();
                 await putTurns(h, B1, [...baseTurns(now), runningTurn(now)]);
-                const shown = await until(async () => rowOf(await turnRows(), TD)?.state === "answering");
+                const shown = await until(async () => (await statusLine())?.state === "answering");
                 await polishNap(1200);
-                const rows = await turnRows();
-                const d = rowOf(rows, TD);
+                const d = await statusLine();
                 const seconds = Number(/(\d+)s$/.exec(d?.label ?? "")?.[1] ?? "NaN");
-                const disabled = await h.ev(`document.querySelector(${q(`${SPLIT(B1)} [data-board-ask-send]`)})?.disabled === true`);
-                const earlier = await text(`${BOARD} [data-board-turns-earlier]`);
+                const lines = await statusCount();
                 await shot("5a-answering");
                 rec(
                     name,
                     shown &&
-                        d?.label.startsWith("Answering · ") &&
+                        d?.turn === TD &&
+                        d.label.startsWith("Answering · ") &&
                         d.labelClass.includes("text-success") &&
+                        d.text === "add the build step" &&
                         seconds >= 14 &&
                         seconds < 30 &&
                         d.buttons.length === 0 &&
-                        disabled &&
-                        // four turns beside Chat: the running one and a line for the other three
-                        rows.length === 1 &&
-                        earlier === "3 earlier",
-                    { d, seconds, disabled, earlier, rows: rows.length }
+                        // the one line is for the turn the drawer is on, not one per turn
+                        lines === 1,
+                    { d, seconds, lines }
                 );
             });
 
-            await run("5b. a slow turn reads Still answering and Stop calls BoardAskStopCommand", async (name) => {
+            await run("5b. a slow turn reads Still answering on the status line, Stop calls BoardAskStopCommand and the line goes with the stopped turn", async (name) => {
                 const now = Date.now();
                 await putTurns(h, B1, [...baseTurns(now), runningTurn(now, { ts: now - 60_000, startedts: now - 60_000 })]);
-                const shown = await until(async () => rowOf(await turnRows(), TD)?.state === "slow");
-                const d = rowOf(await turnRows(), TD);
+                const shown = await until(async () => (await statusLine())?.state === "slow");
+                const d = await statusLine();
                 await shot("5b-slow");
-                const clicked = await click(`${SPLIT(B1)} [data-board-turn="${TD}"] [data-board-turn-stop]`);
+                const clicked = await click(`${SPLIT(B1)} [data-board-status-stop]`);
                 await until(async () => (await boardCalls(h, "BoardAskStopCommand")).length === 1);
                 const calls = await boardCalls(h, "BoardAskStopCommand");
-                const stopped = await until(async () => rowOf(await turnRows(), TD)?.state === "stopped");
+                // a stopped latest turn shows no line
+                const gone = await until(async () => (await statusCount()) === 0);
                 rec(
                     name,
                     shown &&
-                        d?.label.startsWith("Still answering · ") &&
+                        d?.turn === TD &&
+                        d.label.startsWith("Still answering · ") &&
                         d.labelClass.includes("text-warning") &&
                         d.buttons.join() === "Stop" &&
                         clicked &&
                         calls.length === 1 &&
                         calls[0].project === PROJECT &&
                         calls[0].boardid === B1 &&
-                        stopped,
-                    { d, calls, stopped }
+                        gone,
+                    { d, calls, gone }
                 );
             });
 
-            await run("5c. a failed turn reads Couldn't answer with its reason and Retry calls BoardAskRetryCommand", async (name) => {
+            await run("5c. a failed turn reads Couldn't draw on the status line with its reason and Retry calls BoardAskRetryCommand", async (name) => {
                 const now = Date.now();
                 const reason = "the drawer could not read the transcript";
                 await putTurns(h, B1, [...baseTurns(now), runningTurn(now, { state: "failed", reason, answeredts: now - 1000 })]);
-                const shown = await until(async () => rowOf(await turnRows(), TD)?.state === "failed");
-                const d = rowOf(await turnRows(), TD);
+                const shown = await until(async () => (await statusLine())?.state === "failed");
+                const d = await statusLine();
                 await shot("5c-failed");
-                const clicked = await click(`${SPLIT(B1)} [data-board-turn="${TD}"] [data-board-turn-retry]`);
+                const clicked = await click(`${SPLIT(B1)} [data-board-status-retry]`);
                 await until(async () => (await boardCalls(h, "BoardAskRetryCommand")).length === 1);
                 const calls = await boardCalls(h, "BoardAskRetryCommand");
-                const retried = await until(async () => rowOf(await turnRows(), TD)?.state === "answering");
+                const retried = await until(async () => (await statusLine())?.state === "answering");
+                // the base talk again, so the steps after start with no line under the canvas
+                await putTurns(h, B1, baseTurns(Date.now()));
+                const cleared = await until(async () => (await statusCount()) === 0);
                 rec(
                     name,
                     shown &&
-                        d?.label === "Couldn't answer" &&
+                        d?.turn === TD &&
+                        d.label === "Couldn't draw" &&
                         d.labelClass.includes("text-error") &&
-                        d.reason.includes(reason) &&
+                        d.reason === `${reason} · nothing changed` &&
                         d.buttons.join() === "Retry" &&
                         clicked &&
                         calls.length === 1 &&
                         calls[0].turnid === TD &&
                         calls[0].boardid === B1 &&
-                        retried,
-                    { d, calls, retried }
+                        retried &&
+                        cleared,
+                    { d, calls, retried, cleared }
                 );
             });
 
-            // --- 6. Expand: the turns column in full, with the copied reply; Chat stays mounted under the board ---
-            await run("6. Expand takes the whole grid: every turn in a column with the copied reply, Chat's cell hidden but mounted", async (name) => {
+            // --- 6. Expand: the board over the whole grid; Chat stays mounted under it ---
+            await run("6. Expand takes the whole grid: the canvas across the board, Chat's cell hidden but mounted with its draft, Collapse gives Chat its box back, and Expand again leaves it expanded for step 7", async (name) => {
                 // a draft in the Chat box, and the box's node, to prove expanding never remounts the pane
                 const COMPOSER = `${CELL} [data-agent-chat="${A}"] [data-chat-input]`;
                 await typeInto(COMPOSER, "a draft I have not sent");
@@ -846,8 +804,6 @@ export default function (kit) {
                 const cellShown = await shownCells(CELL);
                 const cellMounted = await count(CELL);
                 const st = await state();
-                const rows = await turnRows();
-                const column = await box(`${SPLIT(B1)} [data-board-turns="full"]`);
                 const canvasBox = await box(`${SPLIT(B1)} ${CANVAS(B1)}`);
                 const label = await h.ev(`document.querySelector(${q(`${SPLIT(B1)} [data-board-expand]`)})?.getAttribute("aria-label") ?? null`);
                 const kept = await h.ev(`document.querySelector(${q(COMPOSER)})?.__keep === true`);
@@ -855,13 +811,13 @@ export default function (kit) {
                 const paneKeptMax = await paneKept();
                 await canvasReady(B1);
                 await shot("6-expanded");
-                // Collapse, then the "N earlier" line opens it again
+                // Collapse, then Expand again: step 7 reads the board still expanded
                 const collapsed = (await click(`${SPLIT(B1)} [data-board-expand]`)) && (await until(() => h.ev(`document.querySelector(${q(SPLIT(B1))})?.dataset.boardMax !== "true"`)));
                 await polishNap(300);
                 const keptAfter = await h.ev(`document.querySelector(${q(COMPOSER)})?.__keep === true`);
                 const termBack = await termBox();
                 const backShown = await shownCells(CELL);
-                const earlierClicked = await click(`${BOARD} [data-board-turns-earlier]`);
+                const expandClicked = await click(`${SPLIT(B1)} [data-board-expand]`);
                 const reopened = await until(() => h.ev(`document.querySelector(${q(SPLIT(B1))})?.dataset.boardMax === "true"`));
                 rec(
                     name,
@@ -885,16 +841,14 @@ export default function (kit) {
                         collapsed &&
                         backShown === 1 &&
                         JSON.stringify(termBack) === JSON.stringify(termHalf) &&
-                        rows.length === 4 &&
-                        rowOf(rows, TB)?.reply === REPLY &&
-                        column != null &&
-                        // wide enough: the turns column is beside the canvas, which keeps the room
+                        // the canvas takes the board's whole width: nothing sits beside it
                         canvasBox != null &&
+                        board != null &&
                         canvasBox.w >= 400 &&
-                        canvasBox.r <= column.l + 2 &&
-                        earlierClicked &&
+                        canvasBox.w >= board.w * 0.9 &&
+                        expandClicked &&
                         reopened,
-                    { grid, board, cellShown, cellMounted, column, rows: rows.length, reply: rowOf(rows, TB)?.reply, label, kept, draft, keptAfter, termHalf, termBack, collapsed, reopened, max: st.max }
+                    { grid, board, canvasBox, cellShown, cellMounted, label, kept, draft, keptAfter, termHalf, termBack, collapsed, reopened, max: st.max }
                 );
             });
 
@@ -1177,18 +1131,17 @@ export default function (kit) {
                 );
             });
 
-            await run("8c. reading a part, the ask line asks about it; in Edit the header's Delete takes the part's shapes off the board, the view goes back to the whole drawing with one part fewer, and the toast's Undo brings it back", async (name) => {
+            await run("8c. reading a part, in Edit the header's Delete takes the part's shapes off the board, the view goes back to the whole drawing with one part fewer, and the toast's Undo brings it back", async (name) => {
                 const CV = `${SPLIT(B3)} ${CANVAS(B3)}`;
                 const attr = (key) => h.ev(`document.querySelector(${q(CV)})?.dataset.${key} ?? null`);
                 const live = (id) => canvasPage(`return (app()?.scene.getNonDeletedElements() ?? []).some((e) => e.id === ${q(id)});`);
                 await openBoardOn(B3);
                 const ready = await canvasReady(B3);
                 const counted = await until(async () => (await text(`${SPLIT(B3)} [data-board-parts-count]`)) === "3 parts");
-                const wholeHint = await text(`${SPLIT(B3)} [data-board-ask-selected]`);
                 const opened = (await click(`${SPLIT(B3)} [data-board-parts-next]`)) && (await until(async () => (await attr("boardPart")) === "0"));
-                const askHint = await until(async () => (await text(`${SPLIT(B3)} [data-board-ask-selected]`)) === "Asking about Harness");
+                const named = await until(async () => (await text(`${SPLIT(B3)} [data-board-part-name]`)) === "Harness");
                 await polishNap(400);
-                await shot("8c-asking-part");
+                await shot("8c-reading-part");
                 // the part's Delete shows in Edit only
                 const noDeleteInView = (await count(`${SPLIT(B3)} [data-board-part-delete]`)) === 0;
                 const editOn = await setEdit(B3, true);
@@ -1207,8 +1160,8 @@ export default function (kit) {
                 await until(async () => (await box(SPLIT(B3))) == null);
                 rec(
                     name,
-                    ready && counted && wholeHint === "Press Edit to ask about shapes" && opened && askHint && noDeleteInView && editOn && stillReading && editOff && deleted && gone && whole && offFile && undone && back && inFile,
-                    { ready, counted, wholeHint, opened, askHint, noDeleteInView, editOn, stillReading, editOff, deleted, gone, whole, offFile, undone, back, inFile }
+                    ready && counted && opened && named && noDeleteInView && editOn && stillReading && editOff && deleted && gone && whole && offFile && undone && back && inFile,
+                    { ready, counted, opened, named, noDeleteInView, editOn, stillReading, editOff, deleted, gone, whole, offFile, undone, back, inFile }
                 );
             });
 
@@ -1411,32 +1364,6 @@ export default function (kit) {
                 await until(async () => (await h.ev(`document.querySelector(${q(`${SPLIT(B1)} [data-board-chat]`)})?.getAttribute("data-board-chat")`)) === A);
             });
 
-            // --- 14. Hide turns folds the column to a strip ---
-            await run("14. Hide turns folds the expanded board's turns column to a 14px strip; the strip opens it again", async (name) => {
-                await openBoardOn(B1);
-                await until(async () => (await shownCells(SPLIT(B1))) === 1);
-                await click(`${SPLIT(B1)} [data-board-expand]`);
-                await until(() => h.ev(`document.querySelector(${q(SPLIT(B1))})?.dataset.boardMax === "true"`));
-                const column = await until(async () => (await count(`${SPLIT(B1)} [data-board-turns-column]`)) === 1);
-                const canvasBefore = await box(`${SPLIT(B1)} ${CANVAS(B1)}`);
-                const folded = await click(`${SPLIT(B1)} [data-board-turns-toggle]`);
-                const strip = await until(async () => (await count(`${SPLIT(B1)} [data-board-turns-strip]`)) === 1 && (await count(`${SPLIT(B1)} [data-board-turns-column]`)) === 0);
-                await polishNap(300);
-                const stripBox = await box(`${SPLIT(B1)} [data-board-turns-strip]`);
-                const canvasAfter = await box(`${SPLIT(B1)} ${CANVAS(B1)}`);
-                const kept = await h.ev(`JSON.parse(localStorage.getItem("board.turns.folded") ?? "{}")[${q(`${PROJECT}/${B1}`)}] === true`);
-                await shot("14-turns-folded");
-                const reopened = await click(`${SPLIT(B1)} [data-board-turns-strip]`);
-                const back = await until(async () => (await count(`${SPLIT(B1)} [data-board-turns-column]`)) === 1);
-                await click(`${SPLIT(B1)} [data-board-expand]`);
-                await until(() => h.ev(`document.querySelector(${q(SPLIT(B1))})?.dataset.boardMax !== "true"`));
-                rec(
-                    name,
-                    column && folded && strip && near(stripBox?.w, 14, 1) && (canvasAfter?.w ?? 0) > (canvasBefore?.w ?? 0) + 200 && kept && reopened && back,
-                    { column, folded, strip, stripW: stripBox?.w, canvasBefore: canvasBefore?.w, canvasAfter: canvasAfter?.w, kept, reopened, back }
-                );
-            });
-
             // --- 15. drag the board onto another chat: it reads that chat ---
             await run("15. dragging the board's bar onto the centre of another agent's cell ties it to that chat", async (name) => {
                 await openBoardOn(B1);
@@ -1508,8 +1435,7 @@ export default function (kit) {
             });
 
             // --- 17. a board opens as a viewer: Excalidraw's view mode, with an Edit switch in the strip above the canvas ---
-            const HINT = (id) => `${SPLIT(id)} [data-board-ask-selected]`;
-            await run("17a. a board opens in view mode: no drawing toolbar, Edit not pressed, the ask box says Press Edit to ask about shapes, and a drag across a shape pans and moves nothing", async (name) => {
+            await run("17a. a board opens in view mode: no drawing toolbar, Edit not pressed, and a drag across a shape pans and moves nothing", async (name) => {
                 await closeBoardOn();
                 await openBoardOn(B1);
                 const ready = await canvasReady(B1);
@@ -1542,7 +1468,6 @@ export default function (kit) {
                         mode.viewMode === true &&
                         !mode.toolbar &&
                         mode.edit === "false" &&
-                        mode.hint === "Press Edit to ask about shapes" &&
                         // the strip is the canvas column's first row, right above the canvas
                         stripAbove &&
                         stripAligned &&
@@ -1555,41 +1480,14 @@ export default function (kit) {
                 );
             });
 
-            await run("17b. Show in view mode outlines the turn's shapes: they are selected, no style panel, and the ask box still says Press Edit to ask about shapes", async (name) => {
-                const now = Date.now();
-                await putTurns(h, B1, lastTurn(now, TA));
-                await until(async () => rowOf(await turnRows(), TA) != null);
-                const clicked = await click(`${SPLIT(B1)} [data-board-turn="${TA}"] [data-board-turn-show]`);
-                const shown = await until(() => h.ev(`document.querySelector(${q(`${SPLIT(B1)} ${CANVAS(B1)}`)})?.dataset.boardHighlight === "tauri-host,auth-key"`));
-                // the view scrolls to the shapes with an animation: take the state once it has settled
-                await polishNap(900);
-                const mode = await readMode(B1);
-                await shot("17b-show-view-mode");
-                rec(
-                    name,
-                    clicked &&
-                        shown &&
-                        mode.attr === "true" &&
-                        mode.viewMode === true &&
-                        mode.selected.join() === "auth-key,tauri-host" &&
-                        !mode.panel &&
-                        !mode.toolbar &&
-                        mode.hint === "Press Edit to ask about shapes",
-                    { clicked, shown, mode }
-                );
-            });
-
-            await run("17c. Edit brings the drawing toolbar back and a selection names itself; Edit again returns to view mode with nothing selected", async (name) => {
-                // Show left the shapes of 17b selected: with none selected the box says how to select
-                await canvasPage(`app().updateScene({ appState: { selectedElementIds: {} } }); return true;`);
+            await run("17c. Edit brings the drawing toolbar back and a shape can be selected; Edit again returns to view mode with nothing selected", async (name) => {
                 const on = await setEdit(B1, true);
-                await until(async () => (await text(HINT(B1))) === "Select shapes to ask about them");
                 const editing = await readMode(B1);
                 await canvasPage(`app().updateScene({ appState: { selectedElementIds: { "auth-key": true } } }); return true;`);
-                const named = await until(async () => (await text(HINT(B1))) === "Selected auth key");
+                const picked = await until(async () => (await canvasPage(`return selected();`)).join() === "auth-key");
                 await shot("17c-edit");
                 const off = await setEdit(B1, false);
-                await until(async () => (await text(HINT(B1))) === "Press Edit to ask about shapes");
+                const cleared = await until(async () => (await canvasPage(`return selected();`)).length === 0);
                 const viewing = await readMode(B1);
                 await shot("17c-view-again");
                 rec(
@@ -1599,16 +1497,15 @@ export default function (kit) {
                         editing.viewMode === false &&
                         editing.toolbar &&
                         editing.edit === "true" &&
-                        editing.hint === "Select shapes to ask about them" &&
-                        named &&
+                        picked &&
                         off &&
+                        cleared &&
                         viewing.attr === "true" &&
                         viewing.viewMode === true &&
                         !viewing.toolbar &&
                         viewing.edit === "false" &&
-                        viewing.selected.length === 0 &&
-                        viewing.hint === "Press Edit to ask about shapes",
-                    { editing, named, viewing }
+                        viewing.selected.length === 0,
+                    { editing, picked, viewing }
                 );
             });
 
@@ -1781,51 +1678,6 @@ export default function (kit) {
                 );
             });
 
-            await run("18d. an ask in view mode sends the drawing in view and no selection; in Edit, a shape of drawing 1 selected sends drawing 1's id", async (name) => {
-                const asksOf = async () => (await boardCalls(h, "BoardAskCommand")).filter((c) => c.boardid === B4);
-                const chips = await rowNow();
-                const inView = chips.find((c) => c.current)?.id;
-                const mode = await readMode(B4);
-                await typeInto(`${SPLIT(B4)} [data-board-ask-input]`, "why a queue?");
-                const clicked = await click(`${SPLIT(B4)} [data-board-ask-send]`);
-                await until(async () => (await asksOf()).length === 1);
-                const viewAsk = (await asksOf())[0];
-                // the stub's answering turn goes, so the box takes the next line
-                await putTurns(h, B4, []);
-                // Edit: drawing 1's "key" box is selected while drawing 3 is the one in view
-                const on = await setEdit(B4, true);
-                await canvasPage(`app().updateScene({ appState: { selectedElementIds: { "key-box": true } } }); return true;`);
-                const named = await until(async () => (await text(HINT(B4))) === "Selected key");
-                await typeInto(`${SPLIT(B4)} [data-board-ask-input]`, "why this key?");
-                const clicked2 = await click(`${SPLIT(B4)} [data-board-ask-send]`);
-                await until(async () => (await asksOf()).length === 2);
-                const editAsk = (await asksOf())[1];
-                await shot("18d-ask-in-edit");
-                const off = await setEdit(B4, false);
-                await putTurns(h, B4, []);
-                rec(
-                    name,
-                    mode.attr === "true" &&
-                        mode.hint === "Press Edit to ask about shapes" &&
-                        clicked &&
-                        inView === chips[2]?.id &&
-                        viewAsk?.question === "why a queue?" &&
-                        viewAsk.drawingid === inView &&
-                        (viewAsk.selectedids ?? []).length === 0 &&
-                        viewAsk.on == null &&
-                        on &&
-                        named &&
-                        clicked2 &&
-                        editAsk?.question === "why this key?" &&
-                        editAsk.drawingid === chips[0].id &&
-                        editAsk.drawingid !== inView &&
-                        editAsk.selectedids?.join() === "key-box" &&
-                        editAsk.on === "key" &&
-                        off,
-                    { chips, inView, viewAsk, editAsk }
-                );
-            });
-
             await run("18e. an edit answer that lengthens a text keeps it inside its drawing's frame, on a board that turns to Nunito", async (name) => {
                 const target = (await rowNow()).find((c) => c.current);
                 const readText = (id) =>
@@ -1925,38 +1777,33 @@ export default function (kit) {
                 );
             });
 
-            await run("18g. an empty board, expanded, says so over the canvas and in its turns, and both lines name Edit", async (name) => {
+            await run("18g. an empty board says so over the canvas, naming Chat's @board and Edit, and has no status line", async (name) => {
                 await closeBoardOn();
                 await putBoard(h, { id: B5, name: B5_NAME, project: PROJECT, agent: { tabid: A, title: AGENT_TITLE }, turns: [], elements: [], createdts: Date.now() - 600_000 });
                 await openBoardOn(B5);
                 const ready = await canvasReady(B5);
-                const clicked = await click(`${SPLIT(B5)} [data-board-expand]`);
-                const expanded = await until(() => h.ev(`document.querySelector(${q(SPLIT(B5))})?.dataset.boardMax === "true"`));
                 const shown = await until(async () => (await count(`${SPLIT(B5)} [data-board-empty]`)) === 1);
                 await polishNap(300);
                 const canvasLine = await text(`${SPLIT(B5)} [data-board-empty]`);
-                const turnsLine = await text(`${SPLIT(B5)} [data-board-turns="full"]`);
+                // no turn, so no status line
+                const lines = await statusCount();
                 // nothing drawn, so no row; the Edit switch is there from the start
                 const chips = await count(`${SPLIT(B5)} [data-board-drawings] [data-board-drawing]`);
                 const edit = await text(`${SPLIT(B5)} [data-board-edit]`);
                 await shot("18g-empty");
-                // as the step after expects: collapsed, and no board open
-                await click(`${SPLIT(B5)} [data-board-expand]`);
-                await until(() => h.ev(`document.querySelector(${q(SPLIT(B5))})?.dataset.boardMax !== "true"`));
+                // as the step after expects: no board open
                 await closeBoardOn();
                 rec(
                     name,
                     ready &&
-                        clicked &&
-                        expanded &&
                         shown &&
-                        canvasLine === "Nothing drawn yet. Ask below, or press Edit to draw." &&
+                        canvasLine === "Nothing drawn yet. Ask in Chat with @board, or press Edit to draw." &&
+                        canvasLine.includes("@board") &&
                         canvasLine.includes("Edit") &&
-                        turnsLine === "No turns yet. Ask below; to ask about shapes, press Edit and select them." &&
-                        turnsLine.includes("Edit") &&
+                        lines === 0 &&
                         chips === 0 &&
                         edit === "Edit",
-                    { canvasLine, turnsLine, chips, edit }
+                    { canvasLine, lines, chips, edit }
                 );
             });
 

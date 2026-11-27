@@ -355,7 +355,7 @@ export default function (kit) {
                     globalStore.set(boardEditingAtom(${JSON.stringify(BOARD_ID)}), ${on});
                     return true;`
                 );
-            await run("4. BoardCanvas: loads the file, Show selects shapes, a live answer is one undo step (its shapes and its frame together)", async (name) => {
+            await run("4. BoardCanvas: loads the file, a live answer is one undo step (its shapes and its frame together)", async (name) => {
                 // the split step 2 opened holds a canvas of this board once the split is drawn (Task 7): the smoke canvas must
                 // be the board's only mount, since the live answer lands on the newest one
                 await closeSplit();
@@ -375,17 +375,14 @@ export default function (kit) {
                     host.style.cssText = "position:fixed;left:80px;top:80px;width:960px;height:600px;z-index:9999;";
                     document.body.appendChild(host);
                     const root = D.createRoot(host);
-                    const smoke = (fx.smoke = { root, host, selections: [], resources: [] });
+                    const smoke = (fx.smoke = { root, host, resources: [] });
                     // the page's resource-timing buffer is already full of the dev server's modules, so what the canvas
                     // fetches is read from an observer
                     smoke.observer = new PerformanceObserver((list) => smoke.resources.push(...list.getEntries().map((e) => e.name)));
                     smoke.observer.observe({ type: "resource" });
-                    smoke.render = (highlightIds) =>
-                        root.render(R.createElement(Provider, { store: globalStore }, R.createElement(BoardCanvas, {
-                            project: ${JSON.stringify(PROJECT)}, boardId: ${JSON.stringify(BOARD_ID)}, highlightIds,
-                            onSelection: (s) => smoke.selections.push(s),
-                        })));
-                    smoke.render(null);
+                    root.render(R.createElement(Provider, { store: globalStore }, R.createElement(BoardCanvas, {
+                        project: ${JSON.stringify(PROJECT)}, boardId: ${JSON.stringify(BOARD_ID)},
+                    })));
                     return true;`
                 );
                 const loaded = await until(() => h.ev(`document.querySelector('${CANVAS}')?.dataset.boardReady === "true"`));
@@ -414,16 +411,10 @@ export default function (kit) {
                     };`
                 );
 
-                // Show: the shapes of a drawn turn are selected, and the selection is reported with its label
-                await canvas(`fx.smoke.render(["user-box"]); return true;`);
-                const shown = await until(() => h.ev(`document.querySelector('${CANVAS}')?.dataset.boardHighlight === "user-box"`));
-                const afterShow = await canvas(`return { selected: selected(), selections: fx.smoke.selections };`);
-                await shot("canvas-show");
-
                 // a live answer: handed to this canvas, one updateScene, saved under the canvas's rev, acked with its ids. The
                 // baselines come after the canvas's own save on opening (it wraps a board with no frame in Earlier drawings
-                // and saves once; this one has frames from the answers above, and the wait for the fonts and for Show is
-                // long past it either way), so the one save counted below is the answer's
+                // and saves once; this one has frames from the answers above, and the wait for the fonts is long past it
+                // either way), so the one save counted below is the answer's
                 const acks0 = (await boardCalls(h, "BoardAnswerAckCommand")).length;
                 const reads0 = (await boardCalls(h, "BoardReadCommand")).length;
                 const saves0 = (await boardCalls(h, "BoardSaveCommand")).length;
@@ -459,9 +450,6 @@ export default function (kit) {
                         fontUrls.local > 0 &&
                         fontUrls.remote.length === 0 &&
                         start.shapes === shapes0 &&
-                        shown &&
-                        afterShow.selected.join() === "user-box" &&
-                        afterShow.selections.at(-1)?.label === "my note" &&
                         landed &&
                         acks.at(-1).error == null &&
                         acks.at(-1).shapeids?.length === 2 &&
@@ -474,7 +462,7 @@ export default function (kit) {
                         undone &&
                         afterUndo.shapes === start.shapes &&
                         afterUndo.frames === start.frames,
-                    { loaded, editing, fontUrls, shapes0, start, shown, afterShow, afterAnswer, ack: acks.at(-1), saves: saves.length - saves0, reads: reads.length - reads0, undone, afterUndo }
+                    { loaded, editing, fontUrls, shapes0, start, afterAnswer, ack: acks.at(-1), saves: saves.length - saves0, reads: reads.length - reads0, undone, afterUndo }
                 );
             });
             // Edit goes off again, whatever the step did: the board is a viewer again for the steps after it
