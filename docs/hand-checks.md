@@ -24,6 +24,11 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
 
 ## 2026-11-27
 
+- [ ] (arcterm) **Rerun a done run's final-held land** (`land.go awaitsFinalRerun`, `mutation.go endedRunSettles`, 09044e387).
+  Unit tests only. Make an orchestrator run's Final fail on something outside the code (stop a service its Check
+  needs) and let it complete held: `wsh runs show <id>` reads `land held: the final stage failed` and the dag stays
+  `blocked`, not `closed`, and its lead tab closes. Fix the service and run `wsh runs rerun-final <id>`: it is accepted,
+  the stage passes, and within a watchdog tick the run lands on its own.
 - [ ] (arcterm) **Context ring drops after /compact** (`chatfooter.tsx`, `agentrailmodel.ts contextPctNow`). Unit test
   and typecheck only. In an agent's Chat with a large context, type `/compact`: once the Compacted divider shows
   "N → M tokens", the ring under the input reads M's percent (hover: M tokens), not the old one; after the next reply
