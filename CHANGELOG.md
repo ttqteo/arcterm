@@ -44,6 +44,8 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- The To review sheet on Jarvis shows each proposal whole, with its initiative under it, and scrolls when the list is
+  long. Before, a long list squeezed every row to fit and cut its text off.
 - A run on Codex or agy with no model picked shows its harness where it read "default": the plan review's stage line,
   New run's workers and the model picks.
 - The Brief's undo toast no longer covers the bottom of an open initiative (or any Brief sheet).

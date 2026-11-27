@@ -88,7 +88,9 @@ function Row({
     // the cursor rides the row you last touched, so j and k go on from it
     const touch = () => setRunReviewCursor(item.key);
     return (
-        <motion.div {...reveal} className="overflow-hidden">
+        // flex-none: in the group's column an overflow-hidden row has a min-height of 0, so it would shrink to fit and
+        // clip its label instead of the sheet scrolling
+        <motion.div {...reveal} className="flex-none overflow-hidden">
             <div
                 data-run-review-row={`${item.effortoid}:${item.label}`}
                 data-run-review-marked={marked ? "true" : undefined}
@@ -162,7 +164,12 @@ function Group({
     now: number;
 }) {
     return (
-        <motion.section {...reveal} data-run-review-group={group.runid} className="flex flex-col overflow-hidden">
+        // flex-none, as Row: a group must keep its height in the sheet's scrolling column, not shrink to fit it
+        <motion.section
+            {...reveal}
+            data-run-review-group={group.runid}
+            className="flex flex-none flex-col overflow-hidden"
+        >
             <div className="flex items-baseline gap-2 px-2.5 pb-1 pt-2">
                 <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-secondary" title={group.goal}>
                     {group.goal}
