@@ -1617,3 +1617,118 @@ func TestWakeMarkedAwakeJoiningAnAskingWakeAddsNoSecondNudge(t *testing.T) {
 		t.Error("the joiner cleared the asking mark of a wake that was still in flight")
 	}
 }
+
+// clearedAskEvent reports whether the last ask event of oref is the Cleared one of askId.
+func clearedAskEvent(oref, askId string) bool {
+	events := wps.Broker.ReadEventHistory(wps.Event_AgentAsk, oref, 1)
+	if len(events) != 1 {
+		return false
+	}
+	got, ok := events[0].Data.(baseds.AgentAskData)
+	return ok && got.Cleared && got.AskId == askId
+}
+
+// the marks a wake clears over a running process leave the kept ask behind unless the wake retires it too: with the marks
+// gone and the process running, nothing holds an answer to it any more, so the answer would be typed into a picker the
+// restarted process never drew
+func TestWakeMarkedAwakeRetiresTheKeptAsk(t *testing.T) {
+	setup := func(t *testing.T) (*sleepWorld, string, string) {
+		t.Helper()
+		w := newSleepWorld(t, markedSleepingMeta())
+		w.install(&agentRosterFacts{Tabs: []agentTabFacts{idleClaude(writeTranscript(t, "abc"))}})
+		askId := "ask-marked-awake-" + t.Name()
+		return w, askId, keptAskWorld(t, askId)
+	}
+	t.Run("a suspended ask nobody answered", func(t *testing.T) {
+		w, askId, oref := setup(t)
+		waiter := agentask.GlobalRegistry.RegisterWaiter(askId)
+		if !agentask.GlobalRegistry.Suspend(oref) {
+			t.Fatal("Suspend found no pending ask")
+		}
+		pendingAtDelivery := true
+		realDeliver := deliverAgentMessage
+		swap(t, &deliverAgentMessage, func(blockId, text string) {
+			_, pendingAtDelivery = agentask.GlobalRegistry.Get(oref)
+			realDeliver(blockId, text)
+		})
+
+		if err := (&WshServer{}).AgentsWakeCommand(context.Background(), wshrpc.CommandAgentsWakeData{Tab: agentsTabA, Message: "carry on"}); err != nil {
+			t.Fatal(err)
+		}
+		if w.resyncs != 0 {
+			t.Error("a running agent was restarted")
+		}
+		if v := w.metaValue(waveobj.MetaKey_AgentSleepAsking); v != nil {
+			t.Errorf("agent:sleepasking = %v, want it deleted", v)
+		}
+		if _, ok := agentask.GlobalRegistry.Get(oref); ok {
+			t.Error("the kept ask outlived the wake that cleared the marks")
+		}
+		if pendingAtDelivery {
+			t.Error("the kept ask was still pending when the nudge was delivered")
+		}
+		if !clearedAskEvent(oref, askId) {
+			t.Errorf("last ask event = %#v, want Cleared for %s", wps.Broker.ReadEventHistory(wps.Event_AgentAsk, oref, 1), askId)
+		}
+		select {
+		case res := <-waiter:
+			if !res.Cancelled {
+				t.Errorf("waiter resolved %+v, want cancelled", res)
+			}
+		default:
+			t.Error("the ask's waiter was never resolved")
+		}
+		want := wantSleepNudgeHead + "\n" + wantSleepNudgeTail + "\n\ncarry on"
+		if got := w.deliveries(); len(got) != 1 || got[0].blockId != agentsBlockA || got[0].text != want {
+			t.Errorf("delivered %+v, want the nudge with the message as one: %q", got, want)
+		}
+	})
+	t.Run("an ask that was never suspended stays", func(t *testing.T) {
+		w, askId, oref := setup(t)
+
+		if err := (&WshServer{}).AgentsWakeCommand(context.Background(), wshrpc.CommandAgentsWakeData{Tab: agentsTabA, Message: "carry on"}); err != nil {
+			t.Fatal(err)
+		}
+		if p, ok := agentask.GlobalRegistry.Get(oref); !ok || p.AskId != askId {
+			t.Errorf("pending ask = %+v (%v), want the one no sleep suspended left in place", p, ok)
+		}
+		if clearedAskEvent(oref, askId) {
+			t.Error("an ask no sleep had suspended was published as Cleared")
+		}
+		if got := w.deliveries(); len(got) != 1 {
+			t.Errorf("delivered %+v, want the one message", got)
+		}
+	})
+	t.Run("joining a wake in flight retires nothing", func(t *testing.T) {
+		w, askId, oref := setup(t)
+		agentask.GlobalRegistry.Suspend(oref)
+		call := &wakeCall{done: make(chan struct{})}
+		wakeMu.Lock()
+		wakeCalls[agentsBlockA] = call
+		wakeMu.Unlock()
+		t.Cleanup(func() {
+			wakeMu.Lock()
+			delete(wakeCalls, agentsBlockA)
+			wakeMu.Unlock()
+		})
+
+		errs := make(chan error, 1)
+		go func() {
+			errs <- (&WshServer{}).AgentsWakeCommand(context.Background(), wshrpc.CommandAgentsWakeData{Tab: agentsTabA, Message: "carry on"})
+		}()
+		time.Sleep(30 * time.Millisecond)
+		close(call.done)
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
+		if !agentask.GlobalRegistry.SuspendedAsk(oref, askId) {
+			t.Error("the joiner retired the kept ask of a wake that was still in flight")
+		}
+		if clearedAskEvent(oref, askId) {
+			t.Error("the joiner published the kept ask as Cleared")
+		}
+		if got := w.deliveries(); len(got) != 1 || got[0].text != "carry on" {
+			t.Errorf("delivered %+v, want the joiner's message alone", got)
+		}
+	})
+}

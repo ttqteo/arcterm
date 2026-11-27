@@ -96,6 +96,18 @@ describe("peekGroups", () => {
         ]);
     });
 
+    it("draws a sleeping agent that kept its question as asking, and one asleep without it as before", () => {
+        const kept = vm("kept", { state: "asking", sleeping: { since: 1, freedBytes: 0, asking: true } });
+        const plain = vm("plain", { state: "asking", sleeping: { since: 1, freedBytes: 0 } });
+        const idle = vm("idle", { sleeping: { since: 1, freedBytes: 0 } });
+        const rows = [group("p"), parent(kept, "p"), parent(plain, "p"), parent(idle, "p")];
+        expect(peekGroups(rows, byIdOf([kept, plain, idle]), nameOf)[0].rows).toMatchObject([
+            { id: "kept", dot: "asking" },
+            { id: "plain", dot: "idle" },
+            { id: "idle", dot: "idle" },
+        ]);
+    });
+
     it("names the no-folder group as the tree does", () => {
         const t = vm("t", { kind: "terminal" });
         expect(peekGroups([group(HOME_PROJECT), terminal(t, HOME_PROJECT)], byIdOf([t]), nameOf)[0].label).toBe(

@@ -36,7 +36,9 @@ function dotOf(vm: AgentVM, unread: number): PeekDot {
     if (vm.kind === "terminal") {
         return vm.running ? "working" : "idle";
     }
-    if (vm.state === "asking" && !vm.sleeping) {
+    // a sleeping agent that kept its question (sleeping.asking) still waits on you; one asleep without the mark has no
+    // process to ask with, so it reads like any sleeper
+    if (vm.state === "asking" && (!vm.sleeping || vm.sleeping.asking)) {
         return "asking";
     }
     if (unread > 0) {

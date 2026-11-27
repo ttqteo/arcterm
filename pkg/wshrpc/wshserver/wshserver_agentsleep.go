@@ -548,8 +548,8 @@ func joinWake(ctx context.Context, call *wakeCall, blockId, message string) erro
 
 // wakeMarkedAwake is a wake of an agent whose process runs while its block still says asleep: a wake in flight (its
 // process starts before it reports in), which it joins, or marks a wake could not clear, which it clears. The message
-// is delivered as to any awake agent. The cockpit reads the marks, so without this the row reads asleep over a running
-// agent and its Wake and its composer are refused.
+// is delivered as to any awake agent, and the question the sleep kept is retired with the marks. The cockpit reads the
+// marks, so without this the row reads asleep over a running agent and its Wake and its composer are refused.
 func wakeMarkedAwake(ctx context.Context, row *agentRow, message string) error {
 	wakeMu.Lock()
 	call, waking := wakeCalls[row.blockId]
@@ -563,6 +563,10 @@ func wakeMarkedAwake(ctx context.Context, row *agentRow, message string) error {
 		return err
 	}
 	slept := meta.GetBool(waveobj.MetaKey_AgentSleepAsking, false)
+	// the question the sleep kept does not outlive the marks: once they are gone nothing holds an answer to it (answerHeld
+	// reads them), and the process that runs never drew its picker, so an answer would be typed into nothing. Retired
+	// first, as runWake retires it before its restart, so no answer slips in between the marks going and the ask going.
+	retireKeptAsk(waveobj.MakeORef(waveobj.OType_Block, row.blockId).String())
 	err = updateBlockMeta(ctx, row.blockId, waveobj.MetaMapType{
 		waveobj.MetaKey_AgentSleeping:    nil,
 		waveobj.MetaKey_AgentSleepFreed:  nil,
