@@ -289,6 +289,12 @@ func TestPattern(t *testing.T) {
 		{"FOO=1 make build", "make build", false, true},
 		{"timeout 600 mvn package", "mvn package", false, true},
 		{"make build > build.log 2>&1", "make build", false, true},
+		// a flag's value is not the operand: git -C <dir> push is git push
+		{"git -C D:/Workspace/SIEM push origin DEV", "git push", false, true},
+		{"git -C D:/repo -c core.safecrlf=false status --short", "git status", false, true},
+		{"git --git-dir .git --work-tree . log -1", "git log", false, true},
+		{"git --git-dir=.git log -1", "git log", false, true},
+		{"make -C web -f Makefile.ci build", "make build", false, true},
 		// steps that do no work, and the pipeline tails, are dropped
 		{"cd web && make build 2>&1 | tail -5", "make build", false, true},
 		{"cd web; export CI=1; make build", "make build", false, true},
@@ -436,6 +442,10 @@ func TestClassifyWith(t *testing.T) {
 		{"make build && make test", learned, true, "make build", LearnedBytes},
 		{"make test && gradle build", learned, true, "gradle build", LearnedBytes},
 		{"make build; echo done", learned, true, "make build", LearnedBytes},
+		{"make -C web build", learned, true, "make build", LearnedBytes},
+		// a learned push does not make every git command in the repo heavy
+		{"git -C D:/repo push", map[string]bool{"git push": true}, true, "git push", LearnedBytes},
+		{"git -C D:/repo status", map[string]bool{"git push": true}, false, "", 0},
 		// not learned
 		{"make test", learned, false, "", 0},
 		{"make", learned, false, "", 0},
