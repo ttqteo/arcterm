@@ -120,8 +120,9 @@ var realSessionIdeasDeps = func() sessionideas.Deps {
 	return sessionideas.Deps{
 		Run:            runSessionIdeasModel,
 		ProjectContext: sessionIdeasProjectContext,
+		// the person's sessions only: a scan never reads, and the list never counts, one arcterm's machinery left
 		Candidates: func() []agentsessions.DigestSession {
-			return agentsessions.ClaudeDigestCandidates(agentsessions.DigestWindowDays)
+			return sessionideas.PersonSessions(agentsessions.ClaudeDigestCandidates(agentsessions.DigestWindowDays))
 		},
 		Read:        agentsessions.ReadDigestFor,
 		CleanupDays: func() int { return sessionideas.CleanupPeriodDays(sessionideas.ClaudeSettingsPath()) },

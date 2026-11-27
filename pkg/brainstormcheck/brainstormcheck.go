@@ -20,6 +20,18 @@ func Prompt(specPath, reportPath string) string {
 	return strings.NewReplacer("[DOCUMENT_PATH]", specPath, "[REPORT_PATH]", reportPath).Replace(promptTemplate)
 }
 
+// Openings is how the prompts of the two sessions Arc runs on a brainstorm begin: the first line of each template,
+// which holds no placeholder. Both sessions run as claude in a tab like the person's own, so a transcript reader tells
+// them apart by their first prompt (pkg/sessionideas).
+func Openings() []string {
+	return []string{firstLine(promptTemplate), firstLine(judgePromptTemplate)}
+}
+
+func firstLine(s string) string {
+	line, _, _ := strings.Cut(s, "\n")
+	return strings.TrimSpace(line)
+}
+
 // Project is the project a brainstorm's file belongs to: the directory above the .superpowers it sits under. A
 // brainstorm's relative spec path is relative to it.
 func Project(brainstormFile string) (string, error) {

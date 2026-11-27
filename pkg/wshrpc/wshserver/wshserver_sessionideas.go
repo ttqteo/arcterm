@@ -93,17 +93,20 @@ func underDir(path, dir string) bool {
 }
 
 // sessionIdeasUnscanned is storage.SessionUnscanned: a transcript is unscanned when no scan marked it, of any outcome
-// (a skipped session is scanned for good), and a scan would read it (it is not in the archive, and has been quiet for 2
-// days). Nothing scans inside a clean: Storage's Scan them first starts one. The transcript's size and mtime are the
+// (a skipped session is scanned for good), and a scan would read it (it is not in the archive, has been quiet for 2
+// days, and is not a session arcterm's machinery left, sessionideas.IsMachine). Nothing scans inside a clean: Storage's Scan them first starts one. The transcript's size and mtime are the
 // ones the measure just read when it listed the session.
 func sessionIdeasUnscanned(path string, size int64, mtime time.Time) bool {
 	marks, paths, ok := storageMarkIndex()
 	if !ok || paths[storagePathKey(path)] {
 		return false
 	}
-	return sessionideas.Eligible(agentsessions.DigestSession{
-		Path: path, Size: size, Mtime: mtime, Archived: underDir(path, sessionarchive.Dir()),
-	}, marks, time.Now())
+	s := agentsessions.DigestSession{Path: path, Size: size, Mtime: mtime, Archived: underDir(path, sessionarchive.Dir())}
+	if !sessionideas.Eligible(s, marks, time.Now()) {
+		return false
+	}
+	// a session arcterm's machinery left is never scanned, so it is never unscanned either
+	return !sessionideas.IsMachineTranscript(path, size, mtime.UnixMilli())
 }
 
 // SessionIdeasResolveCommand keeps or drops an idea that waits for review.

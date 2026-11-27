@@ -493,6 +493,15 @@ func TestSessionIdeasUnscannedHook(t *testing.T) {
 	passed, passedSize, passedMtime := ideasTranscript(t, dir, "passed", 40*day)
 	grown, grownSize, grownMtime := ideasTranscript(t, dir, "grown", 40*day)
 	archived, archivedSize, archivedMtime := ideasTranscript(t, filepath.Join(sessionarchive.Dir(), "-p-proj"), "archived", 40*day)
+	seat, _, _ := ideasTranscript(t, dir, "seat", 40*day)
+	seatBody := []byte(`{"type":"user","entrypoint":"sdk-cli","message":{"content":"You are UX, one expert"}}` + "\n")
+	if err := os.WriteFile(seat, seatBody, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	seatSize, seatMtime := int64(len(seatBody)), time.Now().Add(-40*day).Truncate(time.Millisecond)
+	if err := os.Chtimes(seat, seatMtime, seatMtime); err != nil {
+		t.Fatal(err)
+	}
 	if err := store.Update(func(d *wshrpc.SessionIdeasData) error {
 		d.Marks = []wshrpc.SessionIdeaMark{
 			{TranscriptPath: read, Size: readSize, MtimeMs: readMtime.UnixMilli(), Outcome: wshrpc.SessionIdeaOutcome_Nothing},
@@ -516,6 +525,7 @@ func TestSessionIdeasUnscannedHook(t *testing.T) {
 		{"one a scan passed over (it is scanned for good)", passed, passedSize, passedMtime, false},
 		{"one that grew since its scan has been scanned, so it is not never scanned", grown, grownSize, grownMtime, false},
 		{"one in arcterm's archive, which a scan leaves alone", archived, archivedSize, archivedMtime, false},
+		{"one arcterm's machinery left in the project's folder (a council seat)", seat, seatSize, seatMtime, false},
 	} {
 		if got := sessionIdeasUnscanned(c.path, c.size, c.mtime); got != c.want {
 			t.Errorf("%s: unscanned = %v, want %v", c.name, got, c.want)

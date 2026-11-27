@@ -66,7 +66,8 @@ and a picture given to a line that is not big.
 ### Added
 
 - From your sessions: Jarvis's Brief has a region for ideas that were floated in an earlier session and never decided.
-  Scan my sessions reads the sessions still on disk (one haiku call each, the first scan's cost estimated before you
+  Scan my sessions reads your sessions still on disk, not the ones arcterm's councils, runs and brainstorm checks leave
+  behind (one haiku call each, the first scan's cost estimated before you
   press it; nothing is scanned before that), and each idea shows what was said, the initiative it would go on and the day
   its transcript is deleted, with Keep (a pending chunk with the quote as its first note, or a new idea), Drop, Discuss
   (a sonnet agent on it) and Go through N with an agent. After that, sessions are scanned on their own before their

@@ -41,6 +41,11 @@ looks (the Jarvis Brief, Sprout, a brainstorm on its topic), not in a store of i
 - **Input:** a session's digest (the same file search reads), never the raw transcript. Sessions skipped: those in the
   archive (arcterm's machinery), those not quiet for 2 days (still being written), and the agents this feature opens to
   decide ideas (stamped when opened), so a later scan does not re-propose an idea from the talk about it.
+- **Machine sessions are neither read nor counted** (added 2026-11-27): the archive misses what arcterm's machinery
+  leaves in a project's own folder, which was a third of the transcripts on disk. A transcript whose records carry a
+  print-mode entrypoint (`sdk-*`) or the engine's (`bench`), or whose first prompt opens with the builder check's or the
+  brainstorm judge's prompt (both run as `cli`), is left out of the scan, the session list, the offer's estimate and
+  Storage's unscanned count (`pkg/sessionideas/machine.go`).
 - **One haiku call per session**, through `pkg/consult` with no tools. Its prompt carries, for the session's project:
   the open initiatives and their chunk labels, the existing ideas, spec and plan names, and `docs/deferred.md` headings.
   It answers with JSON: for each idea floated and not decided, a one-line English gist, the initiative it belongs to (or
