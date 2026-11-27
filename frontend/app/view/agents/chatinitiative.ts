@@ -26,10 +26,12 @@ export type InitiativeBlock = {
     chunk?: string;
     text: string;
     title?: string;
-    /** a new initiative's first chunks */
+    /** a new initiative's first chunks; a later list's items */
     chunks?: string[];
     /** a new initiative's topic, as a bare oid or `effort:<oid>` */
     parent?: string;
+    /** a list to leave for later: kind `chunk` with `chunks[]`, each item one later chunk (Builder's call 13) */
+    later?: boolean;
 };
 
 // a trimmed string, or undefined for anything else (a non-string, a blank)
@@ -77,6 +79,10 @@ export function parseInitiativeBlock(raw: string): InitiativeBlock | null {
         if (chunks.length > 0) {
             block.chunks = chunks;
         }
+    }
+    // a later list is a chunk block that lists its items; the mark means nothing on a note, a new initiative or a single chunk
+    if (o.later === true && kind === "chunk" && block.chunks != null) {
+        block.later = true;
     }
     return block;
 }
@@ -179,7 +185,9 @@ export function chunkLinesOf(chunks: string): string[] {
 // ---- the draft ----
 
 /** What the card holds while it waits: the person edits it, and it persists with the card. `chunks` is a new initiative's
- *  first chunks, one per line. A target is null until one is found or picked. */
+ *  first chunks, one per line. A target is null until one is found or picked. `later` is a later list's remaining rows (a
+ *  `chunk` draft that has it is a list the agent left for later: its `text` is the card's heading, its `effort` an
+ *  initiative or "new"); a draft with no rows left holds `[]`, a draft of any other card has no `later` at all. */
 export type InitiativeDraft = {
     kind: InitiativeKind;
     text: string;
@@ -188,7 +196,16 @@ export type InitiativeDraft = {
     effort: string | null;
     chunk: string | null;
     parent: string | null;
+    later?: string[];
 };
+
+/** The target a later list names when the person picks "+ New initiative from this session". */
+export const NEW_TARGET = "new";
+
+/** Pure: whether a draft is a later list (it holds rows, possibly none left). */
+export function isLaterDraft(draft: InitiativeDraft): draft is InitiativeDraft & { later: string[] } {
+    return draft.kind === "chunk" && Array.isArray(draft.later);
+}
 
 /** What the default target is looked up in. `efforts` is the initiative list (empty until it loads, and a target not in it
  *  is left empty); `chunksOf` gives an initiative's chunk labels when they are known. */
@@ -226,13 +243,42 @@ function targetOf(
 /** Pure: the card's first draft from a block the agent proposed. Every field is filled whatever the kind, so switching the
  *  kind in the editor keeps what was there; a chunk's text is clipped to a label, as the editor will show it. */
 export function draftFromBlock(block: InitiativeBlock, ctx: InitiativeCtx): InitiativeDraft {
+    // a later list keeps its items as rows (an item may hold line breaks, so they are not the new initiative's lines)
+    const later = block.later === true && block.kind === "chunk" && block.chunks != null;
     return {
         kind: block.kind,
         text: block.kind === "chunk" ? clipLabel(block.text) : block.text,
         title: block.title ?? (block.kind === "initiative" ? titleFromText(block.text) : ""),
-        chunks: (block.chunks ?? []).join("\n"),
+        chunks: later ? "" : (block.chunks ?? []).join("\n"),
         ...targetOf(ctx, block),
+        ...(later ? { later: [...(block.chunks ?? [])] } : {}),
     };
+}
+
+/** Pure: a later list's draft without the row at `index`; the same draft for a place no row holds and for a draft that is
+ *  no later list. */
+export function withoutLaterItem(draft: InitiativeDraft, index: number): InitiativeDraft {
+    if (!isLaterDraft(draft) || !Number.isInteger(index) || index < 0 || index >= draft.later.length) {
+        return draft;
+    }
+    return { ...draft, later: draft.later.filter((_, i) => i !== index) };
+}
+
+/** Pure: a key per row of a later list, for the view to fold the removed row away and keep the others: the row's text, and
+ *  for a text the list holds twice, which of the twins it is. */
+export function laterRowKeys(rows: readonly string[]): string[] {
+    const seen = new Map<string, number>();
+    return rows.map((text) => {
+        const n = seen.get(text) ?? 0;
+        seen.set(text, n + 1);
+        return `${n}:${text}`;
+    });
+}
+
+/** Pure: a later list's draft aimed at an initiative (an oref, or a bare oid) or at a new one ("new"). The rows stay. The
+ *  list has no chunk to aim at. */
+export function withLaterTarget(draft: InitiativeDraft, target: string): InitiativeDraft {
+    return { ...draft, effort: target === NEW_TARGET ? NEW_TARGET : effortOref(target), chunk: null };
 }
 
 /** Pure: the card's first draft from a message the person picked Add to initiative… on: a note with the whole text, into
@@ -260,6 +306,10 @@ export function withKind(draft: InitiativeDraft, kind: InitiativeKind): Initiati
 /** Pure: whether Add can run: a note needs an initiative, a chunk and text; a chunk an initiative and text; a new
  *  initiative a title. */
 export function canAdd(draft: InitiativeDraft): boolean {
+    if (isLaterDraft(draft)) {
+        // a later list names no chunk and has no editor for its text: it needs a target and a row left
+        return draft.effort != null && draft.later.length > 0;
+    }
     switch (draft.kind) {
         case "note":
             return draft.effort != null && draft.chunk != null && draft.text.trim() !== "";
@@ -272,6 +322,13 @@ export function canAdd(draft: InitiativeDraft): boolean {
 
 /** Pure: what a disabled Add waits on, in a few words for its tooltip; null once `canAdd`. */
 export function addBlocker(draft: InitiativeDraft): string | null {
+    if (isLaterDraft(draft)) {
+        return draft.effort == null
+            ? "Pick an initiative first"
+            : draft.later.length === 0
+              ? "Keep at least one item first"
+              : null;
+    }
     if (draft.kind === "initiative") {
         return draft.title.trim() === "" ? "Give it a title first" : null;
     }
@@ -289,6 +346,11 @@ export function verbOf(kind: InitiativeKind): string {
     return kind === "note" ? "Add note" : kind === "chunk" ? "Add chunk" : "Create initiative";
 }
 
+/** The button that adds a later list's rows: `Add 4 for later`. */
+export function laterVerb(count: number): string {
+    return count > 0 ? `Add ${count} for later` : "Add for later";
+}
+
 /** The kind switch's label, by kind. */
 export function kindLabel(kind: InitiativeKind): string {
     return kind === "note" ? "Note" : kind === "chunk" ? "New chunk" : "New initiative";
@@ -303,6 +365,9 @@ export type CardOrigin = "agent" | "message";
  *  edited its body (kind, text, title or first chunks), so a switch to Terminal and back, or a reload, keeps the editor
  *  they were in. A changed target (initiative, chunk, topic) alone is no edit: the compact card has those controls too. */
 export function startsInEditor(origin: CardOrigin, draft: InitiativeDraft, initial: InitiativeDraft): boolean {
+    if (isLaterDraft(draft)) {
+        return false; // a later list has no editor: the person removes rows and presses Add
+    }
     return (
         origin === "message" ||
         draft.kind !== initial.kind ||
@@ -394,7 +459,8 @@ export function waitingDot(phase: CardPhase, exited: boolean): boolean {
 /** What a handled card keeps: the outcome and what the row and the line say. `initiative` is its title (the new one's for
  *  a created initiative); `effort` its oref (the new one's, or null when a dismissed card had none); `chunk` a note's chunk
  *  label; `chunkNumber` the chunk's place (1-based), a new chunk's included; `text` the note, the chunk's label or the
- *  block's text; `topic` the new initiative's topic title. */
+ *  block's text; `topic` the new initiative's topic title. `later` is a later list's count (the rows added, or the rows it
+ *  had when dismissed): its record is of kind `chunk`, with no `chunk` and no `chunkNumber`. */
 export type HandledRecord = {
     outcome: "added" | "dismissed";
     kind: InitiativeKind;
@@ -404,6 +470,7 @@ export type HandledRecord = {
     chunkNumber?: number;
     text: string;
     topic?: string;
+    later?: number;
     at: number;
 };
 
@@ -425,7 +492,9 @@ export function addedRecord(
     if (draft.kind === "note" && draft.chunk != null) {
         rec.chunk = draft.chunk;
     }
-    if (done.chunkNumber != null && draft.kind !== "initiative") {
+    if (isLaterDraft(draft)) {
+        rec.later = draft.later.length;
+    } else if (done.chunkNumber != null && draft.kind !== "initiative") {
         rec.chunkNumber = done.chunkNumber;
     }
     if (draft.kind === "initiative" && done.topic != null && done.topic !== "") {
@@ -442,10 +511,12 @@ export function dismissedRecord(
     at: number
 ): HandledRecord {
     const isNew = draft.kind === "initiative";
+    // a later list aimed at a new initiative has no initiative yet
+    const noTarget = isNew || draft.effort === NEW_TARGET;
     const rec: HandledRecord = {
         outcome: "dismissed",
         kind: draft.kind,
-        effort: isNew ? null : draft.effort,
+        effort: noTarget ? null : draft.effort,
         initiative: isNew ? draft.title.trim() : (names.initiative ?? ""),
         text: draft.kind === "chunk" ? clipLabel(draft.text) : clip(draft.text, MAX_ROW_TEXT),
         at,
@@ -455,6 +526,9 @@ export function dismissedRecord(
     }
     if (isNew && names.topic != null && names.topic !== "") {
         rec.topic = names.topic;
+    }
+    if (isLaterDraft(draft)) {
+        rec.later = draft.later.length;
     }
     return rec;
 }
@@ -470,6 +544,17 @@ export type FoldRowParts = { lead: string; subject: string; tail?: string };
 export function foldRowParts(rec: HandledRecord): FoldRowParts {
     const initiative = flat(rec.initiative);
     const under = rec.topic != null && flat(rec.topic) !== "" ? ` under ${flat(rec.topic)}` : "";
+    if (rec.later != null) {
+        // a later list: `Saved for later · <initiative> — 3 items`, `Dismissed · later list for <initiative>`
+        if (rec.outcome === "dismissed") {
+            return { lead: "Dismissed ·", subject: initiative === "" ? "later list" : `later list for ${initiative}` };
+        }
+        return {
+            lead: "Saved for later ·",
+            subject: initiative,
+            tail: `— ${rec.later} ${rec.later === 1 ? "item" : "items"}`,
+        };
+    }
     if (rec.outcome === "dismissed") {
         if (rec.kind === "initiative") {
             return { lead: "Dismissed ·", subject: `new initiative “${initiative}”${under}` };
@@ -500,6 +585,12 @@ export function foldRowLabel(rec: HandledRecord): string {
 export function resultLine(rec: HandledRecord): string {
     const title = flat(rec.initiative);
     const oref = rec.effort != null && rec.effort !== "" ? ` (${effortOref(rec.effort)})` : "";
+    if (rec.later != null) {
+        if (rec.outcome === "dismissed") {
+            return `initiative: dismissed later list${title === "" ? "" : ` for ${title}`}`;
+        }
+        return `initiative: added ${rec.later} ${rec.later === 1 ? "chunk" : "chunks"} for later to ${title}${oref}`;
+    }
     if (rec.outcome === "dismissed") {
         return `initiative: dismissed ${rec.kind}${title === "" ? "" : ` for ${title}`}`;
     }
@@ -724,7 +815,8 @@ export function coerceHandled(v: unknown): HandledRecord | undefined {
         !Number.isFinite(v.at) ||
         !optString(v.chunk) ||
         !optNumber(v.chunkNumber) ||
-        !optString(v.topic)
+        !optString(v.topic) ||
+        !optNumber(v.later)
     ) {
         return undefined;
     }
@@ -741,7 +833,8 @@ export function coerceDraft(v: unknown): InitiativeDraft | undefined {
         typeof v.chunks !== "string" ||
         !nullableString(v.effort) ||
         !nullableString(v.chunk) ||
-        !nullableString(v.parent)
+        !nullableString(v.parent) ||
+        !(v.later === undefined || (Array.isArray(v.later) && v.later.every((row) => typeof row === "string")))
     ) {
         return undefined;
     }
