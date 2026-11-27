@@ -64,6 +64,7 @@ func TestPlanEmission(t *testing.T) {
 		{"session start after a clear is idle", ccHookEvent{HookEventName: "SessionStart", Source: "clear"}, baseds.AgentState_Idle, false},
 		{"session start on startup is idle at its prompt", ccHookEvent{HookEventName: "SessionStart", Source: "startup"}, baseds.AgentState_Idle, false},
 		{"session start on a resume is idle with its title", ccHookEvent{HookEventName: "SessionStart", Source: "resume"}, baseds.AgentState_Idle, true},
+		{"session start on a fork is idle like a resume", ccHookEvent{HookEventName: "SessionStart", Source: "fork"}, baseds.AgentState_Idle, true},
 		// Task now only keeps the parent "working"; the disk store (not a hook delta) tracks subagents. Where the gate
 		// hook asks first (any mode but bypassPermissions) the session waits on that dialog, and the key that answers it
 		// reads working again (wshserver_promptanswer.go)

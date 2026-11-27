@@ -56,7 +56,7 @@ describe("chatForkLaunchOpts", () => {
             task: "",
             projectPath: "D:/work/arcterm",
             projectName: "arcterm",
-            label: "Fix sync (fork)",
+            label: "Fork: Fix sync",
         });
     });
     it("names an untitled one Fork and its project after the folder", () => {
@@ -69,7 +69,7 @@ describe("chatForkLaunchOpts", () => {
         expect(
             chatForkLaunchOpts({ task: "", name: "Tạo initiatives sau khi run" }, { command: "c", projectpath: "D:/a" })
                 .label
-        ).toBe("Tạo initiatives sau khi run (fork)");
+        ).toBe("Fork: Tạo initiatives sau khi run");
     });
     it("carries the transcript it resumes and when it was made, for Chat", () => {
         expect(
@@ -80,10 +80,13 @@ describe("chatForkLaunchOpts", () => {
             )
         ).toMatchObject({ forkOf: "C:/u/.arc/forks/f1/s.jsonl", forkedAt: 1000 });
     });
-    it("names a fork of a fork once", () => {
-        expect(
-            chatForkLaunchOpts({ task: "", name: "Fix sync (fork)" }, { command: "c", projectpath: "D:/a" }).label
-        ).toBe("Fix sync (fork)");
+    it("names a fork of a fork once, an old '(fork)' name included", () => {
+        const label = (name: string) =>
+            chatForkLaunchOpts({ task: "", name }, { command: "c", projectpath: "D:/a" }).label;
+        expect(label("Fork: Fix sync")).toBe("Fork: Fix sync");
+        expect(label("Fix sync (fork)")).toBe("Fork: Fix sync");
+        expect(label("fork: Fork: Fix sync (fork)")).toBe("Fork: Fix sync");
+        expect(label("Fork:")).toBe("Fork");
     });
 });
 
@@ -112,7 +115,7 @@ describe("runChatFork", () => {
         const f = fakes(ok);
         await runChatFork(f.deps, agent);
         expect(f.calls.fork).toEqual([{ transcriptpath: "C:/x/s.jsonl" }]);
-        expect(f.calls.launch).toMatchObject([{ startupCommand: "c", label: "Fix sync (fork)" }]);
+        expect(f.calls.launch).toMatchObject([{ startupCommand: "c", label: "Fork: Fix sync" }]);
         expect(f.calls.draft).toEqual([]);
     });
     it("puts your message back in the new tab's box on a fork before it", async () => {

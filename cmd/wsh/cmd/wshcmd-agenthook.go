@@ -169,8 +169,10 @@ func planEmission(ev ccHookEvent) agentEmission {
 			return agentEmission{State: baseds.AgentState_Idle}
 		}
 		// a resumed session waits at its prompt and reports nothing else before its next prompt, so the cockpit
-		// would show only its launch placeholder, named for the folder. its transcript already holds the title
-		if ev.Source == "resume" {
+		// would show only its launch placeholder, named for the folder. its transcript already holds the title.
+		// a --fork-session resume reports source "fork" (Claude Code 2.1.332): left out, a fork never reported in and
+		// its row read "resuming…" until its first message
+		if ev.Source == "resume" || ev.Source == "fork" {
 			return agentEmission{State: baseds.AgentState_Idle, AttachModelTitle: true}
 		}
 	case "SessionEnd":

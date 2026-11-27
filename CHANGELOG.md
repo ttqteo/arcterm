@@ -66,6 +66,12 @@ and a picture given to a line that is not big.
 - `wsh runs rerun-final` works on a finished run whose merge a failed final stage held, as its help says: once the
   rerun passes, the run merges by itself. Before, it answered "run … is cancelled" and the run could only be merged
   with `wsh runs land --force`.
+- A fork's tab is named "Fork: <title>" rather than "<title> (fork)", so it reads as a fork at the start of its row.
+
+### Fixed
+
+- A forked Claude session no longer sits on "resuming…" until you send it a message: it shows as idle at its prompt
+  as soon as it has loaded.
 - Long chunk and initiative titles show in full. In the agent panel's Initiative tab, the title and the chunk the
   agent is on take up to three lines, and the chunk under the cursor or with its menu open shows its whole title.
   Plan to review, in Chat and in the panel, shows each proposed chunk whole.

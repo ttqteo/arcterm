@@ -41,6 +41,10 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
   An ask of several questions: "Asked · 2 questions", each with its header. Press Esc on one: "No answer" and
   "Offered: …". A very long question or typed answer wraps, nothing overflows at a narrow Chat. Also
   `task verify:ui -- chat-council` (step 10).
+- [ ] (arcterm) **A fork reports in at once, named "Fork: …"** (`wshcmd-agenthook.go`, `chatfork.ts`). Unit tests
+  only. On a build with this `wsh`, Fork a Claude agent from Chat (or a session from the palette) and send nothing:
+  the new row reads "Fork: <title>", loses "resuming…" within a few seconds of the TUI loading, and shows in
+  `wsh agents list`. Fork that fork: its name is still one "Fork: ".
 - [ ] (arcterm) **Long chunk titles show whole** (`railinitiativepane.tsx`, `planreviewsection.tsx`). Typecheck only.
   On an agent linked to an initiative with a long title and long chunk labels, open the Initiative tab (◇ or `i`): the
   title and the "On N · …" line wrap to at most three lines, Open in Jarvis and Mark done stay on the first line; arrow

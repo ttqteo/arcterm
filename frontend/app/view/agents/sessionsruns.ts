@@ -7,6 +7,7 @@
 
 import type { LaunchAgentOpts } from "@/app/cockpit/cockpit-actions";
 import { formatAge, type AgentVM } from "./agentsviewmodel";
+import { forkLabel } from "./chatfork";
 import type { Runtime } from "./launch";
 import {
     BRAINSTORM_JUDGE_ROLE,
@@ -468,11 +469,10 @@ export function forkLaunchOpts(s: SessionActivity, now = Date.now()): LaunchAgen
     if (s.runtime !== "claude" || !s.resumecommand?.includes("--resume")) {
         return null;
     }
-    const title = s.task?.trim();
     return {
         ...resumeLaunchOpts(s),
         startupCommand: `${s.resumecommand} --fork-session`,
-        label: title ? `${title} (fork)` : "Fork",
+        label: forkLabel(s.task),
         ...(s.transcriptpath ? { forkOf: s.transcriptpath, forkedAt: now } : {}),
     };
 }

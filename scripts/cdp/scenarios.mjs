@@ -49694,7 +49694,7 @@ const chatAsleepAttachJump = {
 // 1. hovering your second message shows Copy and the fork button in one strip; 2. the button asks for a fork before u2, and
 // the failure shows as a toast; 3. a reply's button asks for a fork through a2; 4. the agent header's "…" menu offers Fork,
 // which asks for the whole transcript (no uuid, no keep); 5. right-click on your first message offers Fork from here (before
-// u1); 6. once the mock answers, a fork from your second message opens a tab named "Fix sync (fork)" whose box holds that
+// u1); 6. once the mock answers, a fork from your second message opens a tab named "Fork: Fix sync" whose box holds that
 // message; 7. a codex agent's Chat and its header menu offer no Fork. Teardown puts the RPC client, the roster, the grid and
 // the chat modes back, closes the fork's tab and drops its draft.
 const CF_MOCK_KEY = "__arcChatForkMock";
@@ -49951,7 +49951,7 @@ const chatFork = {
             await closeMenu();
             await dismissToasts();
 
-            // 6. once the fork answers, forking before your second message opens a "(fork)" tab with that message in its box.
+            // 6. once the fork answers, forking before your second message opens a "Fork: …" tab with that message in its box.
             // The roster is the fixture's, so the new tab is not a row: it is found by its draft (the drafts store is keyed by the
             // id launchAgent returns), and its name read from the tab's session:label.
             await h.ev(`window.${CF_MOCK_KEY}.answer = ${JSON.stringify({ command: "echo fork", projectpath: ctx.dir })}`);
@@ -49992,11 +49992,11 @@ const chatFork = {
             await polishNap(1000);
             await h.shot("cdp-shots/chat-fork-6-new-tab.png");
             rec(
-                "6. a fork from your second message opens a tab named \"Fix sync (fork)\" whose box holds that message",
+                "6. a fork from your second message opens a tab named \"Fork: Fix sync\" whose box holds that message",
                 clicked6 &&
                     cfIs(call6, { transcriptpath: ctx.transcript, uuid: "u2", keep: "before" }) &&
                     landed != null &&
-                    made?.label === `${CF_TASK} (fork)` &&
+                    made?.label === `Fork: ${CF_TASK}` &&
                     made.draft === CF_QUESTIONS[1],
                 { clicked6, call6, tab: landed, ...made }
             );
