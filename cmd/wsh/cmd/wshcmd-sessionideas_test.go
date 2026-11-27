@@ -4,6 +4,10 @@
 package cmd
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
@@ -66,5 +70,43 @@ func TestSessionIdeasCmdLine(t *testing.T) {
 		if got := sessionIdeaLine(c.in); got != c.want {
 			t.Errorf("%s: got %q, want %q", c.name, got, c.want)
 		}
+	}
+}
+
+func TestSessionIdeasForProject(t *testing.T) {
+	if sessionIdeasListCmd.Flags().Lookup("project") == nil {
+		t.Fatal("`sessionideas list --project` is not registered")
+	}
+	main := t.TempDir()
+	git := func(dir string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	git(main, "init", "-q")
+	git(main, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init")
+	sub := filepath.Join(main, "pkg", "x")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	wt := filepath.Join(t.TempDir(), "wt")
+	git(main, "worktree", "add", "-q", wt)
+
+	ideas := []wshrpc.SessionIdea{
+		{ID: "here", ProjectPath: strings.ToUpper(main[:1]) + main[1:]},
+		{ID: "other", ProjectPath: t.TempDir()},
+		{ID: "none"},
+	}
+	for name, dir := range map[string]string{"the main checkout": main, "a subfolder": sub, "a linked worktree": wt} {
+		got := ideasForProject(ideas, dir)
+		if len(got) != 1 || got[0].ID != "here" {
+			t.Errorf("%s: got %v, want only the idea of its project", name, got)
+		}
+	}
+	if got := ideasForProject(ideas, t.TempDir()); len(got) != 0 {
+		t.Errorf("a folder of no project's ideas: got %v, want none", got)
 	}
 }

@@ -121,6 +121,18 @@ func TestShippedSkills(t *testing.T) {
 		}
 	}
 
+	// an earlier session's ideas come back as notes when their topic is brainstormed: the skill names the project's list,
+	// the note's from, and the drop that stops the Brief offering an idea the user turned down
+	doc, err = fs.ReadFile(FS, "brainstorm/SKILL.md")
+	if err != nil {
+		t.Fatalf("brainstorm/SKILL.md is not embedded: %v", err)
+	}
+	for _, want := range []string{"wsh sessionideas list --project . --json", `"from": "an earlier session"`, "wsh sessionideas drop <id>"} {
+		if !strings.Contains(string(doc), want) {
+			t.Errorf("brainstorm/SKILL.md does not mention %q", want)
+		}
+	}
+
 	doc, err = fs.ReadFile(FS, "handoff/SKILL.md")
 	if err != nil {
 		t.Fatalf("handoff/SKILL.md is not embedded: %v", err)
