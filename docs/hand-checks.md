@@ -24,6 +24,9 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
 
 ## 2026-11-27
 
+- [ ] (arcterm) **Account name always beside the model.** With every open Claude agent on one account: the chat box's
+  footer reads the account (its label, or the /login email for Default) left of the model, and each Claude row in the
+  sidebar names it before the model; a long name truncates, the row does not wrap. `d13f49b5e`
 - [ ] (arcterm) **To review sheet: long rows stay whole.** Jarvis with more To review items than the sheet's height
   (18 on the person's store): open Review. Each label reads in full with its initiative in muted text under it, and the
   list scrolls; `j`/`k` past the bottom brings the row into view; Later on a row folds it on the spring with no jump of
