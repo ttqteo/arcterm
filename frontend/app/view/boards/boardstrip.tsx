@@ -3,14 +3,14 @@
 
 // The strip above an open board's canvas, the same in the board cell and in Library → Boards: the board's drawings row on
 // its left (one chip per drawing, a click moves the view there), then Copy view (the canvas as it shows now, at its
-// zoom, on the clipboard), Export (the drawing in view to a PNG or SVG file), Delete (the drawing in view, with an Undo
-// on its toast) and the Edit switch pinned at its right end. The row reads and writes the board's atoms only
+// zoom, on the clipboard), Export (the drawing in view to a PNG or SVG file), and in Edit only Delete (the drawing in
+// view, with an Undo on its toast), then the Edit switch pinned at its right end. The row reads and writes the board's atoms only
 // (boardstore.ts): the canvas publishes the row and eases to a pick. Copy, Export and Delete call the open canvas
 // directly (boardcommands.ts), inside the press, as a clipboard write must start there. A board opens in view mode; Edit
 // is what brings the drawing tools, selection and a selection's ask back.
 
 import { pushToast } from "@/app/cockpit/notificationstore";
-import { cardVariants, indicatorSlide, popoverReveal } from "@/app/element/motiontokens";
+import { cardVariants, indicatorSlide, microFade, popoverReveal } from "@/app/element/motiontokens";
 import { cn } from "@/util/util";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { Camera, Download, PenLine, Trash2 } from "lucide-react";
@@ -175,6 +175,31 @@ export function BoardStrip({ boardId }: { boardId: string }) {
                 <DrawingsRow boardId={boardId} />
             </div>
             <span className="flex flex-none items-center gap-0.5">
+                {/* Delete changes the board, so it shows in Edit only: left of the read-only pair, which holds still
+                    as it fades in and out */}
+                <MotionConfig reducedMotion="user">
+                    <AnimatePresence initial={false}>
+                        {editing ? (
+                            <motion.span
+                                key="delete"
+                                variants={microFade}
+                                initial="initial"
+                                animate="animate"
+                                exit="exit"
+                                className="flex"
+                            >
+                                <StripIcon
+                                    label="Delete the drawing in view"
+                                    attr="data-board-delete"
+                                    disabled={inView == null}
+                                    onClick={() => inView != null && boardCommands(boardId)?.deleteDrawing(inView)}
+                                >
+                                    <Trash2 size={13} strokeWidth={2} aria-hidden />
+                                </StripIcon>
+                            </motion.span>
+                        ) : null}
+                    </AnimatePresence>
+                </MotionConfig>
                 <StripIcon
                     label="Copy the view as a picture, at its zoom"
                     attr="data-board-copy-view"
@@ -183,14 +208,6 @@ export function BoardStrip({ boardId }: { boardId: string }) {
                     <Camera size={13} strokeWidth={2} aria-hidden />
                 </StripIcon>
                 <ExportMenu boardId={boardId} drawingId={inView} />
-                <StripIcon
-                    label="Delete the drawing in view"
-                    attr="data-board-delete"
-                    disabled={inView == null}
-                    onClick={() => inView != null && boardCommands(boardId)?.deleteDrawing(inView)}
-                >
-                    <Trash2 size={13} strokeWidth={2} aria-hidden />
-                </StripIcon>
             </span>
             <button
                 type="button"

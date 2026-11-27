@@ -195,7 +195,7 @@ function OpenCell({
                 parts={parts}
                 part={part}
                 onPart={setPart}
-                onDeletePart={(p) => boardCommands(boardId)?.deletePart(p)}
+                onDeletePart={editing ? (p) => boardCommands(boardId)?.deletePart(p) : undefined}
             />
             {/* the same boxes either way, so expanding never remounts the canvas or drops a half-typed question. Wide
                 enough (640px), the expanded board has the canvas on the left and on its right the turns column with the

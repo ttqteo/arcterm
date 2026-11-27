@@ -8,6 +8,7 @@
 // drawing; on the whole drawing a ‹ N parts › stepper starts the reading. The drawings themselves are the strip's row
 // (boardstrip.tsx), not the header's.
 
+import { microFade } from "@/app/element/motiontokens";
 import { cn } from "@/util/util";
 import {
     Check,
@@ -23,6 +24,7 @@ import {
     Trash2,
     X,
 } from "lucide-react";
+import { AnimatePresence, motion, MotionConfig } from "motion/react";
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { stepPart, type BoardPart } from "./boardparts";
 import { boardFacts } from "./boardtalkmodel";
@@ -43,7 +45,8 @@ export interface BoardHeaderProps {
     parts?: readonly BoardPart[];
     part?: number | null;
     onPart?: (part: number | null) => void;
-    // while a part is read: takes its shapes off the board (a part drawn by mistake); the toast holds an Undo
+    // while a part is read in Edit: takes its shapes off the board (a part drawn by mistake); the toast holds an Undo.
+    // Left out in view mode, where the header only reads.
     onDeletePart?: (part: BoardPart) => void;
 }
 
@@ -298,15 +301,28 @@ export function BoardHeader({
                     data-board-parts-stepper={reading == null ? "" : undefined}
                     className="flex flex-none items-center"
                 >
-                    {reading != null && onDeletePart != null ? (
-                        <HeaderButton
-                            label="Delete this part (Undo on its toast)"
-                            attr="data-board-part-delete"
-                            onClick={() => onDeletePart(reading)}
-                        >
-                            <Trash2 size={13} strokeWidth={2} />
-                        </HeaderButton>
-                    ) : null}
+                    <MotionConfig reducedMotion="user">
+                        <AnimatePresence initial={false}>
+                            {reading != null && onDeletePart != null ? (
+                                <motion.span
+                                    key="delete-part"
+                                    variants={microFade}
+                                    initial="initial"
+                                    animate="animate"
+                                    exit="exit"
+                                    className="flex"
+                                >
+                                    <HeaderButton
+                                        label="Delete this part (Undo on its toast)"
+                                        attr="data-board-part-delete"
+                                        onClick={() => onDeletePart(reading)}
+                                    >
+                                        <Trash2 size={13} strokeWidth={2} />
+                                    </HeaderButton>
+                                </motion.span>
+                            ) : null}
+                        </AnimatePresence>
+                    </MotionConfig>
                     {reading != null ? (
                         <button
                             type="button"

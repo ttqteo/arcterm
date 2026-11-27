@@ -1177,7 +1177,7 @@ export default function (kit) {
                 );
             });
 
-            await run("8c. reading a part, the ask line asks about it; the header's Delete takes the part's shapes off the board, the view goes back to the whole drawing with one part fewer, and the toast's Undo brings it back", async (name) => {
+            await run("8c. reading a part, the ask line asks about it; in Edit the header's Delete takes the part's shapes off the board, the view goes back to the whole drawing with one part fewer, and the toast's Undo brings it back", async (name) => {
                 const CV = `${SPLIT(B3)} ${CANVAS(B3)}`;
                 const attr = (key) => h.ev(`document.querySelector(${q(CV)})?.dataset.${key} ?? null`);
                 const live = (id) => canvasPage(`return (app()?.scene.getNonDeletedElements() ?? []).some((e) => e.id === ${q(id)});`);
@@ -1189,6 +1189,10 @@ export default function (kit) {
                 const askHint = await until(async () => (await text(`${SPLIT(B3)} [data-board-ask-selected]`)) === "Asking about Harness");
                 await polishNap(400);
                 await shot("8c-asking-part");
+                // the part's Delete shows in Edit only
+                const noDeleteInView = (await count(`${SPLIT(B3)} [data-board-part-delete]`)) === 0;
+                const editOn = await setEdit(B3, true);
+                const stillReading = (await attr("boardPart")) === "0";
                 const deleted = await click(`${SPLIT(B3)} [data-board-part-delete]`);
                 const gone = await until(async () => !(await live("harness-a")));
                 const whole = await until(async () => (await attr("boardPart")) === "" && (await text(`${SPLIT(B3)} [data-board-parts-count]`)) === "2 parts");
@@ -1198,12 +1202,13 @@ export default function (kit) {
                 const undone = await h.ev(`(() => { const b = [...document.querySelectorAll("[data-notification-action]")].at(-1); if (!b) return false; b.click(); return true; })()`);
                 const back = await until(async () => (await live("harness-a")) && (await text(`${SPLIT(B3)} [data-board-parts-count]`)) === "3 parts");
                 const inFile = await until(async () => ((await boardFile(h, B3))?.elements ?? []).some((e) => e.id === "harness-a" && !e.isDeleted));
+                const editOff = await setEdit(B3, false);
                 await click(`${SPLIT(B3)} [data-board-close]`);
                 await until(async () => (await box(SPLIT(B3))) == null);
                 rec(
                     name,
-                    ready && counted && wholeHint === "Press Edit to ask about shapes" && opened && askHint && deleted && gone && whole && offFile && undone && back && inFile,
-                    { ready, counted, wholeHint, opened, askHint, deleted, gone, whole, offFile, undone, back, inFile }
+                    ready && counted && wholeHint === "Press Edit to ask about shapes" && opened && askHint && noDeleteInView && editOn && stillReading && editOff && deleted && gone && whole && offFile && undone && back && inFile,
+                    { ready, counted, wholeHint, opened, askHint, noDeleteInView, editOn, stillReading, editOff, deleted, gone, whole, offFile, undone, back, inFile }
                 );
             });
 
@@ -1956,7 +1961,7 @@ export default function (kit) {
             });
 
             // --- 18h-i. Copy view and Delete on the strip, and the board's cell in the tree's split row ---
-            await run("18h. Copy view puts the canvas as it shows on the clipboard as a PNG the canvas's size; Delete takes the drawing in view off the row and the file, the view goes to the one before, and the toast's Undo brings it back", async (name) => {
+            await run("18h. Copy view puts the canvas as it shows on the clipboard as a PNG the canvas's size; Delete (in Edit only) takes the drawing in view off the row and the file, the view goes to the one before, and the toast's Undo brings it back", async (name) => {
                 await openBoardOn(B4);
                 const ready = await canvasReady(B4);
                 const before = await rowNow();
@@ -1987,7 +1992,9 @@ export default function (kit) {
                 })()`);
                 await h.ev(`(() => { if (window.__clipWrite) navigator.clipboard.write = window.__clipWrite; return true; })()`);
                 const sameSize = png != null && canvasSize != null && png.w === canvasSize.w && png.h === canvasSize.h;
-                // Delete: off the row and the file, the view on the drawing before
+                // Delete shows in Edit only: off the row and the file, the view on the drawing before
+                const noDeleteInView = (await count(`${SPLIT(B4)} [data-board-delete]`)) === 0;
+                const editOn = await setEdit(B4, true);
                 const deleted = await click(`${SPLIT(B4)} [data-board-delete]`);
                 const gone = await until(async () => {
                     const r = await rowNow();
@@ -2000,10 +2007,11 @@ export default function (kit) {
                 const undone = await click("[data-notification-action]");
                 const back = await until(async () => (await rowNow()).some((d) => d.id === doomed?.id && d.current));
                 const inFile = await until(async () => (await framesInFile(B4)).some((f) => f.id === doomed?.id));
+                const editOff = await setEdit(B4, false);
                 rec(
                     name,
-                    ready && landed.acked && onIt && copied && png?.type === "image/png" && sameSize && deleted && gone && offFile && undoShown && undone && back && inFile,
-                    { before: before.length, doomed: doomed?.id, png, canvasSize, gone, offFile, undoShown, back, inFile }
+                    ready && landed.acked && onIt && copied && png?.type === "image/png" && sameSize && noDeleteInView && editOn && editOff && deleted && gone && offFile && undoShown && undone && back && inFile,
+                    { before: before.length, doomed: doomed?.id, png, canvasSize, noDeleteInView, editOn, editOff, gone, offFile, undoShown, back, inFile }
                 );
             });
 

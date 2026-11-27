@@ -30,16 +30,16 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
 - [ ] (arcterm) **Ask about, and delete, the part being read** (`boardsplit.tsx`, `boardaskbox.tsx`, `boardheader.tsx`,
   `boardparts.ts` ids). Unit tests and typecheck; scenario boards-split 8c written, not run. On a dense board press
   ‹ 8 parts ›: the ask line reads "Asking about <part>"; ask something and check the drawer's or agent's answer is about
-  that part's shapes only. Press the trash beside the stepper: the part's shapes go, the view eases back to the whole
+  that part's shapes only. Turn Edit on (the trash fades in beside the stepper, Whole drawing and the arrows hold still) and press it: the part's shapes go, the view eases back to the whole
   drawing and the count drops by one; the toast's Undo brings them back. An arrow tied to a deleted part's box goes
   with it.
 - [ ] (arcterm) **Board strip: Copy view, Export, Delete; Tidy gone** (`boardstrip.tsx`, `boardcanvas.tsx`,
   `boardshot.ts`). Unit tests and typecheck; scenario boards-split 18h written, not run (no dev app was up). Open a
-  board with several drawings: the strip shows a camera, a download and a trash icon before Edit, and no Tidy. Zoom
+  board with several drawings: the strip shows a camera and a download before Edit, no trash and no Tidy. Zoom
   into a part and press the camera: paste in Paint or Slack shows exactly what the canvas showed, dark ground and light
   ink on the dark board, white on the light one. Download → PNG and → SVG: the Save dialog proposes the drawing's
   title, the files open cut to the drawing's frame in the board's theme; the menu fades and scales in from its top
-  right. Trash: the drawing's chip leaves the row, the view eases to the drawing before, a toast says Drawing deleted;
+  right. Turn Edit on: a trash fades in left of the camera, which holds still. Trash: the drawing's chip leaves the row, the view eases to the drawing before, a toast says Drawing deleted;
   its Undo brings the chip and the drawing back and the view eases to it. Reopen the board: the delete (or the undo)
   held.
 - [ ] (arcterm) **Board header stepper holds still** (`boardheader.tsx`). Typecheck only. On a dense drawing, step
