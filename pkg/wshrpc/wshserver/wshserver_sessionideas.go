@@ -246,7 +246,7 @@ func (ws *WshServer) SessionIdeasScanCommand(ctx context.Context, data wshrpc.Co
 		stopSessionIdeasScan()
 		return nil
 	}
-	return startSessionIdeasScan(sessionideas.ScanOpts{Paths: data.Paths})
+	return startSessionIdeasScan(sessionideas.ScanOpts{Paths: data.Paths, Project: data.Project, All: data.All})
 }
 
 // SessionIdeasSeedCommand is the dev app's fixture door: it writes Data to the store, turns fixture mode on when Fixture

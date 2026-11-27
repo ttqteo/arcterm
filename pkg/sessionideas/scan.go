@@ -65,11 +65,14 @@ func (d Deps) now() time.Time {
 	return time.Now()
 }
 
-// ScanOpts says what a scan reads. Paths is the transcripts to read; empty is every quiet session not yet scanned (no
-// mark, or a mark whose size or mtime changed). Forced says the schedule started it, not the person.
+// ScanOpts says what a scan reads. Paths is the transcripts to read; without it a scan reads the quiet sessions not yet
+// scanned (no mark, or a mark whose size or mtime changed) of Project (a ProjectDir), of every project with All, else of
+// the scope (scope.go). Forced says the schedule started it, not the person.
 type ScanOpts struct {
-	Forced bool
-	Paths  []string
+	Forced  bool
+	Paths   []string
+	Project string
+	All     bool
 }
 
 // Eligible says whether a scan may read a transcript, from what a candidate carries: it is not in the archive (arcterm's
@@ -121,7 +124,7 @@ func ScanNow(ctx context.Context, s *Store, deps Deps, opts ScanOpts) error {
 	if err != nil {
 		return err // a scan that went on from an empty store would write over what it could not read
 	}
-	work := pickWork(deps.Candidates(), cur.Marks, opts, started)
+	work := pickWork(scanCandidates(deps.Candidates(), cur, opts), cur.Marks, opts, started)
 	marks := map[string]wshrpc.SessionIdeaMark{}
 	for _, m := range cur.Marks {
 		marks[m.TranscriptPath] = m
@@ -180,9 +183,7 @@ func ScanNow(ctx context.Context, s *Store, deps Deps, opts ScanOpts) error {
 	}
 	if err := save(func(d *wshrpc.SessionIdeasData) {
 		d.LastScanTs = scan.EndedTs
-		if !opts.Forced {
-			d.FirstScanDone = true
-		}
+		afterScan(d, opts)
 	}); err != nil {
 		return errors.Join(stop, fmt.Errorf("saving the end of the scan: %w", err))
 	}

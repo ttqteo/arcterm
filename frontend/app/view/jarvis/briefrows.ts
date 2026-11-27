@@ -937,8 +937,10 @@ export function sessionScanMeta(data: SessionIdeasData): string {
     if (scan != null && scanRunning(scan)) {
         return joined(["scanning", scan.tokens > 0 ? `${formatTokens(scan.tokens)} tokens so far` : ""]);
     }
+    const scope = scopeNames(data);
     return joined([
         data.lastscants > 0 ? `scanned ${dayName(data.lastscants)}` : "not scanned yet",
+        scope.length > 0 ? `${scope.join(", ")} only` : "",
         scan != null && scan.tokens > 0 ? `${formatTokens(scan.tokens)} tokens` : "",
         data.nextscants > 0 ? `next by ${dayName(data.nextscants)}` : "",
     ]);
@@ -991,9 +993,85 @@ export function leavingLine(data: SessionIdeasData, now: number): string | null 
 // estimate for the offer; the first scan records the real numbers (docs/open-issues.md, RAM watch).
 export const SCAN_TOKENS_PER_SESSION = 10_000;
 
-/** The first-scan offer's line: "haiku · about 210k tokens for 21 sessions", M the quiet sessions not yet scanned. */
-export function scanOffer(data: SessionIdeasData): { sessions: number; tokens: number; text: string } {
-    const sessions = data.sessions.filter((s) => s.outcome === "not-scanned").length;
+/** A project the offer can scan alone: its Claude Code folder (the scan's key), its name, and its quiet sessions not
+ *  yet scanned. */
+export type OfferProject = { dir: string; label: string; sessions: number };
+
+// the folder's own name: the last part of a path written with either separator
+const lastPart = (path: string): string =>
+    path
+        .replace(/[\\/]+$/, "")
+        .split(/[\\/]/)
+        .pop() ?? path;
+
+/** The projects the offer can scan one at a time: those with quiet sessions not yet scanned, leaving out the ones
+ *  already in the scope (their sessions are Scan now's), most sessions first. Two projects with one name tell apart
+ *  by their Claude Code folder. */
+export function offerProjects(data: SessionIdeasData): OfferProject[] {
+    const scope = new Set((data.scanprojects ?? []).map((d) => d.toLowerCase()));
+    // any row of a folder that carries a name names it: a scanned one does, an unscanned one only when its head said
+    const names = new Map<string, string>();
+    for (const s of data.sessions) {
+        if (s.project !== "" && !names.has(s.projectdir)) {
+            names.set(s.projectdir, s.project);
+        }
+    }
+    const byDir = new Map<string, OfferProject>();
+    for (const s of data.sessions) {
+        if (s.outcome !== "not-scanned" || s.projectdir === "" || scope.has(s.projectdir.toLowerCase())) {
+            continue;
+        }
+        const p = byDir.get(s.projectdir) ?? {
+            dir: s.projectdir,
+            label: names.get(s.projectdir) ?? lastPart(s.projectdir),
+            sessions: 0,
+        };
+        p.sessions++;
+        byDir.set(s.projectdir, p);
+    }
+    const out = [...byDir.values()];
+    const named = new Map<string, number>();
+    for (const p of out) {
+        named.set(p.label, (named.get(p.label) ?? 0) + 1);
+    }
+    for (const p of out) {
+        if ((named.get(p.label) ?? 0) > 1) {
+            p.label = `${p.label} (${lastPart(p.dir)})`;
+        }
+    }
+    return out.sort((a, b) => b.sessions - a.sessions || a.label.localeCompare(b.label));
+}
+
+/** The names of the projects in the scope, as the session list names them ("mit-thesis"): empty once every project is
+ *  scanned, or before any project scan. */
+export function scopeNames(data: SessionIdeasData): string[] {
+    if (data.firstscandone) {
+        return [];
+    }
+    return (data.scanprojects ?? []).map((dir) => {
+        const row = data.sessions.find((s) => s.projectdir.toLowerCase() === dir.toLowerCase() && s.project !== "");
+        return row?.project ?? lastPart(dir);
+    });
+}
+
+/** Whether the offer card shows: until every project is scanned, while some project's sessions wait for their first
+ *  scan (before any scan it shows even with none, to say so). */
+export function offerShown(data: SessionIdeasData | null | undefined): boolean {
+    if (data == null || data.firstscandone) {
+        return false;
+    }
+    return sessionIdeasPhase(data) === "offer" || offerProjects(data).length > 0;
+}
+
+/** The first-scan offer's line: "haiku · about 210k tokens for 21 sessions", M the quiet sessions not yet scanned: of
+ *  the project whose folder is `dir`, or of every project. */
+export function scanOffer(
+    data: SessionIdeasData,
+    dir?: string | null
+): { sessions: number; tokens: number; text: string } {
+    const sessions = data.sessions.filter(
+        (s) => s.outcome === "not-scanned" && (dir == null || s.projectdir.toLowerCase() === dir.toLowerCase())
+    ).length;
     const tokens = sessions * SCAN_TOKENS_PER_SESSION;
     return {
         sessions,

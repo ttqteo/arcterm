@@ -510,6 +510,72 @@ export function sessionIdeasBriefScenarios(kit) {
                 };
             });
 
+            // 10b. A scan of one project: with two projects to read the offer carries a project menu; picking one moves the
+            // estimate and the button to it, and its scan reads that project alone, scopes the schedule to it and leaves the
+            // offer up for the other project, while the region's header says which project it covers
+            await stepOf(steps, "10b. the offer scans one project picked from its menu, and stays for the rest", async () => {
+                const OTHER_DIR = "C:\\arc-verify-sib\\other\\.claude";
+                await reseed(h, ctx, (seed) => {
+                    seed.data.ideas = [];
+                    seed.data.marks = [];
+                    seed.data.firstscandone = false;
+                    seed.data.lastscants = 0;
+                    seed.data.nextscants = 0;
+                    delete seed.data.scan;
+                    const base = seed.sessions[2];
+                    for (const n of [4, 5]) {
+                        seed.sessions.push({
+                            ...base,
+                            sessionid: `sib-session-${n}`,
+                            title: `SIB session ${n}`,
+                            project: "sib-other",
+                            transcriptpath: `${OTHER_DIR}\\sib-session-${n}.jsonl`,
+                            size: 40_000 + n,
+                        });
+                    }
+                });
+                await briefReload(h);
+                await hook(h, true);
+                const OFFER = "[data-jarvis-ideas] [data-jarvis-sessionideas-offer]";
+                const MENU = `${OFFER} [data-jarvis-sessionideas-offer-project]`;
+                const shown = await polishWaitFor(h, `!!${q(MENU)}`, 30000);
+                const before = { button: await textOf(h, `${OFFER} [data-jarvis-sessionideas-offer-scan]`), cost: await textOf(h, `${OFFER} [data-jarvis-sessionideas-offer-cost]`) };
+                await click(h, MENU);
+                const items = await polishWaitFor(h, `!!${q('[data-context-menu] [data-menu-item="sib-other"]')}`, 5000);
+                const listed = await h.ev(`[...document.querySelectorAll("[data-context-menu] [data-menu-item]")].map((el) => el.getAttribute("data-menu-item"))`);
+                await h.shot("cdp-shots/sessionideas-brief-offer-project-menu.png");
+                await click(h, '[data-context-menu] [data-menu-item="sib-other"]');
+                const picked = await polishWaitFor(h, `(${q(`${OFFER} [data-jarvis-sessionideas-offer-scan]`)}?.textContent ?? "").trim() === "Scan sib-other"`, 5000);
+                const cost = await textOf(h, `${OFFER} [data-jarvis-sessionideas-offer-cost]`);
+                await h.shot("cdp-shots/sessionideas-brief-offer-project.png");
+                const started = Date.now();
+                await click(h, `${OFFER} [data-jarvis-sessionideas-offer-scan]`);
+                const done = await waitScan(h, started - 1000);
+                const read = done?.sessions?.filter((s) => s.outcome !== "not-scanned").map((s) => s.sessionid).sort() ?? [];
+                const stays = await polishWaitFor(h, `(${q(OFFER)}?.textContent ?? "").includes("Scanned so far: sib-other.")`, 15000);
+                const meta = await textOf(h, `${REGION} [data-jarvis-sessionideas-meta]`);
+                const button = await textOf(h, `${OFFER} [data-jarvis-sessionideas-offer-scan]`);
+                await h.shot("cdp-shots/sessionideas-brief-offer-scoped.png");
+                return {
+                    ok:
+                        shown &&
+                        before.button === "Scan my sessions" &&
+                        /for 3 sessions$/.test(before.cost) &&
+                        items &&
+                        JSON.stringify(listed) === JSON.stringify(["all", "sib-other", "sib-project"]) &&
+                        picked &&
+                        /for 2 sessions$/.test(cost) &&
+                        done != null &&
+                        done.firstscandone === false &&
+                        JSON.stringify(done.scanprojects) === JSON.stringify([OTHER_DIR]) &&
+                        JSON.stringify(read) === JSON.stringify(["sib-session-4", "sib-session-5"]) &&
+                        stays &&
+                        meta.includes("sib-other only") &&
+                        button === "Scan my sessions",
+                    detail: { shown, before, listed, picked, cost, scan: done?.scan, scanprojects: done?.scanprojects, read, stays, meta, button },
+                };
+            });
+
             // 11. A scan that runs: the progress says which session it is reading, Stop is there, the ideas found stay listed and
             // Scan now is not offered meanwhile
             await stepOf(steps, "11. a scan that runs shows its progress with Stop, and the rows stay", async () => {

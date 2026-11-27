@@ -4,6 +4,7 @@
 package sessionideas
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -119,6 +120,15 @@ func TestSessionsTakesTheSessionOfACandidateThatCarriesOne(t *testing.T) {
 	rows, _, _, _ := Sessions(wshrpc.SessionIdeasData{}, []agentsessions.DigestSession{c}, 90, scanNow)
 	if len(rows) != 1 || rows[0].SessionID != "id-quiet" || rows[0].Title != "the title" || rows[0].Project != "arc" {
 		t.Fatalf("a candidate's own session names its row: %+v", rows)
+	}
+}
+
+func TestSessionsNamesEachRowsProject(t *testing.T) {
+	c := sess("quiet", 12, 700)
+	c.Cwd = filepath.Join("work", "mit-thesis")
+	rows, _, _, _ := Sessions(wshrpc.SessionIdeasData{}, []agentsessions.DigestSession{c}, 90, scanNow)
+	if len(rows) != 1 || rows[0].ProjectDir != filepath.Dir(c.Path) || rows[0].Project != "mit-thesis" {
+		t.Fatalf("a row carries its Claude Code folder and the name of the folder it was started in: %+v", rows)
 	}
 }
 

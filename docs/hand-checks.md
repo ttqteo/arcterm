@@ -34,6 +34,19 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
   (agent:…)` and the passage quoted. Add note toasts "Added to Notes"; its Open shows the palette's Notes with the new note first. A
   long Vietnamese passage gets a title cut with "…", not a save error. Not run live: the `chat-quote` scenario's steps
   10–11 cover it (the commit adding Save as idea).
+- [ ] (arcterm) **Session ideas: scan one project first.** Run `task verify:ui -- sessionideas-brief` (step 10b) on a dev
+  app with this change, then by hand on the Brief's offer card (Ideas column, before any scan): with two or more
+  projects to read, a `project all ▾` chip sits left of Scan my sessions; its menu lists all, then each project with
+  its count, most first. Pick one → the button reads `Scan <name>` and the estimate counts that project only; a long
+  name ends in an ellipsis and the row does not wrap. Press it → the region appears with `<name> only` in its header,
+  the card stays with `Scanned so far: <name>.`, and once its scan ends the button can be pressed again for the next
+  project. When the scan leaves only one project, the chip folds out on the spring (watch it: no snap, the button
+  slides left with it; with reduced motion it goes at once). Scan all → the card leaves and the header loses `only`.
+  (`sessionideasregion.tsx`, `filtermenu.tsx`, `pkg/sessionideas/scope.go`)
+- [ ] (arcterm) **Session ideas: Scan now presses again after a scan.** In the region press Scan now, let the scan end,
+  then press Scan now again → it starts a scan; before, the button stayed greyed out until the Brief remounted.
+  (`sessionideasregion.tsx` useStarting)
+
 - [ ] (arcterm) **Account name always beside the model.** With every open Claude agent on one account: the chat box's
   footer reads the account (its label, or the /login email for Default) left of the model, and each Claude row in the
   sidebar names it before the model; a long name truncates, the row does not wrap. `d13f49b5e`

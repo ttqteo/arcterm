@@ -71,19 +71,32 @@ func TestReadOrigin(t *testing.T) {
 		{"empty", "", "", ""},
 	}
 	for _, c := range cases {
-		ep, prompt, err := readOrigin(strings.NewReader(c.body))
+		o, err := readOrigin(strings.NewReader(c.body))
 		if err != nil {
 			t.Errorf("%s: error %v", c.name, err)
 		}
-		if ep != c.entrypoint || prompt != c.prompt {
-			t.Errorf("%s: got (%q, %q), want (%q, %q)", c.name, ep, prompt, c.entrypoint, c.prompt)
+		if o.entrypoint != c.entrypoint || o.firstPrompt != c.prompt {
+			t.Errorf("%s: got (%q, %q), want (%q, %q)", c.name, o.entrypoint, o.firstPrompt, c.entrypoint, c.prompt)
 		}
+	}
+}
+
+// The cwd is the first one the records carry, read past the first prompt when the prompt's record has none.
+func TestReadOriginCwd(t *testing.T) {
+	body := `{"type":"summary","summary":"x"}
+{"type":"user","entrypoint":"cli","message":{"content":"hello"}}
+{"type":"assistant","cwd":"D:\\work\\thesis","entrypoint":"cli"}
+{"type":"user","cwd":"D:\\work\\thesis\\paper","entrypoint":"cli","message":{"content":"next"}}
+`
+	o, err := readOrigin(strings.NewReader(body))
+	if err != nil || o.cwd != `D:\work\thesis` || o.firstPrompt != "hello" {
+		t.Fatalf("readOrigin = %+v, %v; want the first cwd and the first prompt", o, err)
 	}
 }
 
 func writeTranscript(t *testing.T, path, entrypoint, prompt string) agentsessions.DigestSession {
 	t.Helper()
-	body := `{"type":"user","entrypoint":"` + entrypoint + `","message":{"content":"` + prompt + `"}}` + "\n"
+	body := `{"type":"user","cwd":"/work/arc","entrypoint":"` + entrypoint + `","message":{"content":"` + prompt + `"}}` + "\n"
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -111,6 +124,9 @@ func TestPersonSessions(t *testing.T) {
 	}
 	if want := "a.jsonl archived-unread.jsonl gone.jsonl"; strings.Join(paths, " ") != want {
 		t.Fatalf("PersonSessions kept %v, want %s", paths, want)
+	}
+	if got[0].Cwd != "/work/arc" {
+		t.Fatalf("a kept session carries the cwd its head names: %q", got[0].Cwd)
 	}
 
 	// the cache holds a file until its size or mtime changes

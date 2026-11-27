@@ -11,7 +11,7 @@
 // The words and states are briefrows.ts's, the rows' order and the coverage sessionideasmodel.ts's, the data and the actions
 // sessionideasstore.ts's; this draws them. Every change of shape rides springReveal (rowReveal: it clips only while it moves).
 
-import { MOTION } from "@/app/element/motiontokens";
+import { MOTION, springFoldWidth } from "@/app/element/motiontokens";
 import { usePartMotion } from "@/app/element/springbatch";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { showLibrarySession } from "@/app/view/library/librarystore";
@@ -26,12 +26,15 @@ import {
     ideaMeta,
     ideaSource,
     leavingLine,
+    offerProjects,
+    offerShown,
     quoteWho,
     scannedRows,
     scanOffer,
     scanProgress,
     scanRunning,
     scanStopLine,
+    scopeNames,
     SESSION_IDEAS_EMPTY,
     sessionIdeasPhase,
     sessionScanMeta,
@@ -41,6 +44,7 @@ import {
 import { RevealRows, rowReveal } from "./briefrowviews";
 import { CURSOR_RING, cursorAttrs, FAINT_TEXT, REGION_LABEL, ROW_BORDER, SMALL_BTN } from "./briefstyle";
 import { briefUndo } from "./briefundo";
+import { FilterMenu } from "./filtermenu";
 import { discussIdea, goThroughIdeas, ideaLaunchesAtom, launchedFor, openTabIds } from "./sessionideaslaunch";
 import { coverage, reviewRows } from "./sessionideasmodel";
 import {
@@ -48,6 +52,7 @@ import {
     keepIdea,
     markSeen,
     scanNow,
+    scanOffered,
     sessionIdeasAtom,
     sessionIdeasFocusAtom,
     stopScan,
@@ -58,6 +63,9 @@ const HEAD_BTN = cn(SMALL_BTN, "flex h-5 flex-none items-center gap-[5px] whites
 
 // "Not now" on the first-scan offer: for this session of the app, the card is out of the way until the next start
 const offerDismissedAtom = atom(false);
+
+// the project the offer's next scan reads (its Claude Code folder), null for every project: for this session of the app
+const offerProjectAtom = atom<string | null>(null);
 
 // A request to land on the region (openref.ts sets the flag before the surface switches, so a Brief that mounts later still
 // finds it): scroll to the element, clear the request, and count the ideas as looked at (the Waiting line's seven days start
@@ -89,9 +97,16 @@ function Panel({ show, children }: { show: boolean; children: ReactNode }) {
     );
 }
 
-// True while a button's call is out: the press that started a scan is not pressed twice before the store shows it.
-function useStarting(): [boolean, (call: () => Promise<boolean>) => void] {
+// True while a button's call is out: the press that started a scan is not pressed twice before the store shows it. Once
+// the store shows the scan running (`running`), the scan's own state takes over and the press is settled, so the button
+// is pressable again after that scan ends (the region and the offer both outlive a scan).
+function useStarting(running: boolean): [boolean, (call: () => Promise<boolean>) => void] {
     const [starting, setStarting] = useState(false);
+    useEffect(() => {
+        if (running) {
+            setStarting(false);
+        }
+    }, [running]);
     return [
         starting,
         (call) => {
@@ -139,7 +154,9 @@ function RegionBody({ model, data, only }: { model: AgentsViewModel; data: Sessi
     const items = rows.map((idea) => ({ idea, tab: launchedFor(idea.id, launches, open) }));
     // one agent has every idea here (a Go through, or a Discuss on the only one left): the header goes to it
     const goTab = items.length > 0 && items.every((i) => i.tab === items[0].tab) ? items[0].tab : undefined;
-    const [starting, start] = useStarting();
+    const [starting, start] = useStarting(running);
+    // until every project is scanned, Scan now and Retry read only the projects scanned one by one
+    const scope = scopeNames(data);
     return (
         <>
             <div className="flex items-center gap-[9px]">
@@ -158,7 +175,11 @@ function RegionBody({ model, data, only }: { model: AgentsViewModel; data: Sessi
                     <button
                         type="button"
                         data-jarvis-sessionideas-scan
-                        title="Read the sessions not scanned yet for ideas nobody decided"
+                        title={
+                            scope.length > 0
+                                ? `Read the sessions not scanned yet in ${scope.join(", ")} for ideas nobody decided`
+                                : "Read the sessions not scanned yet for ideas nobody decided"
+                        }
                         disabled={starting}
                         onClick={() => start(() => scanNow())}
                         className={cn(HEAD_BTN, "disabled:cursor-default disabled:opacity-60")}
@@ -541,18 +562,28 @@ function CoverageBar({ parts }: { parts: { key: string; n: number; label: string
     );
 }
 
-// Before the first scan: the card under the Ideas column that says what a scan reads and what it costs, and starts it. Not the
-// region: nothing is scanned until the person presses Scan my sessions.
+// Before every project is scanned: the card under the Ideas column that says what a scan reads and what it costs, and starts
+// it, of one project or of all. Not the region: nothing is scanned until the person presses its button, and the schedule
+// covers only what they scanned. It stays while a project scanned one by one leaves others unread.
 export function SessionIdeasOffer() {
     const data = useAtomValue(sessionIdeasAtom);
     const [dismissed, setDismissed] = useAtom(offerDismissedAtom);
-    const offered = data != null && sessionIdeasPhase(data) === "offer";
+    const [pickedDir, setPickedDir] = useAtom(offerProjectAtom);
+    const offered = offerShown(data);
     const ref = useRef<HTMLDivElement>(null);
-    useFocusRequest(ref, offered);
-    const [starting, start] = useStarting();
+    // a request to land on the ideas goes to the region once there is one
+    useFocusRequest(ref, offered && sessionIdeasPhase(data) === "offer");
+    // the offer stays up through a scan of one project: its button waits for that scan to end
+    const running = scanRunning(data?.scan);
+    const [starting, start] = useStarting(running);
+    const pickFold = usePartMotion(springFoldWidth);
     const part = usePartMotion(rowReveal);
-    const offer = offered ? scanOffer(data) : null;
+    const projects = useMemo(() => (offered ? offerProjects(data) : []), [offered, data]);
+    // a project scanned since it was picked has left the list: the choice goes back to every project
+    const picked = projects.find((p) => p.dir === pickedDir) ?? null;
+    const offer = offered ? scanOffer(data, picked?.dir ?? null) : null;
     const leaving = offered ? leavingLine(data, Date.now()) : null;
+    const scope = offered ? scopeNames(data) : [];
     return (
         <AnimatePresence initial={false}>
             {offered && !dismissed && offer != null ? (
@@ -560,9 +591,9 @@ export function SessionIdeasOffer() {
                     <div className="flex flex-col gap-2 rounded-[10px] border border-edge-mid bg-surface-raised px-4 py-3.5">
                         <span className="text-[14px] font-semibold text-primary">Ideas you floated and left</span>
                         <span className="text-[12.5px] leading-[1.55] text-muted">
-                            Read your sessions still on disk and propose, on the initiative each belongs to, what was
-                            suggested but never reached a chunk, a spec, deferred.md or a commit. After this it runs on
-                            its own before a transcript is deleted.
+                            {scope.length > 0
+                                ? `Scanned so far: ${scope.join(", ")}. Pick another project, or all of them. Each one you scan is then read on its own before its transcripts are deleted.`
+                                : "Read your sessions still on disk and propose, on the initiative each belongs to, what was suggested but never reached a chunk, a spec, deferred.md or a commit. Start with one project or all of them; what you scan is then read on its own before a transcript is deleted."}
                         </span>
                         {leaving != null ? (
                             <span
@@ -570,18 +601,48 @@ export function SessionIdeasOffer() {
                                 className="flex items-start gap-1.5 text-[11.5px] text-warning-soft"
                             >
                                 <TriangleAlert size={12} aria-hidden className="mt-px flex-none text-warning" />
-                                {leaving} Nothing is scanned before you press Scan my sessions.
+                                {leaving} Nothing is scanned before you start a scan.
                             </span>
                         ) : null}
                         <div className="flex items-center gap-2.5 pt-0.5">
+                            {/* the menu folds in and out on the spring when a scan leaves one project, or two, to
+                            read; the wrapper's negative margin takes the row's gap with it at width 0 */}
+                            <AnimatePresence initial={false}>
+                                {projects.length > 1 ? (
+                                    <motion.div key="project" {...pickFold} className="-mr-2.5 flex flex-none">
+                                        <span className="flex pr-2.5">
+                                            <FilterMenu<string | null>
+                                                label="Scan the sessions of"
+                                                noun="project"
+                                                tag="data-jarvis-sessionideas-offer-project"
+                                                options={[
+                                                    {
+                                                        value: null,
+                                                        label: "all",
+                                                        count: scanOffer(data, null).sessions,
+                                                    },
+                                                    ...projects.map((p) => ({
+                                                        value: p.dir,
+                                                        label: p.label,
+                                                        count: p.sessions,
+                                                    })),
+                                                ]}
+                                                value={picked?.dir ?? null}
+                                                onChange={setPickedDir}
+                                            />
+                                        </span>
+                                    </motion.div>
+                                ) : null}
+                            </AnimatePresence>
                             <button
                                 type="button"
                                 data-jarvis-sessionideas-offer-scan
-                                disabled={starting}
-                                onClick={() => start(() => scanNow())}
-                                className="h-[26px] flex-none cursor-pointer rounded-[7px] border border-edge-mid bg-surface-raised px-2.5 text-[11.5px] font-semibold text-ink-hi hover:border-edge-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-60"
+                                disabled={starting || running}
+                                title={picked != null ? `Scan ${picked.label}` : undefined}
+                                onClick={() => start(() => scanOffered(picked?.dir ?? null))}
+                                className="h-[26px] max-w-[24ch] flex-none cursor-pointer truncate rounded-[7px] border border-edge-mid bg-surface-raised px-2.5 text-[11.5px] font-semibold text-ink-hi hover:border-edge-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-60"
                             >
-                                Scan my sessions
+                                {picked != null ? `Scan ${picked.label}` : "Scan my sessions"}
                             </button>
                             <span
                                 data-jarvis-sessionideas-offer-cost
