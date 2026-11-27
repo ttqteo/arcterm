@@ -448,6 +448,9 @@ function InitiativePane({ model, agent }: { model: AgentsViewModel; agent: Agent
         // the row the cursor is on, or whose menu is open, shows its whole title over as many lines as it takes; the
         // others keep one line
         const full = isCur || menuOpen != null || renaming != null;
+        // on the cursor's row Work on this goes on a line of its own under the title: beside it, the button's column
+        // squeezed a long title into a narrow strip of many short lines
+        const under = isCur && row.workOn && renaming == null;
         return (
             <div key={`${list}:${label}`} className="flex flex-col">
                 <div
@@ -461,6 +464,7 @@ function InitiativePane({ model, agent }: { model: AgentsViewModel; agent: Agent
                         ROW,
                         "group min-h-[28px]",
                         full && "items-start py-[5px]",
+                        under && "flex-wrap gap-y-[4px]",
                         isMine ? "bg-surface-selected" : "hover:bg-surface-hover",
                         isCur && CURSOR_RING
                     )}
@@ -529,10 +533,12 @@ function InitiativePane({ model, agent }: { model: AgentsViewModel; agent: Agent
                                 "relative flex flex-none items-center justify-end",
                                 // on a wrapped row the cell holds the first line's height, so Work on this sits beside it
                                 full && "min-h-[18px]",
-                                row.workOn && "min-w-[104px]"
+                                // under the title the cell is a line of its own, starting where the title does (the dot,
+                                // the number and their gaps: 8 + 9 + 18 + 9)
+                                under ? "basis-full justify-start pl-[44px]" : row.workOn && "min-w-[104px]"
                             )}
                         >
-                            {tag !== "" ? (
+                            {tag !== "" && !under ? (
                                 <span
                                     data-rail-initiative-tag
                                     className={cn(
@@ -556,8 +562,10 @@ function InitiativePane({ model, agent }: { model: AgentsViewModel; agent: Agent
                                     title={`Move this agent to “${label}” and tell it now (w)`}
                                     className={cn(
                                         BTN,
-                                        "absolute right-0 top-1/2 h-[22px] -translate-y-1/2 px-[8px] text-[11px] opacity-0 focus-visible:opacity-100 group-hover:opacity-100",
-                                        isCur && "opacity-100"
+                                        "h-[22px] px-[8px] text-[11px]",
+                                        under
+                                            ? "opacity-100"
+                                            : "absolute right-0 top-1/2 -translate-y-1/2 opacity-0 focus-visible:opacity-100 group-hover:opacity-100"
                                     )}
                                 >
                                     Work on this

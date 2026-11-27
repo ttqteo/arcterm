@@ -24,6 +24,10 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
 
 ## 2026-11-27
 
+- [ ] (arcterm) **Work on this under a long chunk title** (`railinitiativepane.tsx` rowView `under`). Lint only, no dev
+  app was up. On an agent with an initiative, open the rail's Initiative tab and move the cursor (arrows) onto a
+  chunk with a long title: the title wraps across the full row width and Work on this `w` sits on the next line,
+  lined up with the title's start; other rows still show their tag on the right and Work on this on hover.
 - [ ] (arcterm) **Rerun a done run's final-held land** (`land.go awaitsFinalRerun`, `mutation.go endedRunSettles`, 09044e387).
   Unit tests only. Make an orchestrator run's Final fail on something outside the code (stop a service its Check
   needs) and let it complete held: `wsh runs show <id>` reads `land held: the final stage failed` and the dag stays
