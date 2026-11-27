@@ -33,6 +33,14 @@ and `task install` installs from `src-tauri/target`, not from there. Commit what
 first. `FROM=<commit>` builds another commit; `FROM=tree` builds the checkout with its uncommitted edits (named
 `<commit>-dirty`).
 
+**A build needed in a hurry: `FAST=1`.** A full build takes 6-8 minutes on a quiet machine and up to 26 with agents
+running: cargo's fat LTO in one codegen unit (`[profile.release]`) holds the whole program in memory and swaps when
+RAM is short (15 of the 22 minutes on 2026-11-27). `FAST=1` builds the Rust shell with `[profile.release-fast]` (thin
+LTO, 16 codegen units): parallel, far lighter on memory, an exe a few MB bigger that runs the same. It builds in its
+own `src-tauri/target/release-fast`, so neither profile's dependency cache evicts the other's (the first fast build
+compiles them all once). `release-build.mjs` copies its bundle over `target/release/bundle`, so `task install` installs
+it, and names the installer `<commit>-fast`. Vite (about 4 minutes) is the same in both.
+
 **Bumping.** It does not bump by default (`BUMP=none`); for a release pass `BUMP=auto` (or `patch|minor|major`) and
 commit the bump. An agent that builds for the person to install passes `BUMP=auto` unasked (`--bump auto --dry-run` on
 `scripts/release-build.mjs` previews the pick).

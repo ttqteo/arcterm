@@ -37,7 +37,7 @@ what you pass short.
 
 A request is a new drawing, unless it asks to fix, change or delete a drawing already on the board: say which one by its
 title ("in Part 1, drop the two long arrows", "delete the drawing Part 2, fixed"), and the drawer edits or deletes that
-one. One request changes one drawing.
+one. A fix changes one drawing; a delete can take several, empty frames too ("delete the empty frames").
 
 A board whose agent ended (its tab is gone) goes to the agent that draws on it next, drawing and turns kept.
 

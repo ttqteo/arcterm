@@ -934,7 +934,7 @@ func TestRequestDrawsNewOrEditsTheDrawingItNames(t *testing.T) {
 	if _, err := d.Ask(board, requests("Delete the cache drawing.", "")); err != nil {
 		t.Fatal(err)
 	}
-	if got := settled(t, f, d).Turns[0]; got.Removed != 1 || len(f.delivered) != 1 || strings.Join(f.delivered[0].Remove, ",") != "cache,f1" {
+	if got := settled(t, f, d).Turns[0]; got.Removed != 2 || len(f.delivered) != 1 || strings.Join(f.delivered[0].Remove, ",") != "cache,f1" {
 		t.Errorf("a delete removes the drawing whole: %+v, delivered %+v", got, f.delivered)
 	}
 }

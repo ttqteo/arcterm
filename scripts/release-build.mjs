@@ -9,7 +9,7 @@
 // target junction the bundle lands in the main checkout's src-tauri/target, where `task install` looks, and a
 // copy goes to releases/ named with the commit it was built from.
 //
-//   node scripts/release-build.mjs [--bump none|patch|minor|major|auto] [--force] [--from <commit>|tree] [--dry-run]
+//   node scripts/release-build.mjs [--bump none|patch|minor|major|auto] [--force] [--from <commit>|tree] [--fast] [--dry-run]
 //
 // --bump    bumps package.json in the main checkout (commit the bump after) and builds the commit at that version.
 //           `auto` picks it from the built commit's CHANGELOG.md Unreleased lines (release-bump.mjs: MIN_RELEASE_LINES
@@ -18,8 +18,12 @@
 //           v<version> on that commit (local, never pushed), so `git log v1.1.3..v1.1.4` is what 1.1.4 holds.
 // --from    the commit to build (default HEAD); `tree` builds the main checkout as it stands, uncommitted edits
 //           included, and names the installer <commit>-dirty when the tree has any.
+// --fast    builds the Rust shell with the release-fast profile (src-tauri/Cargo.toml: thin LTO, 16 codegen units),
+//           for a build needed in a hurry: faster than full LTO's one unit, and far lighter on memory, which a machine
+//           busy with agents runs short of. Its bundle is copied over target/release's, so `task install` installs it;
+//           the installer is stamped <commit>-fast.
 // --dry-run sets the worktree up and removes it again, building nothing.
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -74,6 +78,28 @@ function removeSnapshot() {
     git(["worktree", "prune"]);
 }
 
+const FAST_PROFILE = "release-fast";
+
+// A fast build bundles into target/release-fast/bundle. `task install` (and install-mac.mjs) install the last build
+// from target/release/bundle, so the fast build's installer, .app and .dmg are copied there, over the last full build's.
+function publishFastBundle(version) {
+    const from = join(ROOT, "src-tauri", "target", FAST_PROFILE, "bundle");
+    const to = join(ROOT, "src-tauri", "target", "release", "bundle");
+    const kinds = { win32: ["nsis"], darwin: ["macos", "dmg"] }[process.platform] ?? [];
+    for (const kind of kinds) {
+        const dir = join(from, kind);
+        if (!existsSync(dir)) {
+            throw new Error(`the fast build left no ${kind} bundle in ${dir}`);
+        }
+        mkdirSync(join(to, kind), { recursive: true });
+        for (const name of readdirSync(dir).filter((f) => f.startsWith(`arcterm_${version}_`) || f === "arcterm.app")) {
+            const target = join(to, kind, name);
+            rmSync(target, { recursive: true, force: true });
+            cpSync(join(dir, name), target, { recursive: true, verbatimSymlinks: true });
+        }
+    }
+}
+
 // copy the bundle to releases/, with the build's stamp after the version: arcterm_0.15.11_89186130c_x64-setup.exe
 function copyInstaller(version, stamp) {
     const bundles = {
@@ -108,13 +134,14 @@ const requested = arg("bump", "none");
 const from = arg("from", "HEAD");
 const dryRun = process.argv.includes("--dry-run");
 const force = process.argv.includes("--force");
+const fast = process.argv.includes("--fast");
 const fromTree = from === "tree";
 
 const commit = git(["rev-parse", "--verify", `${fromTree ? "HEAD" : from}^{commit}`]);
 const short = git(["rev-parse", "--short", commit]);
 const subject = git(["log", "-1", "--format=%s", commit]);
 const dirty = git(["status", "--porcelain"]).split("\n").filter(Boolean);
-const stamp = fromTree && dirty.length > 0 ? `${short}-dirty` : short;
+const stamp = (fromTree && dirty.length > 0 ? `${short}-dirty` : short) + (fast ? "-fast" : "");
 // the app shows the same stamp beside its version (frontend/tauri/buildcommit.ts): git in the snapshot would read
 // dirty once the bump writes its package.json, so it is passed down to vite instead of asked for there
 process.env.ARC_BUILD_COMMIT = stamp;
@@ -153,7 +180,7 @@ if (requested === "auto") {
 // src-tauri/target. A bump recompiles the crate in both profiles anyway, so dropping them costs no build time; its
 // dependencies stay. Run before the bump, while Cargo.toml still matches Cargo.lock, so cargo rewrites no lock.
 function cleanOldAppBuilds() {
-    for (const profile of [["--release"], []]) {
+    for (const profile of [["--release"], ["--profile", FAST_PROFILE], []]) {
         const r = spawnSync("cargo", ["clean", "-p", "wave-tauri", ...profile], {
             cwd: join(ROOT, "src-tauri"),
             encoding: "utf8",
@@ -162,7 +189,7 @@ function cleanOldAppBuilds() {
         if (r.status !== 0) {
             console.warn(`cargo clean -p wave-tauri ${profile.join(" ")} skipped: ${said || r.error?.message}`);
         } else if (said) {
-            console.log(`old wave-tauri builds (${profile.length ? "release" : "debug"}): ${said}`);
+            console.log(`old wave-tauri builds (${profile.at(-1)?.replace(/^--/, "") ?? "debug"}): ${said}`);
         }
     }
 }
@@ -187,12 +214,18 @@ try {
         }
     }
     version = readVersion(buildDir);
-    console.log(`\nbuilding arcterm ${version} from ${fromTree ? "the working tree at " : ""}${stamp} (${subject})`);
+    const profileNote = fast ? `, with the ${FAST_PROFILE} profile` : "";
+    console.log(
+        `\nbuilding arcterm ${version} from ${fromTree ? "the working tree at " : ""}${stamp} (${subject})${profileNote}`
+    );
     if (dryRun) {
         console.log("--dry-run: not building");
     } else {
         // a fresh `task` process: Task reads VERSION once per process, so it must start after the bump
-        run("task", ["tauri:build:post-bump"], buildDir);
+        run("task", ["tauri:build:post-bump", ...(fast ? [`PROFILE=${FAST_PROFILE}`] : [])], buildDir);
+        if (fast) {
+            publishFastBundle(readVersion(buildDir));
+        }
         if (!fromTree && bump !== "none" && commit === git(["rev-parse", "HEAD"])) {
             // cargo rewrote the snapshot's Cargo.lock for the new crate version; hand it over with the bump to commit
             const lock = join("src-tauri", "Cargo.lock");
