@@ -53,9 +53,12 @@ and a picture given to a line that is not big.
   the projects you scanned, and the region says which.
 - The To review sheet on Jarvis reads more calmly: Later and Drop show only on the row under the pointer or the `j`/`k`
   cursor, each proposal's opening phrase is in bold, and a run's heading no longer trails its plan's file path.
+- A fork's tab is named "Fork: <title>" rather than "<title> (fork)", so it reads as a fork at the start of its row.
 
 ### Fixed
 
+- A forked Claude session no longer sits on "resuming…" until you send it a message: it shows as idle at its prompt
+  as soon as it has loaded.
 - Long chunk and initiative titles show in full. In the agent panel's Initiative tab, the title and the chunk the
   agent is on take up to three lines, and the chunk under the cursor or with its menu open shows its whole title.
   Plan to review, in Chat and in the panel, shows each proposed chunk whole.

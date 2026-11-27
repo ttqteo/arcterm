@@ -754,7 +754,7 @@ describe("forkLaunchOpts", () => {
             startupCommand: "claude --resume ade04375 --fork-session",
             task: "",
             projectPath: "/p",
-            label: "Pull và build (fork)",
+            label: "Fork: Pull và build",
         });
         // not resumeOf: the tab that holds the session it forks is not gone to, the fork is a session of its own
         expect(opts?.resumeOf).toBeUndefined();

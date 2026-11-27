@@ -37,22 +37,36 @@ function folderName(p: string): string {
 /** What ForkAgentSessionCommand answers: the command, where it starts, and the transcript it resumes. */
 export type ForkRtn = { command: string; projectpath: string; resumedpath?: string };
 
-/** The launch that starts a fork: a new tab of its own (no resumeOf), named as a fork of the agent. A live agent's task
- *  is empty (liveToVM), so its name, the title its row shows, names it then; a fork of a fork is not "(fork) (fork)".
- *  It carries the transcript it resumes (forkOf), which Chat shows until the fork writes its own. */
+/** The name a fork's tab goes by: "Fork: <title>", the word first so a fork reads as one at the start of its row, or
+ *  "Fork" for an untitled one. A fork of a fork is named once: a "Fork: " already in front, or the " (fork)" forks were
+ *  named with before, is dropped first. */
+export function forkLabel(title: string | undefined): string {
+    let t = (title ?? "").trim();
+    for (let prev = ""; prev !== t; ) {
+        prev = t;
+        t = t
+            .replace(/^fork:\s*/i, "")
+            .replace(/\s*\(fork\)$/i, "")
+            .trim();
+    }
+    return t ? `Fork: ${t}` : "Fork";
+}
+
+/** The launch that starts a fork: a new tab of its own (no resumeOf), named as a fork of the agent (forkLabel). A live
+ *  agent's task is empty (liveToVM), so its name, the title its row shows, names it then. It carries the transcript it
+ *  resumes (forkOf), which Chat shows until the fork writes its own. */
 export function chatForkLaunchOpts(
     agent: Pick<AgentVM, "task" | "project"> & Partial<Pick<AgentVM, "name">>,
     rtn: ForkRtn,
     now: number = Date.now()
 ): LaunchAgentOpts {
-    const title = (agent.task?.trim() || agent.name?.trim() || "").replace(/\s*\(fork\)$/i, "");
     return {
         runtime: "claude",
         startupCommand: rtn.command,
         task: "",
         projectPath: rtn.projectpath,
         projectName: agent.project || folderName(rtn.projectpath) || "agent",
-        label: title ? `${title} (fork)` : "Fork",
+        label: forkLabel(agent.task?.trim() || agent.name),
         ...(rtn.resumedpath ? { forkOf: rtn.resumedpath, forkedAt: now } : {}),
     };
 }
