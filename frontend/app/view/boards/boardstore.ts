@@ -54,11 +54,6 @@ export interface BoardPick {
 export const boardPickAtom = atomFamily(
     (_boardId: string) => atom<BoardPick | null>(null) as PrimitiveAtom<BoardPick | null>
 );
-// A press of the strip's Tidy on the drawing in view, which the canvas lays out again (boardlayout.ts); each press is a
-// new value, so a second press tidies again.
-export const boardTidyAtom = atomFamily(
-    (_boardId: string) => atom<BoardPick | null>(null) as PrimitiveAtom<BoardPick | null>
-);
 
 // every board's canvas theme, the person's pick on the canvas's sun/moon: the app is dark, the board may be light (for
 // a drawing made to be pasted into a paper or slides). Excalidraw draws the dark theme by inverting the canvas.

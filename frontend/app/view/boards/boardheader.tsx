@@ -70,7 +70,7 @@ function HeaderButton({
 }
 
 // a menu's open state, closed by a press outside `root`
-function useMenu(): [boolean, (open: boolean) => void, RefObject<HTMLDivElement>] {
+export function useMenu(): [boolean, (open: boolean) => void, RefObject<HTMLDivElement>] {
     const [open, setOpen] = useState(false);
     const root = useRef<HTMLDivElement>(null);
     useEffect(() => {
@@ -256,7 +256,11 @@ export function BoardHeader({
     onPart,
 }: BoardHeaderProps) {
     const expandLabel = expanded ? "Collapse" : "Expand";
-    const reading = part != null ? parts[part] : undefined;
+    const reading = part != null && onPart != null ? parts[part] : undefined;
+    const stepping = onPart != null && (reading != null || parts.length >= 2);
+    // the middle of the stepper is as wide in both states and for every part ("12 parts", "3/12"), so its arrows hold
+    // their place while you step and as reading starts or ends
+    const middleCh = `${String(parts.length).length + 6}ch`;
     return (
         <div
             data-board-header
@@ -264,40 +268,14 @@ export function BoardHeader({
         >
             <Shapes size={14} strokeWidth={2} aria-hidden className="flex-none" />
             <BoardSwitcher board={board} boards={boards} onSwitch={onSwitch} />
-            {reading != null && onPart != null ? (
+            {reading != null ? (
                 <>
                     <span aria-hidden className="flex-none">
                         ›
                     </span>
-                    <span data-board-part-name className="min-w-0 truncate text-primary">
+                    <span data-board-part-name title={reading.label} className="min-w-0 truncate text-primary">
                         {reading.label}
                     </span>
-                    <HeaderButton
-                        label="Previous part (←)"
-                        attr="data-board-part-prev"
-                        onClick={() => onPart(stepPart(parts.length, part, -1))}
-                    >
-                        <ChevronLeft size={14} strokeWidth={2} />
-                    </HeaderButton>
-                    <span data-board-part-index className="flex-none tabular-nums">
-                        {part! + 1}/{parts.length}
-                    </span>
-                    <HeaderButton
-                        label="Next part (→)"
-                        attr="data-board-part-next"
-                        onClick={() => onPart(stepPart(parts.length, part, 1))}
-                    >
-                        <ChevronRight size={14} strokeWidth={2} />
-                    </HeaderButton>
-                    <button
-                        type="button"
-                        data-board-part-whole
-                        title="Whole drawing (Esc)"
-                        onClick={() => onPart(null)}
-                        className="flex-none cursor-pointer rounded-[6px] px-1.5 py-0.5 text-muted hover:bg-surface-hover hover:text-primary"
-                    >
-                        Whole drawing
-                    </button>
                 </>
             ) : board != null ? (
                 <>
@@ -307,36 +285,62 @@ export function BoardHeader({
                     <span data-board-facts className="min-w-0 truncate">
                         {boardFacts(board, Date.now())}
                     </span>
-                    {parts.length >= 2 && onPart != null ? (
-                        <span data-board-parts-stepper className="flex flex-none items-center">
-                            <HeaderButton
-                                label="Last part (←)"
-                                attr="data-board-parts-prev"
-                                onClick={() => onPart(stepPart(parts.length, null, -1))}
-                            >
-                                <ChevronLeft size={14} strokeWidth={2} />
-                            </HeaderButton>
-                            <button
-                                type="button"
-                                data-board-parts-count
-                                title="Read the drawing part by part (→)"
-                                onClick={() => onPart(0)}
-                                className="flex-none cursor-pointer rounded-[6px] px-1 py-0.5 tabular-nums hover:bg-surface-hover hover:text-primary"
-                            >
-                                {parts.length} parts
-                            </button>
-                            <HeaderButton
-                                label="First part (→)"
-                                attr="data-board-parts-next"
-                                onClick={() => onPart(stepPart(parts.length, null, 1))}
-                            >
-                                <ChevronRight size={14} strokeWidth={2} />
-                            </HeaderButton>
-                        </span>
-                    ) : null}
                 </>
             ) : null}
             <div className="flex-1" />
+            {stepping ? (
+                // pinned beside the right-hand buttons, which hold still, so the part's name never moves it
+                <span
+                    data-board-parts-stepper={reading == null ? "" : undefined}
+                    className="flex flex-none items-center"
+                >
+                    {reading != null ? (
+                        <button
+                            type="button"
+                            data-board-part-whole
+                            title="Whole drawing (Esc)"
+                            onClick={() => onPart!(null)}
+                            className="mr-1 flex-none cursor-pointer rounded-[6px] px-1.5 py-0.5 text-muted hover:bg-surface-hover hover:text-primary"
+                        >
+                            Whole drawing
+                        </button>
+                    ) : null}
+                    <HeaderButton
+                        label={reading != null ? "Previous part (←)" : "Last part (←)"}
+                        attr={reading != null ? "data-board-part-prev" : "data-board-parts-prev"}
+                        onClick={() => onPart!(stepPart(parts.length, part, -1))}
+                    >
+                        <ChevronLeft size={14} strokeWidth={2} />
+                    </HeaderButton>
+                    {reading != null ? (
+                        <span
+                            data-board-part-index
+                            style={{ minWidth: middleCh }}
+                            className="flex-none text-center tabular-nums"
+                        >
+                            {part! + 1}/{parts.length}
+                        </span>
+                    ) : (
+                        <button
+                            type="button"
+                            data-board-parts-count
+                            title="Read the drawing part by part (→)"
+                            onClick={() => onPart!(0)}
+                            style={{ minWidth: middleCh }}
+                            className="flex-none cursor-pointer rounded-[6px] py-0.5 text-center tabular-nums hover:bg-surface-hover hover:text-primary"
+                        >
+                            {parts.length} parts
+                        </button>
+                    )}
+                    <HeaderButton
+                        label={reading != null ? "Next part (→)" : "First part (→)"}
+                        attr={reading != null ? "data-board-part-next" : "data-board-parts-next"}
+                        onClick={() => onPart!(stepPart(parts.length, part, 1))}
+                    >
+                        <ChevronRight size={14} strokeWidth={2} />
+                    </HeaderButton>
+                </span>
+            ) : null}
             {chat != null && chats != null && onChat != null ? (
                 <ChatPicker chat={chat} chats={chats} onChat={onChat} />
             ) : null}

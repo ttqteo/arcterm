@@ -46,8 +46,15 @@ and a picture given to a line that is not big.
   saves it as a note. Each is named by the passage's first sentence and keeps the passage with the agent it came from.
 - A Focus board button in the agent header while a board is split beside the agent: one press folds the sidebar, hides
   the rail and gives the board 7 parts of 10 (chat 3 : board 7); a second press puts the layout back as it was.
+- Three buttons on a board's strip, beside Edit: Copy view puts the board on the clipboard as a picture, just as it
+  shows at its zoom; Export saves the drawing in view as a PNG or SVG file; Delete removes the drawing in view, with an
+  Undo on its toast.
 
 ### Changed
+
+- A board's Tidy button is gone.
+- The part stepper in a board's header (‹ 3/13 ›) stays in one place beside the header's buttons: stepping through
+  parts with long and short names no longer moves the arrows under the pointer.
 
 - Ideas from your sessions can scan one project first: the offer card on Jarvis's Brief has a project menu (most
   sessions first), and its estimate and button follow the pick. Until you scan all projects, arcterm keeps reading only
