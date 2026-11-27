@@ -28,6 +28,14 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
   and typecheck only. In an agent's Chat with a large context, type `/compact`: once the Compacted divider shows
   "N → M tokens", the ring under the input reads M's percent (hover: M tokens), not the old one; after the next reply
   it follows the statusLine again.
+- [ ] (arcterm) **A question shows as its own card in Chat** (`chataskcard.tsx`). Typecheck and unit tests only, no
+  live pass. Have an agent ask an AskUserQuestion between two tool calls: while it waits, the conversation shows no
+  "asked a question" in a fold, only the dock's choices; answer with an option: a card lands in the conversation
+  (springing open, no snap) with "Asked · <header>", the question in full, the picked option and its description in a
+  raised row, "Not picked: …" under it. Answer another with Other and typed words: the row shows them with "Your words".
+  An ask of several questions: "Asked · 2 questions", each with its header. Press Esc on one: "No answer" and
+  "Offered: …". A very long question or typed answer wraps, nothing overflows at a narrow Chat. Also
+  `task verify:ui -- chat-council` (step 10).
 - [ ] (arcterm) **Long chunk titles show whole** (`railinitiativepane.tsx`, `planreviewsection.tsx`). Typecheck only.
   On an agent linked to an initiative with a long title and long chunk labels, open the Initiative tab (◇ or `i`): the
   title and the "On N · …" line wrap to at most three lines, Open in Jarvis and Mark done stay on the first line; arrow

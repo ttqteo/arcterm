@@ -23,6 +23,8 @@
 //   Doc review     [data-chat-bscard-kind="docreview"][data-chat-bscard-state="waiting|static"] with [data-chat-drcard-path],
 //   card           -pages, -intro, -item, -review, -approve and -note; in the dock's [data-chat-ask] while the agent waits
 //   Doc review row [data-chat-bscard-done="docreview"][data-chat-drcard-outcome="approved|changes"]
+//   other ask      [data-chat-askcard="answered|unanswered"] in the conversation once the call has its result, with
+//                  [data-chat-askcard-answer="picked|typed|none"] under each question
 //
 // One fixture Claude agent over a real tab with a shell controller (the shell's folder is the project, so the Doc review's
 // file shows relative to it), a mock roster row for it, a throwaway git project registered with the app, and a fixture
@@ -1089,6 +1091,54 @@ export default function (kit) {
                         bubbleRequest === 0 &&
                         bubbleNote === 0,
                     { rowUp, rows, cards: card.cards, bubbleRequest, bubbleNote }
+                );
+            });
+
+            // 10. any other ask, answered: a card of its own between the tools, the question in full and the picked option
+            // with its description, the option passed over in one line; no tool line for it left in a fold
+            await run("10. plain ask answered", async (name) => {
+                await begin();
+                const q = {
+                    question: "Where does the relayout button go?",
+                    header: "Relayout",
+                    multiSelect: false,
+                    options: [
+                        { label: "In the split's header", description: "Only while a board split is open." },
+                        { label: "In the board strip", description: "Always there, beside Tidy." },
+                    ],
+                };
+                turn("add a relayout button", "Asking where it goes for step 10.");
+                append(ctx, askCall("toolu_cc_ask10", q), answered("toolu_cc_ask10", q, "In the split's header"));
+                say("Putting it in the split's header.");
+                await setAgent({ ask: null, ends: true });
+                const up = await waitSel('[data-chat-askcard="answered"]');
+                await polishNap(500);
+                await scrollEnd();
+                const card = await h.ev(`(() => {
+                    ${HELP}
+                    const all = [...(${layerOf(A)}?.querySelectorAll("[data-chat-askcard]") ?? [])];
+                    const c = all[all.length - 1] ?? null;
+                    return {
+                        cards: all.length,
+                        text: flat(c),
+                        answers: [...(c?.querySelectorAll("[data-chat-askcard-answer]") ?? [])].map((e) => ({ kind: e.getAttribute("data-chat-askcard-answer"), text: flat(e) })),
+                        inDock: !!c?.closest("[data-chat-ask]"),
+                    };
+                })()`);
+                await shot("10-plain-ask");
+                rec(
+                    `${name}: the answered ask is one [data-chat-askcard="answered"] card in the conversation (not the dock) with "Asked · Relayout", the question, one picked answer "In the split's header" with its description, and "Not picked: In the board strip"`,
+                    up &&
+                        card.cards === 1 &&
+                        !card.inDock &&
+                        card.text.includes("Asked · Relayout") &&
+                        card.text.includes(q.question) &&
+                        card.answers.length === 1 &&
+                        card.answers[0].kind === "picked" &&
+                        card.answers[0].text.includes("In the split's header") &&
+                        card.answers[0].text.includes("Only while a board split is open.") &&
+                        card.text.includes("Not picked: In the board strip"),
+                    { up, card }
                 );
             });
 

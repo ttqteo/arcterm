@@ -89,6 +89,7 @@ import { procExited } from "./brainstormmodel";
 import type { BrainstormState } from "./brainstormstore";
 import { ChatAgentAnswerCard, ChatAgentSendCard, SentMarkdown } from "./chatagentsendcard";
 import { arrivalFrom, tailArrivals } from "./chatarrival";
+import { ChatAskCard } from "./chataskcard";
 import { boardsDrawn, wordsOf } from "./chatboard";
 import { ChatBoardCard, ChatBoardChip } from "./chatboardcard";
 import { pairAnswers, type ChatCard, type PairedAnswer, type SentAnswer } from "./chatbrainstorm";
@@ -1768,6 +1769,9 @@ export function ChatConversation({
                 out.push("handoff");
             } else if (part.kind === "docreview") {
                 out.push("docreview");
+            } else if (part.kind === "ask") {
+                // one still waiting is the dock's while the agent lives, the card once it exited
+                out.push("ask");
             } else if (part.kind === "boarddraw") {
                 // the end-of-turn card reads the agent's project and the cockpit it opens the board in
                 out.push(`board:${model != null}`);
@@ -1929,6 +1933,10 @@ export function ChatConversation({
                 }
                 return exited ? <ChatDocReviewCard question={q} state="static" agent={agent} model={model} /> : null;
             }
+            // any other ask: its questions and what you answered, as a card of its own. While it waits, the dock
+            // (chatpane.tsx ChatAsk) is where you answer it, so a live agent's conversation draws nothing for it yet
+            case "ask":
+                return part.ended || exited ? <ChatAskCard questions={part.questions} /> : null;
         }
     };
 

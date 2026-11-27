@@ -55,6 +55,9 @@ and a picture given to a line that is not big.
   temp folders are left out of the menu and the scan.
 - The To review sheet on Jarvis reads more calmly: Later and Drop show only on the row under the pointer or the `j`/`k`
   cursor, each proposal's opening phrase is in bold, and a run's heading no longer trails its plan's file path.
+- A question the agent asked you shows in Chat as a card of its own, no longer folded into "Ran 2 commands, asked a
+  question": the question in full, then what you decided (the option you picked with its description, or the words you
+  typed), and the options you passed over in one line.
 
 ### Fixed
 

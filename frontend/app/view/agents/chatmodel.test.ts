@@ -767,14 +767,7 @@ describe("chatItems: verdict, handoff, run-start, council-start and Doc review p
             expect(kinds(items)).toEqual(["work", "handoff", "work"]);
         });
 
-        it("leaves a plain AskUserQuestion in the work", () => {
-            const items = chatItems([you("x"), action("read"), ask("Scope"), action("bash")]);
-            expect(kinds(items)).toEqual(["work"]);
-            const work = part(items, 0);
-            expect(work.kind === "work" && work.work.actions).toHaveLength(3);
-        });
-
-        it("leaves an ask of several questions in the work even when one is headed Handoff", () => {
+        it("cuts an ask of several questions as a plain ask even when one is headed Handoff", () => {
             const two = action("asked", {
                 detail: {
                     kind: "ask",
@@ -784,7 +777,41 @@ describe("chatItems: verdict, handoff, run-start, council-start and Doc review p
                     ],
                 },
             });
-            expect(kinds(chatItems([you("x"), two]))).toEqual(["work"]);
+            expect(kinds(chatItems([you("x"), two]))).toEqual(["ask"]);
+        });
+    });
+
+    describe("a plain ask", () => {
+        it("cuts it out of its stretch as an ask part of its own: work, ask, work", () => {
+            const items = chatItems([you("x"), action("read"), ask("Scope"), action("bash")]);
+            expect(kinds(items)).toEqual(["work", "ask", "work"]);
+            const before = part(items, 0);
+            expect(before.kind === "work" && before.work.actions).toHaveLength(1);
+            expect(part(items, 1)).toMatchObject({
+                kind: "ask",
+                key: "ask:2",
+                ended: false,
+                questions: [{ header: "Scope", picked: [] }],
+            });
+        });
+
+        it("holds your answer and marks the call ended once its result landed", () => {
+            const items = chatItems([you("x"), ask("Scope", ["Inline in this session"])]);
+            expect(part(items, 0)).toMatchObject({
+                kind: "ask",
+                ended: true,
+                questions: [{ picked: ["Inline in this session"] }],
+            });
+        });
+
+        it("marks an ask turned down ended with no answer", () => {
+            const items = chatItems([you("x"), ask("Scope", [], { outcome: "fail" })]);
+            expect(part(items, 0)).toMatchObject({ kind: "ask", ended: true, questions: [{ picked: [] }] });
+        });
+
+        it("leaves an ask with no questions a tool line", () => {
+            const empty = action("asked", { outcome: "ok", detail: { kind: "ask", questions: [] } });
+            expect(kinds(chatItems([you("x"), empty]))).toEqual(["work"]);
         });
     });
 
@@ -1114,20 +1141,18 @@ describe("chatItems: verdict, handoff, run-start, council-start and Doc review p
             ]);
         });
 
-        it("leaves a Spec review, a Plan review, a bad path and a plain ask in the work", () => {
+        it("takes a Spec review, a Plan review, a bad path and a plain ask for a plain ask", () => {
             for (const items of [
                 chatItems([you("x"), action("read"), docReview([], undefined, "docs/specs/x.md", "Spec review")]),
                 chatItems([you("x"), action("read"), docReview([], undefined, "docs/plans/p.md", "Plan review")]),
                 chatItems([you("x"), action("read"), docReview([], undefined, "notes/intro.txt")]),
                 chatItems([you("x"), action("read"), ask("Scope")]),
             ]) {
-                expect(kinds(items)).toEqual(["work"]);
-                const work = part(items, 0);
-                expect(work.kind === "work" && work.work.actions).toHaveLength(2);
+                expect(kinds(items)).toEqual(["work", "ask"]);
             }
         });
 
-        it("leaves an ask of several questions in the work even when one is a Doc review", () => {
+        it("takes an ask of several questions for a plain ask even when one is a Doc review", () => {
             const two = action("asked", {
                 detail: {
                     kind: "ask",
@@ -1137,7 +1162,7 @@ describe("chatItems: verdict, handoff, run-start, council-start and Doc review p
                     ],
                 },
             });
-            expect(kinds(chatItems([you("x"), two]))).toEqual(["work"]);
+            expect(kinds(chatItems([you("x"), two]))).toEqual(["ask"]);
         });
     });
 

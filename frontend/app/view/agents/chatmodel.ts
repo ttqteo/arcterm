@@ -74,6 +74,10 @@ export type AgentPart =
     | { kind: "councilstart"; key: string; anchor: CouncilAnchor }
     // a Doc review: an AskUserQuestion `isDocReviewAsk` reads, answered or not (`question.picked` / `typed`)
     | { kind: "docreview"; key: string; question: AskQuestionDetail }
+    // any other AskUserQuestion: its questions and what you answered (`picked` / `typed` on each), drawn as a card of its
+    // own rather than folded into the tools around it. `ended`: the call has its result, answered or turned down; one
+    // still waiting is the dock's (chatpane.tsx ChatAsk)
+    | { kind: "ask"; key: string; questions: AskQuestionDetail[]; ended: boolean }
     // a `wsh board draw` call and the board it names, as the call spells it: it draws nothing where it is (the call stays a
     // tool line), the turn ends in one card per board (chatboard.ts boardsDrawn, chatboardcard.tsx)
     | { kind: "boarddraw"; key: string; board: string }
@@ -262,12 +266,13 @@ function recordUuid(entry: AgentEntry | undefined): string | undefined {
 }
 
 // What a tool call is to Chat when it is more than a tool line: the review a `ReportFindings` call reports, the plan
-// handoff, a Doc review ask, a run `wsh runs start` began, a council `wsh council start` began, or a board a
-// `wsh board draw` call drew on.
+// handoff, a Doc review ask, any other ask, a run `wsh runs start` began, a council `wsh council start` began, or a board
+// a `wsh board draw` call drew on.
 type Moment =
     | { kind: "verdict"; verdict: Verdict }
     | { kind: "handoff"; question: AskQuestionDetail }
     | { kind: "docreview"; question: AskQuestionDetail }
+    | { kind: "ask"; questions: AskQuestionDetail[]; ended: boolean }
     | { kind: "runstart"; anchor: RunAnchor }
     | { kind: "councilstart"; anchor: CouncilAnchor }
     | { kind: "boarddraw"; board: string };
@@ -282,7 +287,12 @@ function momentOf(action: AgentActionEntry): Moment | null {
         if (isHandoffAsk(detail.questions)) {
             return { kind: "handoff", question: detail.questions[0] };
         }
-        return isDocReviewAsk(detail.questions) ? { kind: "docreview", question: detail.questions[0] } : null;
+        if (isDocReviewAsk(detail.questions)) {
+            return { kind: "docreview", question: detail.questions[0] };
+        }
+        return detail.questions.length > 0
+            ? { kind: "ask", questions: detail.questions, ended: action.outcome != null }
+            : null;
     }
     if (detail?.kind === "bash") {
         const command = detail.command ?? "";
@@ -317,9 +327,9 @@ function lastOf<T>(items: readonly T[], match: (t: T) => boolean): T | null {
  * messages, a sent card or a marker joins one group; a marker splits the agent's side in two, since it is a point in the
  * conversation of its own.
  *
- * A group is cut at five moments, each a part of its own: a reply holding an ```arc-review block (the prose before and
- * after it kept as parts), a `ReportFindings` call, a `Handoff` ask and a Doc review ask (all cut out of the stretch of
- * tools they sit in, no tool line left for them), and a `wsh runs start` or `wsh council start` call whose output names a
+ * A group is cut at six moments, each a part of its own: a reply holding an ```arc-review block (the prose before and
+ * after it kept as parts), a `ReportFindings` call, a `Handoff` ask, a Doc review ask and any other ask (all cut out of the
+ * stretch of tools they sit in, no tool line left for them), and a `wsh runs start` or `wsh council start` call whose output names a
  * run or a council (the stretch is split after the call, which stays a tool line). A `wsh board draw` call cuts nothing:
  * it adds a `boarddraw` part before its stretch and stays a tool line in it.
  */
@@ -512,6 +522,14 @@ export function chatItems(entries: AgentEntry[]): ChatItem[] {
                             break;
                         case "docreview":
                             parts.push({ kind: "docreview", key: `docreview:${index}`, question: moment.question });
+                            break;
+                        case "ask":
+                            parts.push({
+                                kind: "ask",
+                                key: `ask:${index}`,
+                                questions: moment.questions,
+                                ended: moment.ended,
+                            });
                             break;
                     }
                 });
