@@ -1217,7 +1217,9 @@ export function scannedRows(data: SessionIdeasData): ScannedRow[] {
                         ? { result: "not scanned", tone: "none" }
                         : s.outcome === "waiting"
                           ? { result: "still being written", tone: "wait" }
-                          : { result: "nothing left open", tone: "nothing" };
+                          : s.outcome === "unreadable"
+                            ? { result: "reply unreadable", tone: "nothing" }
+                            : { result: "nothing left open", tone: "nothing" };
             return {
                 id: s.sessionid,
                 title: s.title || s.sessionid.slice(0, 8),

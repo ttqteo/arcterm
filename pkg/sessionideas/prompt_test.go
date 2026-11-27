@@ -169,16 +169,30 @@ func TestParseReply(t *testing.T) {
 			t.Errorf("%s: got %+v, %v", name, got, err)
 		}
 	}
-	for name, in := range map[string]string{"empty": "[]", "fenced empty": "```json\n[]\n```"} {
+	for name, in := range map[string]string{
+		// prose around the list: a sentence first, the list fenced or not, more after it, a bracket before it that is no list
+		"prose then a fence":   "Looking at this conversation, two ideas stayed open.\n\n```json\n" + ideas + "\n```\nLet me know.",
+		"prose then a list":    "Here they are: " + ideas + " That is all.",
+		"a bracket before":     "Ideas [as asked] follow:\n" + ideas,
+		"a fence, then a note": "```json\n" + ideas + "\n```\n\nNote: the second was only floated once.",
+	} {
+		got, err := ParseReply(in)
+		if err != nil || !reflect.DeepEqual(got, want) {
+			t.Errorf("%s: got %+v, %v", name, got, err)
+		}
+	}
+	for name, in := range map[string]string{"empty": "[]", "fenced empty": "```json\n[]\n```", "prose": "Here are the ideas: []"} {
 		if got, err := ParseReply(in); err != nil || len(got) != 0 {
 			t.Errorf("%s: got %+v, %v", name, got, err)
 		}
 	}
 	for name, in := range map[string]string{
-		"prose":            "Here are the ideas: []",
+		"prose only":       "Sure! Here are the ideas: none.",
+		"a citation only":  "As said in [1], nothing stayed open.",
 		"an object":        `{"gist":"A"}`,
 		"empty":            "",
 		"a cut array":      `[{"gist":"A"`,
+		"prose, then cut":  "Here: [{\"gist\":\"A\"",
 		"a fence only":     "```json\n```",
 		"an array of text": `["a","b"]`,
 	} {
