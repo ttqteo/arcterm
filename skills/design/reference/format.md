@@ -62,11 +62,11 @@ Rules beyond SKILL.md's "Rules that bite":
 - Multi-frame design explorations are ARTBOARDS: put each frame in
   its own `.dc.html` entry and lay them out with `canvas.json`. Arc
   draws every listed board at its frame, scaled to fit the pane. A
-  clickable prototype is one artboard per screen, joined by links
-  (Links between artboards, below). Give every artboard whose content
-  really works (handlers, inputs, navigation) `"is_interactive": true`
-  in its canvas.json entry (claude.ai: only those get a Play button);
-  leave it off static comps.
+  clickable prototype is a main board plus one child file per screen
+  (Prototypes and variant slots, below). Give every artboard whose
+  content really works (handlers, inputs, navigation) `"is_interactive":
+  true` in its canvas.json entry (claude.ai: only those get a Play
+  button); leave it off static comps.
 
 ## Quick syntax card (a syntax demo; `{{title}}` etc. are placeholders)
 
@@ -96,10 +96,11 @@ Rules beyond SKILL.md's "Rules that bite":
   artboard's; a leading `/` means the canvas root (`/sub/Cart.dc.html`).
   Style the `<a>` itself as the button: a `<button>` or input inside
   it swallows the click. `href="#id"` scrolls within the artboard;
-  `https://…` opens a tab. Each artboard keeps its own `state`, so a
-  flow that must share state across screens is ONE artboard: its
-  handlers set a `state` field, `renderVals()` returns one flag per
-  screen from it, and each screen sits in its own `<sc-if>`.
+  `https://…` opens a tab. Each artboard keeps its own `state` and a
+  link carries no variant-slot pick, so a flow that must share state
+  across screens is a prototype (Prototypes and variant slots, below):
+  one main board whose handlers set a `state` field, with each screen
+  in its own `<sc-if>`.
 - **Conditional styling in a loop**: precompute the varying piece per
   item in `renderVals()` (e.g. each item carries `ringStyle` or
   `selected`) and either branch with `<sc-if>` or bind the computed
@@ -160,4 +161,129 @@ Rules beyond SKILL.md's "Rules that bite":
   child's root size; works inside `<sc-for>`; never self-close and
   never use capitalized tags (`<Card/>`). claude.ai shows every
   `.dc.html` as an artboard, so list the child in `canvas.json` too
-  (`w`,`h` = its `$preview`).
+  (`w`,`h` = its `$preview`). A prototype's screens are such children
+  (Prototypes and variant slots, below).
+
+## Prototypes and variant slots
+
+Two sets of attributes let Arc's canvas pane drive a board: `data-dc-screen`
+names a screen, and `data-dc-slot` marks a region drawn in several variants
+that the person flips between. Arc reads them off the page it shows;
+claude.ai ignores them. They are plain attributes on real elements: write
+them as literal text, never a `{{ }}` hole.
+
+### A prototype: a main board and one child file per screen
+
+A flow of more than one screen is one main board plus one child `.dc.html`
+per screen, never every screen in one file: a whole prototype grows to
+10–20k tokens and sits in context on every later turn, while a screen's own
+file is 2–4k and the only one a change to that screen reads.
+
+- The **main board** (`Main.dc.html`) holds the state the screens share
+  (`screen`, and anything that must outlive a trip between screens), mounts
+  each screen in its own `<sc-if>` with `<dc-import>`, and passes a
+  navigation callback down as a prop.
+- Each **screen** is a child file (Child DCs, above) whose root element
+  carries `data-dc-screen="<name>"`: the screen's name in the language of
+  the design's copy (`Snoozed`; `Để sau` in a Vietnamese design). Arc takes
+  the first `[data-dc-screen]` element on the page that has a box as the
+  current screen, so mount one screen at a time and nest none inside
+  another. The name goes into the marks the person sends back.
+- A screen **navigates by calling the callback prop**, never `<a href>`: a
+  link opens the other file as a board of its own, with fresh state and no
+  variant picks.
+- Inside a screen, menus, tabs, toggles and inputs work and change that
+  screen's own `state`. No motion between states and no reactive fake data
+  (add, delete, typing that updates a list): draw each such state as a
+  screen or a variant instead. A screen's state is gone once the main board
+  unmounts it, so a value that must survive leaving and coming back lives in
+  the main board's `state`, passed down as a prop with a callback up.
+- `canvas.json`: the main board's entry has `"is_interactive": true`; each
+  screen's entry has `"part_of": "<main board file>"`, with its `$preview`
+  size as `w`,`h`. List a screen in `boards` and `order` like any artboard
+  (claude.ai shows every file), after its main board. Arc then shows the
+  prototype as one board: a `part_of` file is no tab, no gallery board and
+  no option of a question.
+
+Both files open like any artboard, with the skeleton's `<head>` and its
+`<script src="./support.js"></script>` line; the two files below show only
+what follows it. The main board (`Main.dc.html`):
+
+```html
+<x-dc>
+<helmet>
+<style>body{margin:0}</style>
+</helmet>
+<sc-if value="{{ onInbox }}" hint-placeholder-val="{{ true }}">
+<dc-import name="Inbox" go="{{ go }}" hint-size="880px,560px"></dc-import>
+</sc-if>
+<sc-if value="{{ onSnoozed }}" hint-placeholder-val="{{ false }}">
+<dc-import name="Snoozed" go="{{ go }}" hint-size="880px,560px"></dc-import>
+</sc-if>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":880,"height":560}}'>
+class Component extends DCLogic {
+renderVals() {
+const screen = this.state.screen ?? 'inbox';
+return {
+onInbox: screen === 'inbox',
+onSnoozed: screen === 'snoozed',
+go: (to) => this.setState({ screen: to }),
+};
+}
+}
+</script>
+```
+
+A screen (`Snoozed.dc.html`). `go` is declared with `"editor": null` because
+it is a callback, and called as `go?.(…)` so the file still renders when
+opened on its own, where no main board passes it:
+
+```html
+<x-dc>
+<div data-dc-screen="Snoozed" style="width: 880px; height: 560px; box-sizing: border-box; padding: 32px; display: flex; flex-direction: column; gap: 16px">
+<button onClick="{{ toInbox }}">← Inbox</button>
+<div data-dc-slot="list" data-dc-slot-label="list" style="display: flex; flex-direction: column; gap: 8px">
+<div data-dc-variant="A">…the rows, as a plain list…</div>
+<div data-dc-variant="B">…the same rows, as cards…</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"go":{"editor":null},"$preview":{"width":880,"height":560}}'>
+class Component extends DCLogic {
+renderVals() {
+return { toInbox: () => this.props.go?.('inbox') };
+}
+}
+</script>
+```
+
+### Variant slots
+
+A slot is a region of a screen drawn in two or more variants. Arc puts an
+A/B/C chip on it; picking a letter swaps only that region, and the rest of
+the screen, and its state, stay as they are. A slot works on a single board
+too, outside any prototype (SKILL.md, **Options**).
+
+- The slot element carries `data-dc-slot="<id>"` and, optionally,
+  `data-dc-slot-label="<label>"` (what Arc's readout and the marks' lines
+  call it; the default is the id). `<id>` is short and has no quotes. The
+  element must be a real box, never `display: contents`, which has no
+  rectangle for the chip to sit on.
+- Its **direct children** carry `data-dc-variant="A"`, `"B"`, `"C"`…: the
+  letters in order in the DOM, one variant per child (a variant of several
+  elements wraps them in one). With no pick, the first variant shows.
+- claude.ai ignores the attributes and shows every variant stacked; that is
+  fine, the swap is Arc's feature. Size the board for the tallest variant.
+- The same id on another screen is the same slot to Arc: a pick holds across
+  the whole prototype, and a screen whose slot lacks the picked letter keeps
+  its first variant.
+- Variants draw the same content and differ in layout and treatment. Draw no
+  chip, tabs or switch of your own, and choose between variants with no
+  `<sc-if>`: Arc hides the others from outside, which is what keeps the
+  screen's state.
+
+What comes back: a mark line from a prototype names the screen and each
+slot's letter, for example `screen "Snoozed", slot list = B: 1 …`. The screen
+name is the `data-dc-screen` value, not a file name: find its file by
+searching `project/` for `data-dc-screen="Snoozed"`.

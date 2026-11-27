@@ -22,7 +22,8 @@ What changes from plain brainstorming:
   short line on what you changed and never repeats the question: Arc's Chat draws the question as
   a card from the file, so a reply that states it shows it twice. Never repeat a part's text there.
 - Mockups are `arc:design` boards, listed on the part they illustrate, one per option when a
-  question's options differ in UI. Never start the visual companion's server inside Arc. A live spike is listed on its part too, never only in the terminal.
+  question's options differ in UI (or one board with a variant slot, when they differ in one region).
+  Never start the visual companion's server inside Arc. A live spike is listed on its part too, never only in the terminal.
 - Still end every turn waiting on the question in `question`: the file is what Arc shows, and the
   terminal reply stays one line that does not restate it.
 
@@ -100,7 +101,7 @@ Everything else is optional and read leniently, but write every field as describ
 |---|---|
 | `spec` | The spec path, relative to the project (or absolute). You write the spec there on `brainstorm: check`. Use `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`, never a path under `.superpowers/`: git ignores that folder, and a run refuses a spec it cannot commit with its plan. |
 | `canvas` | The `arc:design` topic whose boards and spikes the parts list: boards live in `.superpowers/design/<canvas>/project/`, spikes anywhere under `.superpowers/design/<canvas>/`. Omit it when there are no mockups. |
-| `question` | `{ "n", "text", "part", "why", "read", "options", "multi", "approaches", "judge" }`: the question you are waiting on, its number (1, 2, 3, ...), the id of the part it is for, why you ask it, your one-line read of the options, the answers you offer, and `multi: true` when the user may take more than one of them (below). On an approach question, `approaches` is the list you made for the judge, and `read`, `options` and `judge` come from the judge (**Approach questions go to the judge**, below). Leave `part` out for a question about no part (below). `null` while you are not asking. |
+| `question` | `{ "n", "text", "part", "why", "read", "options", "multi", "slot", "approaches", "judge" }`: the question you are waiting on, its number (1, 2, 3, ...), the id of the part it is for, why you ask it, your one-line read of the options, the answers you offer, `multi: true` when the user may take more than one of them (below), and `slot`, the `data-dc-slot` id of the board's variant slot whose variants are the options (**Options as boards**, below; a non-empty string, left out otherwise). On an approach question, `approaches` is the list you made for the judge, and `read`, `options` and `judge` come from the judge (**Approach questions go to the judge**, below). Leave `part` out for a question about no part (below). `null` while you are not asking. |
 | `working` | One short line on what is still underway, set only when a turn ends with work running in the background (below). Arc shows it in place of the question and locks the pane's controls while it is set. `null` otherwise. |
 | `parts[]` | The design, in display order. `title`; `state`; `kind` (`"note"` for background, below; leave it out for a decision); `gist` (the part in one line, below); `body` (the part's text); `from` (where it came from: `answer 2`, `mockup`, `recon`); `boards` (board file names under the canvas's `project/`); `spikes` (live spike pages, as paths under the canvas folder, below); `was` / `why` (below). |
 | `history[]` | Every finished exchange, oldest first: `kind` (`question` or `recon`), `n` (the question's number), `q`, `why` (the question's `why`), `a`, `into` (the part ids it went into), and for a question that offered answers, `options` and `picked` (an index, or a list of indexes when the user took several), and the question's `judge` when it had one (below). A question dropped after pushback has `superseded: true`, `part` (the part it was asked for) and no `a` (below). |
@@ -358,15 +359,24 @@ node -e "const fs=require('fs'),[f,j]=process.argv.slice(1),b=JSON.parse(fs.read
 leave it off the approach question, since the wait offers a tick box on every approach.
 
 When the judge's options differ in UI, the same turn draws them before the copy: read `<path>`,
-draw one board per option in its order (**Options as boards**), then copy with this variant, which
-also sets `canvas` and the asked part's `boards`, in board order, in the same write:
+draw them in its order (**Options as boards**: one board per option, or one board with a slot when
+they differ in one region). For a board per option, copy with this variant, which also sets `canvas`
+and the asked part's `boards`, in board order, in the same write:
 
 ```
 node -e "const fs=require('fs'),[f,j,c,...bs]=process.argv.slice(1),b=JSON.parse(fs.readFileSync(f));Object.assign(b.question,JSON.parse(fs.readFileSync(j)));b.working=null;b.canvas=c;const p=b.parts.find(x=>x.id===b.question.part);if(p)p.boards=bs;fs.writeFileSync(f,JSON.stringify(b,null,2))" "<absolute path of brainstorm.json>" "<path>" "<canvas>" "A-<slug>.dc.html" "B-<slug>.dc.html"
 ```
 
-On a rerun (pushback, "double check") do the same for the new options: redraw to match them, and
-move a board no option matches any more to `unchosen/`. End the turn on the question.
+For one board with a slot, copy with this variant instead: it takes the slot's id and the one
+board, and sets `question.slot`, `canvas` and the asked part's `boards` in the same write:
+
+```
+node -e "const fs=require('fs'),[f,j,c,s,bd]=process.argv.slice(1),b=JSON.parse(fs.readFileSync(f));Object.assign(b.question,JSON.parse(fs.readFileSync(j)));b.working=null;b.canvas=c;b.question.slot=s;const p=b.parts.find(x=>x.id===b.question.part);if(p)p.boards=[bd];fs.writeFileSync(f,JSON.stringify(b,null,2))" "<absolute path of brainstorm.json>" "<path>" "<canvas>" "<slot id>" "<Board>.dc.html"
+```
+
+On a rerun (pushback, "double check") do the same for the new options: redraw to match them (on the
+slot path, rewrite the slot's variants so letter *i* is option *i*), and move a board no option
+matches any more to `unchosen/`. End the turn on the question.
 
 **While the judge weighs.** Arc shows the question, the approach list and an open answer box while
 the judge runs, and stops the judge itself before it sends an answer or Skip; you never stop it. A
@@ -415,17 +425,31 @@ make it a `guess`. It stays a guess until they keep or restore it.
 **Mockups.** Draw them as `arc:design` boards under `.superpowers/design/<canvas>/project/`, set
 `canvas`, and list each board's file name in `boards` on the part it illustrates. Arc draws it as a
 thumbnail in the part, under its body when the user opens it, in the talk and in the builder check's
-review alike. The run's prototype is the first board any part lists.
+review alike. A clickable prototype (`arc:design`'s **Clickable or static**) lists only its main
+board, the one `canvas.json` marks `is_interactive`, never a screen file (an entry with `part_of`):
+Arc shows the screens as parts of that one board. The run's prototype is the first board any part
+lists.
 
-**Options as boards.** When a question chooses between options that differ in UI, draw one board
-per option as `arc:design`'s **Options** section says, and list them in `boards` on the asked part:
-exactly one per option, in the order of `question.options`. The pane labels a question's boards
-`option A of N` by position, so the order is what matches each board to its lettered row. A
-question you weigh yourself gets its boards in the write that asks it. An approach question has no
+**Options as boards.** When a question chooses between options that differ in UI, draw them as
+`arc:design`'s **Options** section says, by how much they differ, and list the result in `boards`
+on the asked part:
+
+- **The options differ in the whole screen:** one board per option, exactly one per option, in the
+  order of `question.options`. The pane labels a question's boards `option A of N` by position, so
+  the order is what matches each board to its lettered row.
+- **The options differ in one region of a screen:** ONE board with a variant slot, its variants in
+  the order of the options. List that one board (a prototype's main board, never a screen file) and
+  set `question.slot` to the slot's id. Option *i* is the slot's variant *i* (`A`, `B`, `C`…), so Arc
+  ties each chip letter to its option row: picking a letter on the chip only previews that row, and
+  the user still answers by picking the row. One question ties to one slot; other slots on the board
+  are preview-only and map to no option. Leave `question.slot` out on the board-per-option path.
+
+A question you weigh yourself gets its boards in the write that asks it. An approach question has no
 options until the judge writes them: draw nothing before it runs, and draw on `brainstorm: judged`
-(**Approach questions go to the judge**). Once the user picks, the part lists only the picked
-option's board, so the run's prototype is the picked design, and the other boards move to
-`unchosen/` as **Options** says.
+(**Approach questions go to the judge**). Once the user picks, on the whole-screen path the part
+lists only the picked option's board, so the run's prototype is the picked design, and the other
+boards move to `unchosen/` as **Options** says; on the slot path the board stays listed and its
+slot collapses to the picked variant, as **Options** says.
 
 A spike is a throwaway live page for what a board cannot show, such as motion or a drag: a plain
 HTML file under the canvas folder, e.g. `.superpowers/design/<canvas>/spike/motion.html`. List its
