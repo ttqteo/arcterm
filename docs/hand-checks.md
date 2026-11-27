@@ -24,6 +24,10 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
 
 ## 2026-11-27
 
+- [ ] (arcterm) **A paused run keeps its worker's open question.** After a build, start a run whose worker asks you
+  something (AskUserQuestion, arc mod on), pause the run while the question is open: it should stay in Needs you and on
+  the run. Answer it while paused, resume: the reopened worker should start with "the person answered your question:
+  …" and carry on. Commit e2c1334ef.
 - [ ] (arcterm) **Save for later: the What's new picture.** Take it with `node scripts/whatsnew-shot.mjs save-later
   --selector [data-jarvis-brief-region="later-chunks"]` (the Brief with a few later items on screen), then swap the
   CHANGELOG line's `<!-- shot: none -->` for the comment it prints, in one commit (spec "Builder's calls" 17). Until
