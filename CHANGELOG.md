@@ -46,6 +46,13 @@ and a picture given to a line that is not big.
 
 - A question an agent in a paused run had open no longer disappears when the run pauses: you can answer it while the
   run is paused, and the agent gets your answer when the run resumes.
+- The chat box's `/` menu and `@` list show the rest of the highlighted name faintly after what you typed (`/co` shows
+  `ntext`); Tab or → takes it.
+
+### Changed
+
+- One letter after `@` picks a kind: `@a` lists agents, `@r` runs, `@c` councils, `@s` conversations, `@e` initiatives
+  and `@b` boards, ahead of the files.
 
 ## 1.12.0 — 2026-11-27
 

@@ -941,7 +941,11 @@ function ComposerBox({
         !bash && !waking && picked == null && caretNow === text.length
             ? chipGhost(tabChips, text, onGoOn != null)
             : null;
-    const shownGhost = ghost !== "" ? ghost : (chipGhostNow?.rest ?? "");
+    // an open `/` menu or `@` list ghosts the rest of its highlighted row (menughost.ts) ahead of a chip's; → or Tab
+    // takes it as a pick of that row
+    const menuGhostNow =
+        bash || waking ? null : ([promptBox.slash, promptBox.mention].find((m) => m.ghost !== "") ?? null);
+    const shownGhost = ghost !== "" ? ghost : (menuGhostNow?.ghost ?? chipGhostNow?.rest ?? "");
     // the chip that asks before its text replaces the typed one (sendSuggested): it is always the picked chip, so
     // whatever lets go of the pick (typing, Esc, Tab, a send) lets go of it too
     const [armedText, setArmed] = useState<string | null>(null);
@@ -1256,6 +1260,10 @@ function ComposerBox({
                                             ) {
                                                 e.preventDefault();
                                                 recalled.current = { at: null, shown: "" };
+                                                if (ghost === "" && menuGhostNow != null) {
+                                                    menuGhostNow.takeGhost();
+                                                    return;
+                                                }
                                                 if (ghost === "" && chipGhostNow != null) {
                                                     logPick(chipGhostNow.chip, "edit");
                                                     setTextAt(chipGhostNow.take, chipGhostNow.take.length);
