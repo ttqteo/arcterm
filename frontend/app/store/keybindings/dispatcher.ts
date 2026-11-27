@@ -10,6 +10,7 @@ import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { consumersOpenAtom } from "@/app/view/agents/consumersstore";
 import { docReviewAtom } from "@/app/view/agents/docreview";
 import { floatMiniAtom } from "@/app/view/agents/floatstore";
+import { gridLayoutMenuOpenAtom } from "@/app/view/agents/gridlayoutmenuatom";
 import { heldAskOpenAtom } from "@/app/view/agents/heldaskpopup";
 import { machineServersOpenAtom } from "@/app/view/agents/machineserversstore";
 import { tabSwitcherAtom } from "@/app/view/agents/tabswitcherstore";
@@ -142,6 +143,8 @@ export function deriveKeyContext(): KeyContext {
         // and the app bar's Jobs popover, the same way: uncounted, Escape on Jarvis, Diff, Usage or Code went home with
         // it open (its listener never saw the key), and on the Agent surface stopped a working agent's turn
         globalStore.get(jobQueueOpenAtom) ||
+        // the agent header's layout menu: its Escape closes it, not the surface underneath
+        globalStore.get(gridLayoutMenuOpenAtom) ||
         // the float folded into Sprout: the shell is hidden, and its keys (f, Escape, Shift+F, j/k) ended float or
         // changed the agent behind Sprout's back
         globalStore.get(floatMiniAtom) ||

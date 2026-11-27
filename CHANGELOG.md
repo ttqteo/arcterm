@@ -36,6 +36,9 @@ and a picture given to a line that is not big.
 
 - The chat box's `/` menu and `@` list show the rest of the highlighted name faintly after what you typed (`/co` shows
   `ntext`); Tab or → takes it.
+- Snap layouts for a split, as Windows has: rest the pointer on the layout button in the agent header (Focus board's,
+  on a board split) and pick a zone of 1 | 1, 7 | 3, 3 | 7, one beside two, or 2 × 2; the agent in focus goes there
+  and the other cells fill the rest. The palette has the same as Layout rows, and Swap cells for a split of two.
 
 ### Changed
 

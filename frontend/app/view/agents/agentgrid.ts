@@ -200,6 +200,27 @@ export function swapCells(state: GridState, a: number, b: number): GridState {
     return withPlaces(ids, s.focused, placesOf(s));
 }
 
+// The grid laid out on `places` (zones in reading order, as a layout lists them): `mover` takes the zone at `zone`
+// and the other cells fill the rest in their order on screen. The grid as it was when the zones do not tile the 2x2
+// for its count, `zone` is out of range or `mover` is no cell. Focus stays where it was.
+export function arrangeCells(
+    state: GridState,
+    places: readonly CellPlacement[],
+    mover: string,
+    zone: number
+): GridState {
+    const s = normalizeGrid(state);
+    if (!tiles(places, s.ids.length) || !Number.isInteger(zone) || zone < 0 || zone >= places.length) {
+        return s;
+    }
+    if (!s.ids.includes(mover)) {
+        return s;
+    }
+    const rest = s.ids.filter((id) => id !== mover);
+    const ids = places.map((_, i) => (i === zone ? mover : rest.shift()!));
+    return withPlaces(ids, s.focused, places);
+}
+
 // The places once the cell at `i` leaves: a neighbour sharing a whole side with it grows over it (one beside it in
 // the same row first); when none does, it spanned the whole height or width and the cells beside it each grow across.
 function placesWithout(places: readonly CellPlacement[], i: number): CellPlacement[] {
