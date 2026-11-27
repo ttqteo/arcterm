@@ -61,6 +61,9 @@ type StorageItem struct {
 	Guarded   bool   `json:"guarded,omitempty"`   // only its own button removes it, after a confirm that says what is lost
 	Reason    string `json:"reason,omitempty"`    // why it stays, or what removing it costs
 	Unscanned bool   `json:"unscanned,omitempty"` // a session no Session ideas scan has read, which one could still read
+	// SizedTs is when a build folder's Bytes was measured (unix ms), 0 when it never was: a scan lists build output
+	// without walking it, so its Bytes is the kept size (buildsizes.go), 0 until the folder is sized
+	SizedTs int64 `json:"sizedts,omitempty"`
 }
 
 type StorageCategoryReport struct {
@@ -77,6 +80,17 @@ type StorageReport struct {
 	Categories []StorageCategoryReport `json:"categories"`
 	StoreBytes int64                   `json:"storebytes"` // arcterm's store (<data>/db): shown, never cleaned
 	LastAuto   *StorageAutoClean       `json:"lastauto,omitempty"`
+	Sizing     *StorageSizing          `json:"sizing,omitempty"` // build output being sized; nil when nothing is queued or walking
+}
+
+// StorageSizing is what sizes build output now: the projects waiting, the one being walked, and how far the queue has
+// got. Done and Total count projects since the queue was last idle (a row open that adds a project adds 1 to Total);
+// both reset when the queue empties.
+type StorageSizing struct {
+	Queued  []string `json:"queued"` // project paths waiting, not the one walking
+	Walking string   `json:"walking,omitempty"`
+	Done    int      `json:"done"`
+	Total   int      `json:"total"`
 }
 
 type StorageSkipped struct {

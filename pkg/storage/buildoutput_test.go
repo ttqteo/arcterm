@@ -5,6 +5,7 @@ package storage
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"sort"
@@ -63,8 +64,61 @@ func TestBuildOutputFindsIgnoredBuildDirs(t *testing.T) {
 	if got := itemIDs(rep.Items); len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
 		t.Fatalf("found %v, want %v", got, want)
 	}
-	if it := itemByID(rep.Items, filepath.Join(repo, "frontend", "node_modules")); it.Bytes != 15 || !it.Cleanable || it.Label != "frontend/node_modules" || it.Detail != repo {
-		t.Fatalf("node_modules: %+v (nested node_modules counted in it, not listed apart; Detail is the project's path)", it)
+	// the scan lists a folder and never walks it: a folder nobody sized reads 0 bytes, sized at 0 (never)
+	if it := itemByID(rep.Items, filepath.Join(repo, "frontend", "node_modules")); it.Bytes != 0 || it.SizedTs != 0 || !it.Cleanable || it.Label != "frontend/node_modules" || it.Detail != repo {
+		t.Fatalf("node_modules: %+v (never sized: 0 bytes, SizedTs 0; nested node_modules not listed apart; Detail is the project's path)", it)
+	}
+}
+
+func TestBuildOutputTakesItsSizesFromTheKeptFileAndWalksNothing(t *testing.T) {
+	repo := buildRepo(t)
+	env := buildEnv(repo, nil)
+	env.DataDir = t.TempDir()
+	nm := filepath.Join(repo, "frontend", "node_modules")
+	target := filepath.Join(repo, "src-tauri", "target")
+	// 999 is not what is on disk (15): a scan that walked would read 15
+	raw, err := json.Marshal(map[string]map[string]int64{nm: {"bytes": 999, "ts": 1700000000000}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeKeptRaw(t, env, string(raw))
+	rep := buildOutput{}.measure(context.Background(), env)
+	if it := itemByID(rep.Items, nm); it.Bytes != 999 || it.SizedTs != 1700000000000 {
+		t.Fatalf("node_modules: %+v, want the kept 999 bytes and its time", it)
+	}
+	if it := itemByID(rep.Items, target); it.Bytes != 0 || it.SizedTs != 0 {
+		t.Fatalf("target: %+v, want 0 bytes and SizedTs 0: never sized", it)
+	}
+	if rep.Bytes != 999 || rep.CleanableBytes != 999 {
+		t.Fatalf("category totals %d / %d, want the kept sizes summed (999)", rep.Bytes, rep.CleanableBytes)
+	}
+}
+
+func TestBuildOutputCleanDropsItsKeptSizeAndStillMeasuresWhatItRemoves(t *testing.T) {
+	repo := buildRepo(t)
+	env := buildEnv(repo, nil)
+	env.DataDir = t.TempDir()
+	nm := filepath.Join(repo, "frontend", "node_modules")
+	target := filepath.Join(repo, "src-tauri", "target")
+	updateBuildSizes(env, func(k keptSizes) {
+		k[nm] = keptSize{Bytes: 999, Ts: 1}
+		k[target] = keptSize{Bytes: 20, Ts: 2}
+	})
+	res := buildOutput{}.clean(context.Background(), env, []string{nm}, CleanOpts{})
+	if len(res.Cleaned) != 1 || res.Reclaimed != 15 {
+		t.Fatalf("got %+v, want node_modules removed and its own measure (15 bytes) reclaimed, not the kept 999", res)
+	}
+	got := readBuildSizes(env)
+	if _, ok := got[nm]; ok || got[target].Bytes != 20 {
+		t.Fatalf("kept sizes %v, want the removed folder's entry dropped and the other kept", got)
+	}
+	// a folder a clean refused keeps its entry
+	updateBuildSizes(env, func(k keptSizes) { k[filepath.Join(repo, "dist")] = keptSize{Bytes: 3, Ts: 3} })
+	if res := (buildOutput{}).clean(context.Background(), env, []string{filepath.Join(repo, "dist")}, CleanOpts{}); len(res.Cleaned) != 0 {
+		t.Fatalf("dist is tracked and must stay: %+v", res)
+	}
+	if _, ok := readBuildSizes(env)[filepath.Join(repo, "dist")]; !ok {
+		t.Fatal("a refused clean must keep the entry")
 	}
 }
 

@@ -206,8 +206,12 @@ func isPlainDir(p string) bool {
 	return err == nil && info.IsDir()
 }
 
+// measure lists the build folders and walks none of them: walking every node_modules and target of every repo an agent
+// worked in took minutes to hours. A folder's Bytes and SizedTs are what it measured when last sized (buildsizes.go),
+// 0 and 0 when it never was.
 func (buildOutput) measure(ctx context.Context, env *Env) StorageCategoryReport {
 	busy, busyErr := env.BusyProjects(ctx)
+	kept := readBuildSizes(env)
 	var items []StorageItem
 	// a folder two projects reach (a repo nested in another) is listed once, under the first
 	seen := map[string]bool{}
@@ -227,7 +231,7 @@ func (buildOutput) measure(ctx context.Context, env *Env) StorageCategoryReport 
 			rel, _ := filepath.Rel(project, c)
 			// Detail is the project's path: the Settings card folds a project's folders into one row with one button
 			items = append(items, StorageItem{ID: c, Kind: KindBuild, Label: filepath.ToSlash(rel), Detail: project,
-				Path: c, Bytes: dirSize(c), ModTs: bp.lastUsed, Cleanable: why == "", Reason: why})
+				Path: c, Bytes: kept[c].Bytes, SizedTs: kept[c].Ts, ModTs: bp.lastUsed, Cleanable: why == "", Reason: why})
 		}
 	}
 	var err error
@@ -283,6 +287,7 @@ func (buildOutput) clean(ctx context.Context, env *Env, ids []string, opts Clean
 			skip(&res, id, "git tracks files in it")
 			continue
 		}
+		// measured right before it goes, whatever its kept size says: Reclaimed is what this clean freed
 		size := dirSize(id)
 		if err := os.RemoveAll(id); err != nil {
 			skip(&res, id, "couldn't remove: "+err.Error())
@@ -291,5 +296,6 @@ func (buildOutput) clean(ctx context.Context, env *Env, ids []string, opts Clean
 		res.Reclaimed += size
 		res.Cleaned = append(res.Cleaned, id)
 	}
+	dropBuildSizes(env, res.Cleaned...)
 	return res
 }
