@@ -1,0 +1,56 @@
+# Chunk priority: a level on each chunk that decides which chunk opens next
+
+**Spec:** `docs/superpowers/specs/2026-11-27-chunk-priority-design.md` (its "Builder's calls" section settles what each task relies on)
+**Verify:** `node scripts/verify.mjs ./pkg/waveobj ./pkg/jarvis ./pkg/jarvisstate ./pkg/dume ./pkg/wavevault ./cmd/wsh/cmd`
+**Check:** `task check:ts`
+**Final:** `node scripts/cdp/final-verify.mjs chunk-priority jarvis-initiative-sheet`
+**Prototype:** D:\work\arcterm\.superpowers\design\chunk-priority\project\A-word-chip.dc.html
+
+### Task 1: The field, the wire, and the rank rule on both sides
+**Depends on:** none
+**Model:** sonnet
+**Files:** `pkg/waveobj/wtype.go`, `pkg/waveobj/chunkorder.go`, `pkg/waveobj/chunkorder_test.go`, `pkg/waveobj/testdata/chunkorder-cases.json`, `pkg/wshrpc/wshrpctypes_effort.go`, `frontend/types/gotypes.d.ts`, `frontend/app/view/jarvis/chunkorder.ts`, `frontend/app/view/jarvis/chunkorder.test.ts`, `frontend/app/view/jarvis/effortstore.ts`
+
+The interface Tasks 2, 3 and 4 build on (Builder's calls 1–3).
+- `EffortChunk.Priority string \`json:"priority,omitempty"\`` with a comment; `EffortOp.Priority` (addChunk / setChunkPriority, "" clears; add `setChunkPriority` to the `Op` comment list); `EffortChunkSummary.Priority`. Run `task generate`, never hand-edit `gotypes.d.ts`; add any other file generate rewrites to this task and say so in the report.
+- `pkg/waveobj/chunkorder.go`: `ChunkPriorities` (lowest to highest), `ValidChunkPriority(p string) bool` (true for "" and the five), `ChunkRank(p string) int` ("" ranks as medium), `ChunkOrderOfWork(...) []int` (indices in order of work, Builder's call 3) and `NextChunkIndex(...) int` (-1 when none). Pick an input shape both `[]EffortChunk` (jarvis, dume, wsh) and `[]wshrpc.EffortChunkSummary` callers can use without an import of wshrpc from waveobj (e.g. `len` plus a `func(i int) (status, priority string)` accessor, with an `[]EffortChunk` convenience wrapper), and document it in the file.
+- `frontend/app/view/jarvis/chunkorder.ts`: `CHUNK_PRIORITIES` (highest first, for the menu), `chunkRank`, `orderOfWork<T extends { status: string; priority?: string }>(chunks: T[]): T[]`, and `priorityBadge(priority?: string): { text: string; className: string } | null` per the spec's badge table (null when unset; tokens only: `text-error font-semibold`, `text-ink-hi font-semibold`, `text-ink-mid`, `text-muted`, `text-ink-faint`).
+- `effortstore.ts`: `ChunkRowModel.priority?: string` filled in `effortChunkRows`, and an exported `setChunkPriority(oref, chunkRef, priority)` mutate helper beside `setChunkStatus`.
+- Acceptance: `pkg/waveobj/testdata/chunkorder-cases.json` holds the spec's cases (unset = medium; information last; pending before any blocked or deferred chunk whatever their levels; ties by position; active first; done, skipped and proposed left out; no open chunk gives an empty order). `go test ./pkg/waveobj -run 'TestChunkOrder|TestChunkRank|TestValidChunkPriority'` and `npx vitest run frontend/app/view/jarvis/chunkorder.test.ts` both read that file and pass; the vitest also checks `priorityBadge` text and class per level and null when unset. `go build ./...` and `task check:ts` are clean.
+
+### Task 2: Backend and wsh: the op, advance, the summary, DUM-E, show
+**Depends on:** Task 1 (uses `Priority` on the types and `ChunkOrderOfWork`, `NextChunkIndex`, `ValidChunkPriority`)
+**Model:** sonnet
+**Files:** `pkg/jarvis/effortops.go`, `pkg/jarvis/effortops_test.go`, `pkg/wavevault/effortmerge.go`, `pkg/wavevault/effortmerge_test.go`, `pkg/jarvisstate/jarvisstate.go`, `pkg/jarvisstate/jarvisstate_test.go`, `pkg/dume/chunks.go`, `pkg/dume/chunks_test.go`, `cmd/wsh/cmd/wshcmd-effort.go`, `cmd/wsh/cmd/wshcmd-effort_test.go`, `skills/initiatives/SKILL.md`
+
+Spec "Which chunk is next", "Setting it", "`wsh effort show`"; Builder's calls 3, 6, 7, 8, 10.
+- `setChunkPriority` op beside `setChunkDue` (`EC-INVALID-PRIORITY`; trail note `priority: <level>` or `priority cleared`); `addChunk` takes and validates `Priority`. `advance` marks the active chunk done as today, then activates the chunk `NextChunkIndex` names.
+- `effortmerge.go`: `Priority` through `pickField`, like `Due`.
+- `jarvisstate.EffortSummaryOf`: copy `Priority` into each `EffortChunkSummary`; `ActiveChunk` is the chunk `NextChunkIndex` names.
+- `dume.Summarize`: within one initiative, its waiting chunks in order of work; initiatives keep their order.
+- `wsh effort chunk priority <effort> <chunk> <critical|high|medium|low|information|"">`; `--priority` on `chunk add` (update its `Use` line and flag registration); `show`'s ` (priority <level>)` suffix after the due suffix, ` ← next` mark, and `Order of work: …` line under the title. Add both to `skills/initiatives/SKILL.md`'s command table.
+- Acceptance: `go test ./pkg/jarvis -run 'TestAdvance|TestSetChunkPriority|TestAddChunkPriority'`, `go test ./pkg/wavevault -run 'TestMerge.*Priority'`, `go test ./pkg/jarvisstate -run 'TestEffortSummary'`, `go test ./pkg/dume -run 'TestSummarize'`, `go test ./cmd/wsh/cmd -run 'TestFormatEffortShow|TestEffortChunkPriority'` pass (name new tests to match), covering: advance opens by priority, then by position; a pending chunk opens before any blocked or deferred chunk whatever their levels; advance keeps an active chunk; unset ranks as medium; information opens last; an invalid level is refused; a change writes a trail note; show's Order of work line, next mark and level suffix; `ActiveChunk` and DUM-E's `Waiting` follow the rule.
+
+### Task 3: Every frontend site that names the next chunk follows the rule
+**Depends on:** Task 1 (uses `orderOfWork` and `ChunkRowModel.priority`)
+**Model:** sonnet
+**Files:** `frontend/app/view/jarvis/effortmodel.ts`, `frontend/app/view/jarvis/effortmodel.test.ts`, `frontend/app/view/jarvis/inlinetracker.ts`, `frontend/app/view/jarvis/inlinetracker.test.ts`, `frontend/app/view/agents/initiativepopovermodel.ts`, `frontend/app/view/agents/initiativepopovermodel.test.ts`, `frontend/app/view/agents/initiativeband.ts`, `frontend/app/view/agents/initiativeband.test.ts`, `frontend/app/view/agents/chatsuggest.ts`, `frontend/app/view/agents/chatsuggest.test.ts`
+
+Spec "Which chunk is next" and the folded-card call; Builder's calls 4, 5.
+- `nextChunk` (effortmodel.ts) returns `orderOfWork(chunks)[0]`; its generic widens to `{ status: string; priority?: string }`. Update its comment.
+- `initiativeRows` (inlinetracker.ts): when a folded stage or folded flat plan hides the next chunk past `STAGE_PREVIEW_CAP`, push that chunk's row just before the `more` row and count one fewer in `n`. Rows otherwise keep position order.
+- `nextChunks` and the "go on with" chip per Builder's calls 4 and 5; fix the `bandRows` comment in `initiativeband.ts` that says "a pending chunk before its own is not next", and keep `initiativeband.test.ts` passing (update any case that relied on plan order).
+- Acceptance: `npx vitest run frontend/app/view/jarvis/effortmodel.test.ts frontend/app/view/jarvis/inlinetracker.test.ts frontend/app/view/agents/initiativepopovermodel.test.ts frontend/app/view/agents/initiativeband.test.ts frontend/app/view/agents/chatsuggest.test.ts` passes, covering: `nextChunk` over Task 1's shared cases file; a folded flat plan of 12 pending chunks whose 12th is critical shows that row before the `more` row, whose `n` is 1; `nextChunks` and the chip pick by priority. On screen: the `chunk-priority` scenario's step 1 (the next arrow on the highest-ranked chunk) and step 3 (the folded plan's next row before "+N more"), which Task 4 writes.
+
+### Task 4: The badge, the Priority menu, the scenario and the changelog
+**Depends on:** Task 1 (uses `priorityBadge`, `CHUNK_PRIORITIES`, `ChunkRowModel.priority` and `setChunkPriority`)
+**Model:** sonnet
+**Files:** `frontend/app/view/jarvis/inlinetrackerview.tsx`, `frontend/app/view/jarvis/initiativeedits.ts`, `scripts/cdp/scenarios-chunk-priority.mjs`, `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`
+
+Spec "Badge on the row" and "Setting it", matching the Prototype board; Builder's call 9. Read `DESIGN.md` and the Prototype first.
+- Row badge: `priorityBadge(row.row.priority)` as a 10.5px word after the due chip and before the notes count, in the due chip's style, tokens only; `data-jarvis-chunk-priority-badge="<level>"`.
+- `initiativeedits.ts`: `onSetPriority(label, priority)` through `setChunkPriority`, with a `briefUndo` like `onSetStatus`.
+- Chunk menu: a "Priority" section after Move up/down: the five levels highest first, the current one `active`, then "No priority" (active when unset); each item `data-jarvis-chunk-priority="<level|none>"`.
+- `scripts/cdp/scenarios-chunk-priority.mjs`, modeled on `scenarios-jarvis-sheet.mjs` and registered in `scenarios.mjs` beside `jarvisSheetScenarios`; it makes its own initiatives (chunk priorities set through `effortmutate` with `setChunkPriority`) and deletes them in teardown. Scenario `chunk-priority`: (1) an initiative with pending chunks at critical, high, unset, low and information plus a blocked high chunk, opened in the sheet: each badge's text and tone class, no badge on the unset chunk, and the `data-jarvis-next-chunk` arrow on the critical chunk, not the first by position; (2) the Priority menu open on a chunk with its current level ticked, then choosing `high` writes the chunk's priority and a `priority: high` note on the server, and the badge reads `high`; (3) a second, flat initiative of 12 pending chunks whose 12th is critical: its row shows before "+N more". Screenshot each step; step 1 also calls `h.whatsnewShot("chunk-priority", { selector: <the sheet> })`.
+- `CHANGELOG.md`: one Added line in the top section, written for the user, ending `<!-- big --> <!-- shot: 1.12.0-chunk-priority.webp -->` (the next minor of `package.json`'s 1.11.0; recheck it). If no dev app can make the picture in your tree, write `<!-- shot: none -->` and say so in the report.
+- Acceptance: `npx vitest run frontend/app/cockpit/whatsnew.test.ts` passes; `node --check scripts/cdp/scenarios-chunk-priority.mjs` passes; the `chunk-priority` scenario's steps 1–3 as above.
