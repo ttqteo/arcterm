@@ -56,6 +56,8 @@ and a picture given to a line that is not big.
 ### Changed
 
 - A board's Tidy button is gone.
+- Copy image on a diagram in Chat (its toolbar and the enlarged viewer) shows a camera, as Copy screenshot does
+  elsewhere, so it no longer looks like copying the text.
 - The part stepper in a board's header (‹ 3/13 ›) stays in one place beside the header's buttons: stepping through
   parts with long and short names no longer moves the arrows under the pointer.
 

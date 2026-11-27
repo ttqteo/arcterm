@@ -8,7 +8,7 @@
 
 import { ModalShell } from "@/app/modals/modalshell";
 import { cn } from "@/util/util";
-import { Check, Copy, Maximize2, Minus, Plus, Scan, X } from "lucide-react";
+import { Camera, Check, Maximize2, Minus, Plus, Scan, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { COPY_HOLD_MS } from "./copyfeedback";
@@ -108,7 +108,7 @@ export function CopyImageButton({ getSvg }: { getSvg: () => SVGSVGElement | null
             ) : state === "failed" ? (
                 <X size={14} aria-hidden />
             ) : (
-                <Copy size={14} aria-hidden />
+                <Camera size={14} aria-hidden />
             )}
         </ToolButton>
     );
