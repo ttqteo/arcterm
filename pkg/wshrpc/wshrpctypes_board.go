@@ -164,8 +164,8 @@ type BoardTalk struct {
 	Project   string `json:"project"`
 	BoardId   string `json:"boardid"`
 	SessionId string `json:"sessionid,omitempty"` // the drawer's claude session
-	// ContextTokens is SessionId's context after its last turn, kept so a summary handoff can be added when a long board
-	// shows the need.
+	// ContextTokens is SessionId's context after its last turn; past boarddrawer.MaxResumeTokens the next turn starts a
+	// new session instead of resuming this one.
 	ContextTokens int         `json:"contexttokens,omitempty"`
 	Agent         *BoardAgent `json:"agent,omitempty"`
 	Turns         []BoardTurn `json:"turns"`

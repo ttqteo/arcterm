@@ -16,8 +16,9 @@
 //   rectElement   an Excalidraw rectangle element for a fixture drawing
 //
 // The stubs behave as wavesrv does where a scenario needs it: BoardAnswerAckCommand marks the turn answered (or failed,
-// with the error) and publishes talk and list updates; BoardAskCommand adds an answering turn; BoardAskStopCommand stops
-// it; BoardAskRetryCommand runs it again; BoardRerouteCommand is only recorded. BoardSaveCommand is rev-guarded.
+// with the error) and publishes talk and list updates; BoardAskStopCommand stops the answering turn and
+// BoardAskRetryCommand runs a turn again (the status line's Stop and Retry). BoardSaveCommand is rev-guarded. The
+// commands the old ask box and turn rows called (ask, reroute) are not stubbed: nothing in the page calls them any more.
 
 import { agentPage } from "./agent-page-fixtures.mjs";
 
@@ -26,10 +27,8 @@ export const BOARD_COMMANDS = [
     "BoardReadCommand",
     "BoardSaveCommand",
     "BoardTalkCommand",
-    "BoardAskCommand",
     "BoardAskStopCommand",
     "BoardAskRetryCommand",
-    "BoardRerouteCommand",
     "BoardAnswerInboxCommand",
     "BoardAnswerAckCommand",
     "BoardTakeOverCommand",
@@ -39,7 +38,7 @@ export const BOARD_COMMANDS = [
 const q = JSON.stringify;
 
 const FX = `
-    const fx = (window.__boardsFx ??= { boards: {}, talks: {}, files: {}, inbox: {}, calls: {}, revs: 0, asked: 0 });
+    const fx = (window.__boardsFx ??= { boards: {}, talks: {}, files: {}, inbox: {}, calls: {}, revs: 0 });
     const { RpcApi } = await mod("app/store/wshclientapi.ts");
     const feed = async (data) => (await mod("app/store/wps.ts")).handleWaveEvent({ event: "board:update", data });
     const record = (name, data) => (fx.calls[name] ??= []).push(structuredClone(data));
@@ -130,15 +129,6 @@ export const installBoardStubs = (h) =>
             }
             await talkChanged(d.boardid, turn);
         };
-        RpcApi.BoardAskCommand = async (_c, d) => {
-            record("BoardAskCommand", d);
-            const turn = {
-                id: "asked-" + ++fx.asked, ts: Date.now(), kind: "ask", question: d.question, on: d.on,
-                selectedids: d.selectedids, state: "answering", startedts: Date.now(),
-            };
-            (fx.talks[d.boardid] ??= talkOf(fx.boards[d.boardid])).turns.push(turn);
-            await talkChanged(d.boardid, turn);
-        };
         RpcApi.BoardAskStopCommand = async (_c, d) => {
             record("BoardAskStopCommand", d);
             const turn = fx.talks[d.boardid]?.turns.find((t) => t.state === "answering");
@@ -150,9 +140,6 @@ export const installBoardStubs = (h) =>
             const turn = turnById(d.boardid, d.turnid);
             if (turn != null) Object.assign(turn, { state: "answering", startedts: Date.now(), reason: undefined });
             await talkChanged(d.boardid, turn);
-        };
-        RpcApi.BoardRerouteCommand = async (_c, d) => {
-            record("BoardRerouteCommand", d);
         };
         // the board is tied to the picked tab, named as the roster names it
         RpcApi.BoardTakeOverCommand = async (_c, d) => {

@@ -42,23 +42,16 @@ import {
 } from "./boardcommands";
 import {
     afterLanding,
-    askedDrawing,
     drawingInView,
     drawingShapes,
     drawingsOf,
     drawingViewport,
     isFollowing,
     rowState,
+    stepDrawing,
     type Drawing,
 } from "./boarddrawings";
-import {
-    parseBoardFile,
-    selectionLabel,
-    serializeBoard,
-    withReadableFont,
-    wrapEarlier,
-    type BoardScene,
-} from "./boardmodel";
+import { parseBoardFile, serializeBoard, withReadableFont, wrapEarlier, type BoardScene } from "./boardmodel";
 import {
     boardParts,
     lerpViewport,
@@ -101,17 +94,9 @@ const LazyExcalidraw = lazy(async () => {
     return { default: mod.Excalidraw };
 });
 
-export interface BoardSelection {
-    ids: string[];
-    label: string | null; // the first selected shape's text or label ("wavesrv and 2 more"); null with nothing selected
-}
-
 export interface BoardCanvasProps {
     project: string;
     boardId: string;
-    // Show: selects exactly these shapes and scrolls to them. A new array re-applies, even with the same ids.
-    highlightIds?: readonly string[] | null;
-    onSelection?: (selection: BoardSelection) => void;
     // the part being read (an index into the parts), null for the whole board; left out, the canvas keeps its own
     part?: number | null;
     onPart?: (part: number | null) => void;
@@ -191,13 +176,11 @@ export function BoardCanvas(props: BoardCanvasProps) {
     return <OpenBoard key={`${props.project}/${props.boardId}`} {...props} />;
 }
 
-function OpenBoard({ project, boardId, highlightIds, onSelection, part: partProp, onPart, onParts }: BoardCanvasProps) {
+function OpenBoard({ project, boardId, part: partProp, onPart, onParts }: BoardCanvasProps) {
     const [initial, setInitial] = useState<BoardScene | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [ready, setReady] = useState(false);
     const [theme, setTheme] = useAtom(boardThemeAtom);
-    // the shapes Show last selected, for the DOM (and a scenario) to read back
-    const [shown, setShown] = useState<string[]>([]);
     const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
     // the file as last read or saved: its arc record, appState and files ride along with Excalidraw's elements
     const sceneRef = useRef<BoardScene | null>(null);
@@ -208,9 +191,6 @@ function OpenBoard({ project, boardId, highlightIds, onSelection, part: partProp
     const selectionRef = useRef("");
     // a shape is selected: Excalidraw's style panel is open in the top-left corner, where a part's Read label lands
     const [selecting, setSelecting] = useState(false);
-    // the latest callback, so the long-lived handlers below never call a stale render's
-    const onSelectionRef = useRef(onSelection);
-    onSelectionRef.current = onSelection;
     // settles once the scene is in Excalidraw; an answer that arrives before then waits for it
     const readyRef = useRef<Deferred | null>(null);
     // The Edit switch, shared by every view of the board: off, Excalidraw is in view mode (drags pan, nothing is drawn).
@@ -310,27 +290,6 @@ function OpenBoard({ project, boardId, highlightIds, onSelection, part: partProp
         } else if (turnedOnOpen) {
             await save();
         }
-    }
-
-    function show(ids: readonly string[]): void {
-        const api = apiRef.current;
-        if (api == null || excalidraw == null) {
-            return;
-        }
-        const idSet = new Set(ids);
-        const found = api.getSceneElements().filter((el) => idSet.has(el.id));
-        api.updateScene({
-            appState: {
-                selectedElementIds: Object.fromEntries(found.map((el) => [el.id, true as const])),
-                selectedGroupIds: {},
-                editingGroupId: null,
-            },
-            captureUpdate: excalidraw.CaptureUpdateAction.NEVER,
-        });
-        if (found.length > 0) {
-            api.scrollToContent(found, { animate: true });
-        }
-        setShown(found.map((el) => el.id));
     }
 
     // the parts are read inside the drawing in view; with none in view there are none. A new list closes the part that
@@ -520,7 +479,7 @@ function OpenBoard({ project, boardId, highlightIds, onSelection, part: partProp
         }
         const rowAtom = boardDrawingsAtom(boardId);
         const prev = globalStore.get(rowAtom);
-        const next = rowState(prev, drawings, inView, askedDrawing(elements, selectedIds(appState), null));
+        const next = rowState(prev, drawings, inView);
         if (next !== prev) {
             globalStore.set(rowAtom, next);
         }
@@ -543,11 +502,16 @@ function OpenBoard({ project, boardId, highlightIds, onSelection, part: partProp
         );
     }
 
-    // → and ← step through the parts, Esc goes back to the whole drawing: only while nothing is selected or being
-    // written, with the select or hand tool, so Excalidraw's own keys (nudging a selection, leaving a tool) stay its own
+    // → and ← step through the parts of a dense drawing, else from drawing to drawing (stopping at either end, eased as a
+    // pick in the row is); Esc goes back to the whole drawing. Only while nothing is selected or being written, with the
+    // select or hand tool, so Excalidraw's own keys (nudging a selection, leaving a tool) stay its own
     function onKeyDownCapture(e: KeyboardEvent<HTMLDivElement>): void {
         const api = apiRef.current;
-        if (api == null || parts.length === 0 || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) {
+        if (api == null || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) {
+            return;
+        }
+        const arrow = e.key === "ArrowRight" || e.key === "ArrowLeft";
+        if (parts.length === 0 && !arrow) {
             return;
         }
         const target = e.target as HTMLElement;
@@ -560,6 +524,16 @@ function OpenBoard({ project, boardId, highlightIds, onSelection, part: partProp
             st.editingTextElement == null &&
             (st.activeTool.type === "selection" || st.activeTool.type === "hand");
         if (!idle) {
+            return;
+        }
+        if (parts.length === 0) {
+            const to = stepDrawing(row?.drawings ?? [], row?.inView ?? null, e.key === "ArrowRight" ? 1 : -1);
+            if (to == null) {
+                return;
+            }
+            e.preventDefault();
+            e.stopPropagation();
+            globalStore.set(boardPickAtom(boardId), { drawingId: to, ts: Date.now() });
             return;
         }
         let next: number | null | undefined;
@@ -897,13 +871,6 @@ function OpenBoard({ project, boardId, highlightIds, onSelection, part: partProp
         });
     }, [ready, boardId, theme]);
 
-    // Show
-    useEffect(() => {
-        if (ready && highlightIds != null && highlightIds.length > 0) {
-            show(highlightIds);
-        }
-    }, [ready, highlightIds]);
-
     function onApi(api: ExcalidrawImperativeAPI): void {
         apiRef.current = api;
         if (sceneRef.current == null) {
@@ -936,7 +903,6 @@ function OpenBoard({ project, boardId, highlightIds, onSelection, part: partProp
         if (selection !== selectionRef.current) {
             selectionRef.current = selection;
             setSelecting(ids.length > 0);
-            onSelectionRef.current?.({ ids, label: selectionLabel(elements, ids) });
         }
         views.set({ zoom: appState.zoom.value, scrollX: appState.scrollX, scrollY: appState.scrollY });
         // a zoom of the person's own (a pinch, the + and −) leaves the part; a scroll reads on through it
@@ -990,7 +956,6 @@ function OpenBoard({ project, boardId, highlightIds, onSelection, part: partProp
             data-board-ready={ready ? "true" : "false"}
             data-board-view-mode={editing ? "false" : "true"}
             data-board-in-view={row?.inView ?? ""}
-            data-board-highlight={shown.join(",")}
             data-board-parts={parts.length}
             data-board-part={part ?? ""}
             onKeyDownCapture={onKeyDownCapture}

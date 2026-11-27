@@ -27,6 +27,10 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
 - [ ] (arcterm) **A board's drawing chip shows no focus ring on Shift** (`boardstrip.tsx` DrawingsRow, 6f0b0e5c9). Lint
   only, no dev app. Click drawing chip 1, scroll the canvas to drawing 2, hold Shift and scroll: no blue "[ ]" on
   chip 1. Then Tab onto a chip: its ring shows whole, inside the chip, not clipped top and bottom.
+- [ ] (arcterm) **→ / ← between a board's drawings** (`boardcanvas.tsx` onKeyDownCapture, `stepDrawing`). Vitest and
+  typecheck; no scenario step. Open a board with several short drawings, click the canvas, press → several times: the
+  view eases drawing to drawing and the row's marker slides along; at the last drawing → does nothing, ← goes back. On a
+  dense "Earlier drawings", → still reads its parts. With a shape selected in Edit, → nudges the shape as before.
 - [ ] (arcterm) **An agent fixes or deletes a drawing in place** (`pkg/boarddrawer` answer.go `drawing` key, prompt).
   Go and vitest only, no real drawer run. On a board with two drawings, have an agent run
   `wsh board draw --board <name> --ask "in <title>, drop the long arrows"`: that drawing changes, no new frame appears.
@@ -34,10 +38,18 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
 - [ ] (arcterm) **Copy image on a diagram shows a camera** (`mermaidviewer.tsx` CopyImageButton, 820090bc2). Lint
   only. Hover a mermaid diagram in Chat: the toolbar's Copy image is a camera; it turns to a check after a press. Same
   in the enlarged viewer.
-- [ ] (arcterm) **Ask about, and delete, the part being read** (`boardsplit.tsx`, `boardaskbox.tsx`, `boardheader.tsx`,
-  `boardparts.ts` ids). Unit tests and typecheck; scenario boards-split 8c written, not run. On a dense board press
-  ‹ 8 parts ›: the ask line reads "Asking about <part>"; ask something and check the drawer's or agent's answer is about
-  that part's shapes only. Turn Edit on (the trash fades in beside the stepper, Whole drawing and the arrows hold still) and press it: the part's shapes go, the view eases back to the whole
+- [ ] (arcterm) **A board without turns or ask box; the status line** (`boardstatus.tsx`, `boardsplit.tsx`,
+  `libraryboards.tsx`). Typecheck and unit tests; scenarios boards-split 2, 5a–5c and boards-library 5, 6 rewritten,
+  not run. Open a board beside an agent: no turns column, no ask box, no Hide turns in the header; the canvas runs to the
+  cell's foot. Have the agent `wsh board draw`: a line slides up under the canvas, "Answering · Ns" with the brief, and
+  slides away when the drawing lands (the canvas grows back without a jump). A failed turn leaves "Couldn't draw", its
+  reason and Retry until a later drawing lands. Library → Boards: the same line, and the running/ended footer under it.
+- [ ] (arcterm) **The drawer's second go, its fresh session, and boxes that hold their label** (`pkg/boarddrawer`,
+  `boardfit.ts`). Go and vitest only, no real drawer run. On a long board (`contexttokens` ≥ 100k in its
+  `.talk.json`), one more `wsh board draw`: waveapp.log says "starting a new one" and the drawing still lands. Open
+  `mit-thesis/4e0f9655`: the "Validation: ratchet…" and "23/10 M4…" boxes now hold their three lines.
+- [ ] (arcterm) **Delete the part being read** (`boardsplit.tsx`, `boardheader.tsx`, `boardparts.ts` ids). Unit tests and
+  typecheck; scenario boards-split 8c written, not run. On a dense board press ‹ 8 parts ›, then turn Edit on (the trash fades in beside the stepper, Whole drawing and the arrows hold still) and press it: the part's shapes go, the view eases back to the whole
   drawing and the count drops by one; the toast's Undo brings them back. An arrow tied to a deleted part's box goes
   with it.
 - [ ] (arcterm) **Board strip: Copy view, Export, Delete; Tidy gone** (`boardstrip.tsx`, `boardcanvas.tsx`,

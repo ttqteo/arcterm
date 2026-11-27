@@ -2,11 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
     SLOW_MS,
     agentAlive,
-    askAllowed,
     boardFacts,
-    drawnSummary,
     elapsedLabel,
-    recentTurns,
+    statusTurn,
     talkTime,
     turnText,
     turnView,
@@ -38,9 +36,9 @@ describe("turnView: the shown state", () => {
         }
     });
 
-    it("reads an unknown state as waiting, with no buttons", () => {
+    it("reads an unknown state as waiting", () => {
         const v = turnView(turn({ state: "from-a-newer-wavesrv", shapeids: ["a"] }), NOW);
-        expect(v).toMatchObject({ state: "waiting", canShow: false, otherWay: null });
+        expect(v).toEqual({ state: "waiting", seconds: 0 });
     });
 
     it("counts answering seconds from when the turn started", () => {
@@ -63,108 +61,6 @@ describe("turnView: the shown state", () => {
     it("has no seconds once the turn is over", () => {
         expect(turnView(turn({ state: "answered", startedts: NOW - 30_000 }), NOW).seconds).toBe(0);
         expect(turnView(turn({ state: "waiting" }), NOW).seconds).toBe(0);
-    });
-});
-
-describe("turnView: Show", () => {
-    it("applies to a drawn turn with shape ids", () => {
-        expect(turnView(turn({ shapeids: ["a", "b"] }), NOW).canShow).toBe(true);
-    });
-
-    it("does not apply with no shapes, or on any other state", () => {
-        expect(turnView(turn({ shapeids: [] }), NOW).canShow).toBe(false);
-        expect(turnView(turn({}), NOW).canShow).toBe(false);
-        for (const state of ["waiting", "answering", "forwarded", "failed", "stopped"]) {
-            expect(turnView(turn({ state, shapeids: ["a"] }), NOW).canShow).toBe(false);
-        }
-    });
-
-    it("applies to the agent's drawn request too", () => {
-        expect(turnView(turn({ kind: "request", shapeids: ["a"] }), NOW).canShow).toBe(true);
-    });
-});
-
-describe("turnView: send the other way", () => {
-    it("forwards a drawn ask", () => {
-        expect(turnView(turn({ kind: "ask", state: "answered" }), NOW).otherWay).toBe("forward");
-    });
-
-    it("draws a forwarded ask instead", () => {
-        const forwarded = turn({ kind: "ask", state: "forwarded", forward: { state: "sent" } });
-        expect(turnView(forwarded, NOW).otherWay).toBe("draw");
-    });
-
-    it("offers nothing on the agent's request, whatever its state", () => {
-        for (const state of ["waiting", "answering", "answered", "failed", "stopped"]) {
-            expect(turnView(turn({ kind: "request", state }), NOW).otherWay).toBeNull();
-        }
-    });
-
-    it("offers nothing on an ask that is running, failed or stopped", () => {
-        for (const state of ["waiting", "answering", "failed", "stopped"]) {
-            expect(turnView(turn({ kind: "ask", state }), NOW).otherWay).toBeNull();
-        }
-    });
-});
-
-describe("turnView: the forward note", () => {
-    const forwarded = (forward?: BoardForward) => turn({ state: "forwarded", forward });
-
-    it("says who a waiting forward waits for", () => {
-        expect(turnView(forwarded({ state: "waiting" }), NOW, "claude · arcterm").forwardNote).toBe(
-            "waiting for claude · arcterm"
-        );
-        expect(turnView(forwarded({ state: "waiting" }), NOW).forwardNote).toBe("waiting for the agent");
-    });
-
-    it("reads answered in Chat once the agent replied", () => {
-        expect(turnView(forwarded({ state: "replied", reply: "because" }), NOW).forwardNote).toBe(
-            "forwarded · answered in Chat"
-        );
-    });
-
-    it("reads agent closed when its tab closed", () => {
-        expect(turnView(forwarded({ state: "agentgone", reason: "the tab closed" }), NOW).forwardNote).toBe(
-            "agent closed"
-        );
-    });
-
-    it("reads a sent forward, and one with no forward yet, as on its way to Chat", () => {
-        expect(turnView(forwarded({ state: "sent" }), NOW).forwardNote).toBe("forwarded · answers in Chat");
-        expect(turnView(forwarded(undefined), NOW).forwardNote).toBe("forwarded · answers in Chat");
-    });
-
-    it("is null on a turn that was not forwarded", () => {
-        for (const state of ["waiting", "answering", "answered", "failed", "stopped"]) {
-            expect(turnView(turn({ state, forward: { state: "sent" } }), NOW).forwardNote).toBeNull();
-        }
-    });
-});
-
-describe("recentTurns", () => {
-    const many = (n: number) => talk(Array.from({ length: n }, (_, i) => turn({ id: `t${i + 1}` })));
-
-    it("keeps the last 3, oldest first, and counts the earlier ones", () => {
-        expect(recentTurns(many(5))).toEqual({
-            turns: [
-                expect.objectContaining({ id: "t3" }),
-                expect.objectContaining({ id: "t4" }),
-                expect.objectContaining({ id: "t5" }),
-            ],
-            earlier: 2,
-        });
-    });
-
-    it("shows every turn when there are 3 or fewer", () => {
-        expect(recentTurns(many(3))).toMatchObject({ earlier: 0 });
-        expect(recentTurns(many(3)).turns).toHaveLength(3);
-        expect(recentTurns(many(1))).toMatchObject({ earlier: 0 });
-    });
-
-    it("takes another count, and no talk", () => {
-        expect(recentTurns(many(5), 1).turns.map((t) => t.id)).toEqual(["t5"]);
-        expect(recentTurns(null)).toEqual({ turns: [], earlier: 0 });
-        expect(recentTurns(talk([]))).toEqual({ turns: [], earlier: 0 });
     });
 });
 
@@ -211,27 +107,6 @@ describe("agentAlive", () => {
     });
 });
 
-describe("askAllowed", () => {
-    it("allows an ask on a live agent's idle board", () => {
-        expect(askAllowed(talk([turn({ state: "answered" }), turn({ state: "failed" })]), true)).toBe(true);
-        expect(askAllowed(talk([]), true)).toBe(true);
-        expect(askAllowed(null, true)).toBe(true);
-    });
-
-    it("refuses while a turn answers or waits", () => {
-        expect(askAllowed(talk([turn({ state: "answering" })]), true)).toBe(false);
-        expect(askAllowed(talk([turn({ state: "waiting", kind: "request" })]), true)).toBe(false);
-    });
-
-    it("refuses once the agent ended", () => {
-        expect(askAllowed(talk([turn({ state: "answered" })]), false)).toBe(false);
-    });
-
-    it("is not held by a forwarded turn", () => {
-        expect(askAllowed(talk([turn({ state: "forwarded", forward: { state: "waiting" } })]), true)).toBe(true);
-    });
-});
-
 describe("elapsedLabel", () => {
     it("reads seconds, then minutes and seconds", () => {
         expect(elapsedLabel(0)).toBe("0s");
@@ -242,24 +117,53 @@ describe("elapsedLabel", () => {
     });
 });
 
-describe("drawnSummary", () => {
-    it("says what the turn added, changed and removed", () => {
-        expect(drawnSummary(turn({ added: 9 }))).toBe("+9 shapes");
-        expect(drawnSummary(turn({ added: 1 }))).toBe("+1 shape");
-        expect(drawnSummary(turn({ added: 2, changed: 1, removed: 3 }))).toBe("+2 shapes · 1 changed · 3 removed");
-        expect(drawnSummary(turn({ changed: 4 }))).toBe("4 changed");
-    });
-
-    it("reads a drawn turn that touched nothing as no change", () => {
-        expect(drawnSummary(turn({}))).toBe("no change");
-    });
-});
-
 describe("turnText", () => {
     it("lists a turn by what it drew, else what was asked, else its briefing", () => {
         expect(turnText(turn({ title: "wavesrv startup", question: "draw it" }))).toBe("wavesrv startup");
         expect(turnText(turn({ question: "why a new auth key?" }))).toBe("why a new auth key?");
         expect(turnText(turn({ kind: "request", context: "the startup flow" }))).toBe("the startup flow");
         expect(turnText(turn({}))).toBe("Drawing");
+    });
+});
+
+describe("statusTurn: the line under the canvas", () => {
+    const ids = (t: BoardTalk | null) => statusTurn(t, NOW)?.turn.id ?? null;
+
+    it("shows nothing with no talk, no turns, or a latest turn that landed", () => {
+        expect(ids(null)).toBeNull();
+        expect(ids(talk([]))).toBeNull();
+        expect(ids(talk([turn({ id: "a", state: "failed" }), turn({ id: "b", state: "answered" })]))).toBeNull();
+    });
+
+    it("shows nothing after a stop or an old forwarded ask", () => {
+        expect(ids(talk([turn({ id: "a", state: "stopped" })]))).toBeNull();
+        expect(ids(talk([turn({ id: "a", state: "forwarded", forward: { state: "sent" } })]))).toBeNull();
+    });
+
+    it("shows the turn the drawer is on, ahead of one queued behind it", () => {
+        const t = talk([
+            turn({ id: "a", state: "answered" }),
+            turn({ id: "b", state: "answering", startedts: NOW - 12_000 }),
+            turn({ id: "c", kind: "request", state: "waiting" }),
+        ]);
+        expect(statusTurn(t, NOW)).toMatchObject({ turn: { id: "b" }, view: { state: "answering", seconds: 12 } });
+    });
+
+    it("reads a turn answering for 45 s as slow", () => {
+        const t = talk([turn({ id: "a", state: "answering", startedts: NOW - SLOW_MS })]);
+        expect(statusTurn(t, NOW)?.view.state).toBe("slow");
+    });
+
+    it("shows a queued turn while none answers", () => {
+        expect(ids(talk([turn({ id: "a", state: "answered" }), turn({ id: "b", state: "waiting" })]))).toBe("b");
+    });
+
+    it("keeps a failed latest turn, with its reason, until a later one lands", () => {
+        const failed = turn({ id: "b", kind: "request", state: "failed", reason: "not one JSON object" });
+        expect(statusTurn(talk([turn({ id: "a" }), failed]), NOW)).toMatchObject({
+            turn: { id: "b", reason: "not one JSON object" },
+            view: { state: "failed" },
+        });
+        expect(ids(talk([failed, turn({ id: "c", state: "answering" })]))).toBe("c");
     });
 });

@@ -2,7 +2,6 @@ import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import { describe, expect, it } from "vitest";
 import {
     afterLanding,
-    askedDrawing,
     drawingData,
     drawingInView,
     drawingNumber,
@@ -12,6 +11,7 @@ import {
     isFollowing,
     isFrame,
     rowState,
+    stepDrawing,
     type BoardDrawings,
     type Drawing,
     type ViewRect,
@@ -92,32 +92,6 @@ describe("drawingInView", () => {
         const inner = drawing("inner", 2, 500, 500, 1500, 1500);
         expect(drawingInView([outer, inner], view(600, 600, 2))).toBe("inner");
         expect(drawingInView([], view(0, 0))).toBeNull();
-    });
-});
-
-describe("askedDrawing", () => {
-    const els = [
-        el("a", "rectangle", 0, 0, 10, 10, { frameId: "f1" }),
-        el("a-label", "text", 0, 0, 10, 10, { frameId: "f1", containerId: "a" }),
-        el("b", "rectangle", 0, 0, 10, 10, { frameId: "f1" }),
-        frame("f1", 0, 0, 100, 100, 1, "One"),
-        el("c", "rectangle", 200, 0, 10, 10, { frameId: "f2" }),
-        frame("f2", 200, 0, 100, 100, 2, "Two"),
-        el("loose", "rectangle", 500, 0, 10, 10),
-        el("orphan", "rectangle", 0, 0, 10, 10, { frameId: "f-gone" }),
-        el("gone", "rectangle", 0, 0, 10, 10, { frameId: "f2", isDeleted: true }),
-    ];
-
-    it.each([
-        ["shapes inside one drawing name it", ["a", "a-label", "b"], "f1"],
-        ["a selected frame names itself", ["f2", "c"], "f2"],
-        ["a selection across drawings leaves the one in view", ["a", "c"], "f9"],
-        ["a loose shape leaves the one in view", ["a", "loose"], "f9"],
-        ["a shape whose frame is gone leaves the one in view", ["orphan"], "f9"],
-        ["deleted and unknown ids are ignored", ["c", "gone", "missing"], "f2"],
-        ["no selection leaves the one in view", [], "f9"],
-    ])("askedDrawing: %s", (_, selected, want) => {
-        expect(askedDrawing(els, selected, "f9")).toBe(want);
     });
 });
 
@@ -210,44 +184,42 @@ describe("rowState", () => {
         ],
         inView: "d2",
         fresh: [],
-        selected: null,
         ...over,
     });
 
-    it("rowState builds the first row from the drawings, the one in view and the selected", () => {
-        expect(rowState(null, [d1, d2], "d1", "d2")).toEqual(row({ inView: "d1", selected: "d2" }));
-        expect(rowState(null, [], null, null)).toEqual({ drawings: [], inView: null, fresh: [], selected: null });
+    it("rowState builds the first row from the drawings, and the one in view", () => {
+        expect(rowState(null, [d1, d2], "d1")).toEqual(row({ inView: "d1" }));
+        expect(rowState(null, [], null)).toEqual({ drawings: [], inView: null, fresh: [] });
     });
 
     it("rowState returns prev itself when nothing changed", () => {
         const prev = row({ fresh: ["d1"], inView: "d2" });
-        expect(rowState(prev, [d1, d2], "d2", null)).toBe(prev);
+        expect(rowState(prev, [d1, d2], "d2")).toBe(prev);
     });
 
-    it("rowState returns a new row when the drawing in view, a title, the selection or the list changes", () => {
+    it("rowState returns a new row when the drawing in view, a title or the list changes", () => {
         const prev = row();
-        expect(rowState(prev, [d1, d2], "d1", null)).not.toBe(prev);
-        expect(rowState(prev, [d1, d2], "d2", "d1")).toMatchObject({ selected: "d1" });
-        expect(rowState(prev, [d1, { ...d2, title: "renamed" }], "d2", null).drawings[1].title).toBe("renamed");
-        expect(rowState(prev, [d1, d2, d3], "d2", null).drawings.map((d) => d.id)).toEqual(["d1", "d2", "d3"]);
+        expect(rowState(prev, [d1, d2], "d1")).not.toBe(prev);
+        expect(rowState(prev, [d1, { ...d2, title: "renamed" }], "d2").drawings[1].title).toBe("renamed");
+        expect(rowState(prev, [d1, d2, d3], "d2").drawings.map((d) => d.id)).toEqual(["d1", "d2", "d3"]);
     });
 
     it("rowState drops the drawing now in view from fresh", () => {
         const prev = row({ fresh: ["d1", "d2"], inView: "d1" });
-        const next = rowState(prev, [d1, d2], "d2", null);
+        const next = rowState(prev, [d1, d2], "d2");
         expect(next.fresh).toEqual(["d1"]);
         expect(next).not.toBe(prev);
     });
 
     it("rowState drops gone drawings from fresh and keeps the others in order", () => {
         const prev = row({ fresh: ["d3", "d2", "gone"], inView: "d1" });
-        expect(rowState(prev, [d1, d2, d3], "d1", null).fresh).toEqual(["d3", "d2"]);
-        expect(rowState(prev, [d1, d2], "d1", null).fresh).toEqual(["d2"]);
+        expect(rowState(prev, [d1, d2, d3], "d1").fresh).toEqual(["d3", "d2"]);
+        expect(rowState(prev, [d1, d2], "d1").fresh).toEqual(["d2"]);
     });
 
     it("rowState keeps the same fresh array contents when prev had none", () => {
         const prev = row({ fresh: [] });
-        expect(rowState(prev, [d1, d2], "d2", null)).toBe(prev);
+        expect(rowState(prev, [d1, d2], "d2")).toBe(prev);
     });
 });
 
@@ -286,5 +258,29 @@ describe("afterLanding", () => {
         // an edit whose frame was gone lands new: the answer names the old id, the drawing is another
         expect(afterLanding(["d1", "d2"], true, "d2", [d1, d2, d3], "d2")).toEqual({ fit: "d3", fresh: null });
         expect(afterLanding(["d1", "d2"], false, "d2", [d1, d2, d3], "d2")).toEqual({ fit: null, fresh: "d3" });
+    });
+});
+
+describe("stepDrawing", () => {
+    const ds = [{ id: "a" }, { id: "b" }, { id: "c" }];
+
+    it("steps to the drawing after or before the one in view", () => {
+        expect(stepDrawing(ds, "b", 1)).toBe("c");
+        expect(stepDrawing(ds, "b", -1)).toBe("a");
+    });
+
+    it("stops at either end, without wrapping", () => {
+        expect(stepDrawing(ds, "c", 1)).toBeNull();
+        expect(stepDrawing(ds, "a", -1)).toBeNull();
+    });
+
+    it("with none in view, goes to the first or the last", () => {
+        expect(stepDrawing(ds, null, 1)).toBe("a");
+        expect(stepDrawing(ds, null, -1)).toBe("c");
+        expect(stepDrawing(ds, "gone", 1)).toBe("a");
+    });
+
+    it("has nowhere to go with no drawings", () => {
+        expect(stepDrawing([], null, 1)).toBeNull();
     });
 });
