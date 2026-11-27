@@ -19,6 +19,7 @@ import {
     MAX_BOARD_H,
     paneState,
     parseCanvasPath,
+    partsFromCanvasJson,
     prototypePath,
     shownBoards,
     steadyFitWidth,
@@ -180,6 +181,110 @@ describe("boardsFromCanvasJson", () => {
             [720, 0],
             [1440, 0],
         ]);
+    });
+
+    describe("a prototype's screens", () => {
+        const PROTO = {
+            boards: {
+                "Main.dc.html": { x: 0, y: 0, w: 1440, h: 900, is_interactive: true },
+                "Later.dc.html": { x: 1520, y: 0, part_of: "Main.dc.html" },
+                "States.dc.html": { x: 3040, y: 0 },
+            },
+        };
+
+        it("are not boards, so no tab, tile or rail head is made of one", () => {
+            const json = { ...PROTO, order: ["Main.dc.html", "States.dc.html"] };
+            expect(boardsFromCanvasJson(json).map((b) => b.name)).toEqual(["Main.dc.html", "States.dc.html"]);
+        });
+
+        it("are dropped when order names them", () => {
+            const json = { ...PROTO, order: ["Main.dc.html", "Later.dc.html", "States.dc.html"] };
+            expect(boardsFromCanvasJson(json).map((b) => b.name)).toEqual(["Main.dc.html", "States.dc.html"]);
+        });
+
+        it("are dropped when there is no order", () => {
+            expect(boardsFromCanvasJson(PROTO).map((b) => b.name)).toEqual(["Main.dc.html", "States.dc.html"]);
+        });
+
+        it("do not take a place in the layout: the next board goes where the screen would have been", () => {
+            const json = {
+                boards: {
+                    "Main.dc.html": { x: 0, y: 0, w: 640 },
+                    "Later.dc.html": { w: 640, part_of: "Main.dc.html" },
+                    "States.dc.html": { w: 640 },
+                },
+                order: ["Main.dc.html", "Later.dc.html", "States.dc.html"],
+            };
+            expect(boardsFromCanvasJson(json).map((b) => [b.name, b.x])).toEqual([
+                ["Main.dc.html", 0],
+                ["States.dc.html", 720],
+            ]);
+        });
+
+        it("leave the one Main board when nothing but screens are listed", () => {
+            const json = { boards: { "Later.dc.html": { part_of: "Main.dc.html" } } };
+            expect(boardsFromCanvasJson(json)).toEqual([MAIN]);
+        });
+
+        it.each([5, "", null, true, ["Main.dc.html"], { name: "Main.dc.html" }])(
+            "are only entries with a part_of string: a part_of of %j is a board",
+            (part_of) => {
+                const json = { boards: { "Main.dc.html": {}, "Later.dc.html": { part_of } } };
+                expect(boardsFromCanvasJson(json).map((b) => b.name)).toEqual(["Main.dc.html", "Later.dc.html"]);
+            }
+        );
+
+        it("read interactive from a board's is_interactive being true, and from nothing else", () => {
+            const json = { boards: { "Main.dc.html": { is_interactive: true } } };
+            expect(boardsFromCanvasJson(json)).toStrictEqual([{ ...MAIN, interactive: true }]);
+            for (const is_interactive of [false, "true", 1, "yes", null, {}, []]) {
+                const other = { boards: { "Main.dc.html": { is_interactive } } };
+                expect(boardsFromCanvasJson(other)).toStrictEqual([MAIN]);
+            }
+        });
+
+        it("leave a static board with no interactive key at all", () => {
+            const [main, states] = boardsFromCanvasJson({ ...PROTO, order: ["Main.dc.html", "States.dc.html"] });
+            expect(main.interactive).toBe(true);
+            expect("interactive" in states).toBe(false);
+        });
+    });
+});
+
+describe("partsFromCanvasJson", () => {
+    it("names the screen files boardsFromCanvasJson dropped, in canvas.json's key order", () => {
+        const json = {
+            boards: {
+                "Main.dc.html": { is_interactive: true },
+                "Later.dc.html": { part_of: "Main.dc.html" },
+                "States.dc.html": {},
+                "Done.dc.html": { part_of: "Main.dc.html" },
+            },
+            order: ["Main.dc.html", "Done.dc.html", "Later.dc.html", "States.dc.html"],
+        };
+        expect(partsFromCanvasJson(json)).toEqual(["Later.dc.html", "Done.dc.html"]);
+        const dropped = boardsFromCanvasJson(json).map((b) => b.name);
+        expect(partsFromCanvasJson(json).filter((n) => dropped.includes(n))).toEqual([]);
+    });
+
+    it("skips a malformed part_of, a file that is not a .dc.html and a name that is no entry", () => {
+        const json = {
+            boards: {
+                "A.dc.html": { part_of: 5 },
+                "B.dc.html": { part_of: "" },
+                "C.dc.html": null,
+                "notes.txt": { part_of: "Main.dc.html" },
+                "D.dc.html": { part_of: "Main.dc.html" },
+            },
+        };
+        expect(partsFromCanvasJson(json)).toEqual(["D.dc.html"]);
+    });
+
+    it("is empty when there are no screens, and for a canvas.json that is not usable", () => {
+        expect(partsFromCanvasJson({ boards: { "Main.dc.html": {} } })).toEqual([]);
+        for (const json of [null, undefined, "x", 3, [], {}, { boards: "x" }, { boards: [] }]) {
+            expect(partsFromCanvasJson(json)).toEqual([]);
+        }
     });
 });
 

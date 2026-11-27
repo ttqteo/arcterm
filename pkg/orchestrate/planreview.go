@@ -113,8 +113,9 @@ func PlanReviewLastRound(pr *waveobj.PlanReviewStage) bool {
 	return full >= MaxPlanReviewRounds
 }
 
-// planReviewBoardItem applies only with a Prototype; %s is the canvas path.
-const planReviewBoardItem = "every `.dc.html` board in the folder of %s has a step in a scenario Final runs that renders what the board shows; each board without one is a finding."
+// planReviewBoardItem applies only with a Prototype; %s is the canvas path. A screen of a clickable prototype is a
+// file of the folder that is not a board: canvas.json lists it with a part_of, and the prototype's own step shows it.
+const planReviewBoardItem = "every `.dc.html` board in the folder of %s has a step in a scenario Final runs that renders what the board shows; each board without one is a finding. A file whose entry in that folder's `project/canvas.json` has a `part_of` is a screen of the prototype it names, not a board: the step for that prototype covers it, so it is no finding."
 
 // planReviewManifestItem applies only to a plan on the default task environment: no Setup line and no .arc/setup.
 const planReviewManifestItem = "the plan has no Setup, so each tree the engine makes gets the main checkout's installed `node_modules` linked in wherever its manifests match main's: a task that changes a `package.json` or lockfile needs a Setup line that installs, or the merged trees that Verify and Final run in get main's stale `node_modules`;"
