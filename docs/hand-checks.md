@@ -24,6 +24,12 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
 
 ## 2026-11-27
 
+- [ ] (arcterm) **Plan to review card in Chat: its motion.** An agent whose initiative has proposed chunks, in Chat mode:
+  the card opens on the spring under the last reply (no jump of what is above it). Accept all: the footer folds away
+  on the spring and the card keeps its rows, now `accepted · now pending`. Let the agent take a turn: the card folds
+  away with its rows still drawn (not emptying first). Press Accept all and send a message at once: no card left half
+  open. With reduced motion on, it opens and closes at once. The `chat-plan-review` scenario checks the end states;
+  no frame trace was taken (`chatplanreview.tsx`, `planreviewsection.tsx`).
 - [ ] (arcterm) **Brief toast beside the sheet.** Open an initiative in the Brief's sheet, delete a chunk: the "Deleted …"
   toast and its Undo sit in the part of the page left of the sheet, not over its footer; with the sheet closed it is
   centred again. Typecheck only (`brieftoast.tsx`, `--brief-sheet-w`).

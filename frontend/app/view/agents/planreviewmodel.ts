@@ -77,6 +77,13 @@ export function proposedCount(rows: PlanRow[]): number {
     return rows.filter((r) => r.state === "proposed").length;
 }
 
+// Whether Chat draws its Plan to review card: the agent has an initiative and a row to show, one still proposed or one
+// just decided and held for Undo. The card stays while the decided rows are held, so the last Accept does not take its
+// Undo away; the next re-read ends them and the card goes.
+export function chatPlanShown(hasEffort: boolean, rows: PlanRow[]): boolean {
+    return hasEffort && rows.length > 0;
+}
+
 // the decisions for these labels, read off the plan as it is before the change is sent
 export function decisionsFor(chunks: PlanChunk[], labels: string[], kind: PlanDecision["kind"]): PlanDecision[] {
     return labels.flatMap((label): PlanDecision[] => {

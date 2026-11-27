@@ -3,9 +3,13 @@
 //
 // The details rail's Plan to review: the chunks an agent proposed for its initiative, held out of every count until the
 // person accepts them. Accept, Rename in place and Drop per row; Accept all and continue, Accept all and Drop all
-// under them. A decided row stays, with Undo, until the rail re-reads (planreviewstore.ts).
+// under them. A decided row stays, with Undo, until the rail re-reads (planreviewstore.ts). Chat draws the same section
+// as a card at the end of the conversation (`place="chat"`, chatplanreview.tsx), so a plan is seen where the person reads
+// the reply that proposed it; both read and write the one store, so a decision in one shows in the other.
 
 import { pushToast } from "@/app/cockpit/notificationstore";
+import { springFoldHeight } from "@/app/element/motiontokens";
+import { usePartMotion } from "@/app/element/springbatch";
 import {
     acceptProposed,
     dropProposed,
@@ -16,13 +20,14 @@ import {
 import { continueMessage } from "@/app/view/jarvis/proposedmodel";
 import { chunkRef } from "@/app/view/jarvis/trackeredit";
 import { cn } from "@/util/util";
-import { Check, Pencil, X } from "lucide-react";
+import { Check, ListChecks, Pencil, X } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
 import { sendToAgent } from "./agentsubmit";
 import type { AgentVM } from "./agentsviewmodel";
 import { canDrive } from "./consumers";
 import { decisionsFor, planEditChunks, restoreAt, type PlanRow } from "./planreviewmodel";
-import { holdDecisions, releaseDecision, usePlanReview } from "./planreviewstore";
+import { holdDecisions, releaseDecision, usePlanReview, type PlanReviewView } from "./planreviewstore";
 import { SectionLabel } from "./sectionlabel";
 
 const ICON_BTN =
@@ -38,8 +43,26 @@ const RING: Record<PlanRow["state"], string> = {
     dropped: "border-solid border-ink-faint opacity-50",
 };
 
-export function PlanReviewSection({ agent }: { agent: AgentVM }) {
-    const { oref, effort, rows, decisions, proposed } = usePlanReview(agent.effortId);
+// `place`: the rail's tinted section (row buttons fold until hover, to keep the rail's width) or Chat's card (the buttons
+// always show: the column is wide, and a card whose buttons hide reads as a notice). `exited`: Chat's agent has exited,
+// so the card waits on no one (no amber dot); its writes still work, since they need no agent. `view`: what to draw in
+// place of the store's live view. Chat passes the view it last showed, so a card folding away keeps its rows: the element
+// AnimatePresence holds for the exit keeps that prop, while the live view has already emptied.
+export function PlanReviewSection({
+    agent,
+    place = "rail",
+    exited = false,
+    view,
+}: {
+    agent: AgentVM;
+    place?: "rail" | "chat";
+    exited?: boolean;
+    view?: PlanReviewView;
+}) {
+    const live = usePlanReview(agent.effortId);
+    const { oref, effort, rows, decisions, proposed } = view ?? live;
+    const chat = place === "chat";
+    const footMotion = usePartMotion(springFoldHeight);
     const [renaming, setRenaming] = useState<{ label: string; draft: string } | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
@@ -138,16 +161,49 @@ export function PlanReviewSection({ agent }: { agent: AgentVM }) {
         });
     };
 
+    const count = proposed > 0 ? `${proposed} proposed` : "all decided";
     return (
-        <section data-rail-section="plan" aria-label="Plan to review" className="pb-[14px]">
-            <div className="flex flex-col gap-[8px] rounded-[8px] border border-asking/30 bg-askingbg px-[12px] pb-[12px] pt-[11px]">
-                <div className="flex items-center gap-[8px]">
-                    <SectionLabel className="text-asking">Plan to review</SectionLabel>
-                    <span className="whitespace-nowrap text-[11px] tabular-nums text-ink-mid">
-                        {proposed > 0 ? `${proposed} proposed` : "all decided"}
-                    </span>
-                </div>
-                <div className="text-[11px] leading-[1.45] text-muted">
+        <section
+            data-rail-section={chat ? undefined : "plan"}
+            data-chat-plan={chat ? (proposed > 0 ? "waiting" : "decided") : undefined}
+            aria-label="Plan to review"
+            className={chat ? undefined : "pb-[14px]"}
+        >
+            <div
+                className={
+                    chat
+                        ? "flex flex-col gap-[10px] rounded-[12px] border border-edge-strong bg-surface-raised px-[16px] py-[14px]"
+                        : "flex flex-col gap-[8px] rounded-[8px] border border-asking/30 bg-askingbg px-[12px] pb-[12px] pt-[11px]"
+                }
+            >
+                {chat ? (
+                    // the header of Chat's other cards (chatinitiativecard.tsx): a glyph, what the card is, and the amber
+                    // "Waiting on you" while a chunk is undecided
+                    <div className="flex items-center gap-[8px] text-[12px] text-muted">
+                        <ListChecks size={14} strokeWidth={2} className="flex-none" aria-hidden />
+                        <span className="min-w-0 truncate">
+                            Plan to review · <span className="tabular-nums">{count}</span>
+                        </span>
+                        {proposed > 0 && !exited ? (
+                            <span className="ml-[6px] flex flex-none items-center gap-[6px] text-warning">
+                                <span
+                                    data-chat-plan-waiting
+                                    aria-hidden="true"
+                                    className="h-[6px] w-[6px] flex-none rounded-full bg-asking pulse-dot"
+                                />
+                                Waiting on you
+                            </span>
+                        ) : exited ? (
+                            <span className="ml-[6px] flex-none text-muted">Agent exited</span>
+                        ) : null}
+                    </div>
+                ) : (
+                    <div className="flex items-center gap-[8px]">
+                        <SectionLabel className="text-asking">Plan to review</SectionLabel>
+                        <span className="whitespace-nowrap text-[11px] tabular-nums text-ink-mid">{count}</span>
+                    </div>
+                )}
+                <div className={cn("leading-[1.45] text-muted", chat ? "text-[12px]" : "text-[11px]")}>
                     <span className="text-secondary">{effort.title}</span> · proposed by {agent.name}. They count toward
                     progress once you accept them.
                 </div>
@@ -203,12 +259,16 @@ export function PlanReviewSection({ agent }: { agent: AgentVM }) {
                                     ) : null}
                                 </div>
                                 {open ? (
-                                    // folded to no width until the pointer is over the row or a key focuses into it, so
+                                    // on the rail, folded to no width until the pointer is over the row or a key focuses into it, so
                                     // a plan of eight is not 24 buttons and each title keeps the rail's width; gone while
                                     // the row is renamed, so the input keeps it too
                                     <span
                                         hidden={renaming?.label === r.label}
-                                        className="-ml-[9px] flex w-0 flex-none items-center overflow-hidden group-focus-within/plan:ml-0 group-focus-within/plan:w-auto group-hover/plan:ml-0 group-hover/plan:w-auto"
+                                        className={
+                                            chat
+                                                ? "flex flex-none items-center"
+                                                : "-ml-[9px] flex w-0 flex-none items-center overflow-hidden group-focus-within/plan:ml-0 group-focus-within/plan:w-auto group-hover/plan:ml-0 group-hover/plan:w-auto"
+                                        }
                                     >
                                         <button
                                             type="button"
@@ -255,43 +315,50 @@ export function PlanReviewSection({ agent }: { agent: AgentVM }) {
                         );
                     })}
                 </div>
-                {waiting.length > 0 ? (
-                    <>
-                        <div className="mt-[2px] flex flex-wrap gap-[6px]">
-                            {canContinue ? (
-                                <button
-                                    type="button"
-                                    disabled={busy}
-                                    onClick={() => void acceptAndContinue()}
-                                    className={cn(FOOT_BTN, FOOT_BTN_MAIN)}
-                                >
-                                    Accept all and continue
-                                </button>
-                            ) : null}
-                            <button
-                                type="button"
-                                disabled={busy}
-                                onClick={() => void accept(waiting)}
-                                className={cn(FOOT_BTN, FOOT_BTN_QUIET)}
-                            >
-                                Accept all
-                            </button>
-                            <button
-                                type="button"
-                                disabled={busy}
-                                onClick={() => void drop(waiting)}
-                                className={cn(FOOT_BTN, FOOT_BTN_QUIET)}
-                            >
-                                Drop all
-                            </button>
-                        </div>
-                        {canContinue ? (
-                            <div className="text-[10.5px] text-ink-mid">
-                                Continue sends “Plan accepted, start with {waiting[0]}” to {agent.name}.
+                {/* the footer folds away on the spring once nothing waits, so the card does not jump shorter. The column's
+                    gap is taken back by the wrapper's margin and given to its inner padding, so a closed footer holds
+                    none of it */}
+                <AnimatePresence initial={false}>
+                    {waiting.length > 0 ? (
+                        <motion.div key="foot" {...footMotion} className={chat ? "-mt-[10px]" : "-mt-[8px]"}>
+                            <div className={cn("flex flex-col", chat ? "gap-[10px] pt-[10px]" : "gap-[8px] pt-[8px]")}>
+                                <div className="mt-[2px] flex flex-wrap gap-[6px]">
+                                    {canContinue ? (
+                                        <button
+                                            type="button"
+                                            disabled={busy}
+                                            onClick={() => void acceptAndContinue()}
+                                            className={cn(FOOT_BTN, FOOT_BTN_MAIN)}
+                                        >
+                                            Accept all and continue
+                                        </button>
+                                    ) : null}
+                                    <button
+                                        type="button"
+                                        disabled={busy}
+                                        onClick={() => void accept(waiting)}
+                                        className={cn(FOOT_BTN, FOOT_BTN_QUIET)}
+                                    >
+                                        Accept all
+                                    </button>
+                                    <button
+                                        type="button"
+                                        disabled={busy}
+                                        onClick={() => void drop(waiting)}
+                                        className={cn(FOOT_BTN, FOOT_BTN_QUIET)}
+                                    >
+                                        Drop all
+                                    </button>
+                                </div>
+                                {canContinue ? (
+                                    <div className="text-[10.5px] text-ink-mid">
+                                        Continue sends “Plan accepted, start with {waiting[0]}” to {agent.name}.
+                                    </div>
+                                ) : null}
                             </div>
-                        ) : null}
-                    </>
-                ) : null}
+                        </motion.div>
+                    ) : null}
+                </AnimatePresence>
                 {error != null ? (
                     <div role="alert" className="break-words text-[11px] text-error">
                         {error}

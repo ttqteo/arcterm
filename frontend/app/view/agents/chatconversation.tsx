@@ -134,6 +134,7 @@ import { ChatPairHost } from "./chatpairblock";
 import { ChatPairMarkLine, pairBarAttrs, pairBarClass, useAgentPairViews } from "./chatpairmark";
 import { PairRelayView } from "./chatpairrelay";
 import { btwQuestion } from "./chatpending";
+import { ChatPlanReview } from "./chatplanreview";
 import { ChatRunCard } from "./chatruncard";
 import {
     itemTimes,
@@ -2335,6 +2336,9 @@ export function ChatConversation({
                     )
                 ) : null}
             </AnimatePresence>
+            {/* the chunks the agent proposed for its initiative, last: what waits on you comes after everything else
+                (chatplanreview.tsx; it opens and leaves on the spring itself). Only a live agent's Chat has an agent */}
+            {agent != null ? <ChatPlanReview agent={agent} exited={exited} /> : null}
         </div>
     );
     // the initiative cards read their agent and the initiative list from a host: only a live Claude agent's Chat has one;

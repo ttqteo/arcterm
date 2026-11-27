@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
     addDecisions,
+    chatPlanShown,
     decisionsFor,
     planEditChunks,
     planRows,
@@ -134,5 +135,20 @@ describe("planEditChunks", () => {
             { label: "A", stage: "" },
             { label: "B", stage: "Build" },
         ]);
+    });
+});
+
+describe("chatPlanShown", () => {
+    it("shows while a chunk waits, and while a decided one is held for Undo", () => {
+        expect(chatPlanShown(true, planRows(plan, []))).toBe(true);
+        const accepted = plan.map((c) => (c.status === "proposed" ? { ...c, status: "pending" } : c));
+        const held = decisionsFor(plan, ["Model", "Panel", "Scenario"], "accepted");
+        expect(chatPlanShown(true, planRows(accepted, held))).toBe(true);
+    });
+
+    it("hides with nothing to review, once the held rows end, or with no initiative", () => {
+        const accepted = plan.map((c) => (c.status === "proposed" ? { ...c, status: "pending" } : c));
+        expect(chatPlanShown(true, planRows(accepted, []))).toBe(false);
+        expect(chatPlanShown(false, planRows(plan, []))).toBe(false);
     });
 });
