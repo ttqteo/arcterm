@@ -8,11 +8,31 @@ import "context"
 // JobQueueCommands is the heavy-job queue (pkg/jobqueue): agents hold a slot through JobSlot, the cockpit reads
 // and steers the queue.
 type JobQueueCommands interface {
-	JobSlotCommand(ctx context.Context, data CommandJobSlotData) chan RespOrErrorUnion[JobSlotUpdate] // wait for a slot for one shell command and hold it while the stream lives
-	GetJobQueueCommand(ctx context.Context) (*JobQueueData, error)                                    // the running and queued heavy jobs
-	JobQueueRunNowCommand(ctx context.Context, data CommandJobQueueActData) error                     // start a queued job past both gates
-	JobQueueSkipCommand(ctx context.Context, data CommandJobQueueActData) error                       // refuse a queued agent job
-	JobSlotHoldCommand(ctx context.Context, data CommandJobSlotHoldData) error                        // keep a started slot for as long as a process runs (wsh protect's child)
+	JobSlotCommand(ctx context.Context, data CommandJobSlotData) chan RespOrErrorUnion[JobSlotUpdate]         // wait for a slot for one shell command and hold it while the stream lives
+	GetJobQueueCommand(ctx context.Context) (*JobQueueData, error)                                            // the running and queued heavy jobs
+	JobQueueRunNowCommand(ctx context.Context, data CommandJobQueueActData) error                             // start a queued job past both gates
+	JobQueueSkipCommand(ctx context.Context, data CommandJobQueueActData) error                               // refuse a queued agent job
+	JobSlotHoldCommand(ctx context.Context, data CommandJobSlotHoldData) error                                // keep a started slot for as long as a process runs (wsh protect's child)
+	JobPeaksForgetCommand(ctx context.Context, data CommandJobPeaksForgetData) (*JobPeaksForgetResult, error) // drop a measured peak a command's queue figure rests on (wsh jobslot forget)
+}
+
+// CommandJobPeaksForgetData is `wsh jobslot forget`: the command (its pattern as the Jobs popover names it, or a
+// command line that has that pattern), the directory whose project it was measured in, and whether to drop every
+// kept peak rather than the largest.
+type CommandJobPeaksForgetData struct {
+	Command string `json:"command"`
+	Cwd     string `json:"cwd"`
+	All     bool   `json:"all,omitempty"`
+}
+
+// JobPeaksForgetResult says what was dropped and what the queue now asks for the command's next run.
+type JobPeaksForgetResult struct {
+	Pattern  string   `json:"pattern"`
+	Project  string   `json:"project"`            // "" for the "no project" key
+	Dropped  []uint64 `json:"dropped"`            // newest first
+	Left     []uint64 `json:"left,omitempty"`     // newest first
+	Bytes    uint64   `json:"bytes"`              // the figure the next run is admitted on
+	Measured bool     `json:"measured,omitempty"` // Bytes rests on measured peaks, not memgate's table
 }
 
 type CommandJobSlotData struct {

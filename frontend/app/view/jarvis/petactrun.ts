@@ -12,7 +12,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
-import { agentAnswer, markAskSent } from "@/app/view/agents/askanswer";
+import { agentAnswer, markAskSent, noteAnswerAccepted } from "@/app/view/agents/askanswer";
 import { loadAttention } from "@/app/view/agents/attentionstore";
 import { fireAndForget } from "@/util/util";
 import { START_NOW_TIMEOUT_MS } from "./attentionrun";
@@ -134,6 +134,7 @@ async function answer(model: AgentsViewModel, act: Extract<PetAct, { verb: "answ
     await settle(act, async () => {
         await RpcApi.AnswerAgentCommand(TabRpcClient, { oref: ans.oref, answers: ans.answers });
         markAskSent(model, ans.askKey);
+        noteAnswerAccepted(ans);
     });
 }
 

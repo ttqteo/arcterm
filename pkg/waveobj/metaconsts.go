@@ -105,6 +105,7 @@ const (
 	MetaKey_AgentLoginEmail                  = "agent:loginemail"
 	MetaKey_AgentSleeping                    = "agent:sleeping"
 	MetaKey_AgentSleepFreed                  = "agent:sleepfreed"
+	MetaKey_AgentSleepAsking                 = "agent:sleepasking"
 	MetaKey_AgentWakeFailed                  = "agent:wakefailed"
 
 	MetaKey_Count                            = "count"

@@ -161,6 +161,52 @@ func TestLivePendingAsksRetiresAnAskOfARunThatIsNotPausedWhoseProcessEnded(t *te
 	}
 }
 
+// a sleep ends the agent's process on purpose, so its controller reads done while the agent sleeps: when it slept while
+// asking, the question is the person's to answer, and the answer is held for the wake. Pruning it would lose the question.
+func TestLivePendingAsksKeepsTheAskOfASleepingAgentThatWasAsking(t *testing.T) {
+	oref, _ := sleptAskFixture(t, sleptAskingMeta(), abQuestion())
+	stubControllerStatus(t, &blockcontroller.BlockControllerRuntimeStatus{ShellProcStatus: blockcontroller.Status_Done})
+	live, err := LivePendingAsks(context.Background())
+	if err != nil {
+		t.Fatalf("LivePendingAsks: %v", err)
+	}
+	if _, ok := live[oref]; !ok {
+		t.Fatal("the ask of an agent slept while asking was pruned from the list")
+	}
+	if _, ok := agentask.GlobalRegistry.Get(oref); !ok {
+		t.Fatal("the ask of an agent slept while asking was retired from the registry")
+	}
+}
+
+// only an agent slept while asking keeps its ask: the same ended block slept idle (no asking mark) still loses it
+func TestLivePendingAsksRetiresTheAskOfAnIdleSleepingAgentWhoseProcessEnded(t *testing.T) {
+	oref, _ := sleptAskFixture(t, waveobj.MetaMapType{waveobj.MetaKey_AgentSleeping: int64(5000)}, abQuestion())
+	stubControllerStatus(t, &blockcontroller.BlockControllerRuntimeStatus{ShellProcStatus: blockcontroller.Status_Done})
+	live, err := LivePendingAsks(context.Background())
+	if err != nil {
+		t.Fatalf("LivePendingAsks: %v", err)
+	}
+	if _, ok := live[oref]; ok {
+		t.Fatal("the ask of an idle-slept agent stayed in the list")
+	}
+	if _, ok := agentask.GlobalRegistry.Get(oref); ok {
+		t.Fatal("the ask of an idle-slept agent stayed in the registry")
+	}
+}
+
+// the asking mark with no sleep is no reason to keep an ask over an ended process
+func TestLivePendingAsksRetiresAnAskWithAnAskingMarkButNoSleep(t *testing.T) {
+	oref, _ := sleptAskFixture(t, waveobj.MetaMapType{waveobj.MetaKey_AgentSleepAsking: true}, abQuestion())
+	stubControllerStatus(t, &blockcontroller.BlockControllerRuntimeStatus{ShellProcStatus: blockcontroller.Status_Done})
+	live, err := LivePendingAsks(context.Background())
+	if err != nil {
+		t.Fatalf("LivePendingAsks: %v", err)
+	}
+	if _, ok := live[oref]; ok {
+		t.Fatal("an ask survived an ended process with no sleep behind it")
+	}
+}
+
 // before the frontend re-mounts a block's controller (e.g. right after boot), there is no controller to
 // ask yet — that silence must not be misread as the process having ended.
 func TestLivePendingAsksKeepsAnAskFromABlockWithNoController(t *testing.T) {

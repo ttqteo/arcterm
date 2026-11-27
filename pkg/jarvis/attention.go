@@ -1096,7 +1096,9 @@ func GatherAttentionFromLedger(ctx context.Context, chans []*waveobj.Channel, ru
 //
 // Two ways to be gone: the block object is deleted, or the block is a kept shell whose process ended
 // without a clear ever coming. A paused run's agent is not gone: a pause ended its process on purpose, so its ask
-// stays for the person to answer, and the answer is held for the resumed agent (agentask.HoldAnswer).
+// stays for the person to answer, and the answer is held for the resumed agent (agentask.HoldAnswer). The same holds
+// for an agent put to sleep while it asked (agent:sleeping with agent:sleepasking): its wake asks again, and carries
+// the answer. An agent slept idle has no such mark, and its ended process retires its ask as any other.
 func LivePendingAsks(ctx context.Context) (map[string]agentask.PendingAsk, error) {
 	pendingAsks := agentask.GlobalRegistry.List()
 	for oref, pending := range pendingAsks {
@@ -1112,6 +1114,9 @@ func LivePendingAsks(ctx context.Context) (map[string]agentask.PendingAsk, error
 			// a kept block whose process ended has no clear coming: the agent that would send it is gone
 			rs := controllerStatusFn(parsed.OID)
 			if rs == nil || rs.ShellProcStatus != blockcontroller.Status_Done {
+				continue
+			}
+			if metaSleepAsking(block.Meta) {
 				continue
 			}
 			paused, err := blockRunPaused(ctx, block)

@@ -657,3 +657,78 @@ func sortedKeys(m map[string]bool) []string {
 	slices.Sort(out)
 	return out
 }
+
+// the case it was made for: one run measured 10.6 GB among runs of 0.5–4 GB, and held the queue at 12.7 GB
+func TestForgetDropsTheLargestPeakAndTheEstimateFollows(t *testing.T) {
+	e := newEnv(t)
+	s := e.open()
+	for _, p := range []uint64{3840, 4010, 540, 10600, 1780} { // oldest first
+		s.Record("scripts/verify.mjs", "/p", true, p*mb)
+	}
+	dropped, left, ok := s.Forget("scripts/verify.mjs", "/p", false)
+	if !ok || !slices.Equal(dropped, []uint64{10600 * mb}) {
+		t.Fatalf("forget = %v %v %v, want the 10.6 GB peak dropped", dropped, left, ok)
+	}
+	if want := []uint64{1780 * mb, 540 * mb, 4010 * mb, 3840 * mb}; !slices.Equal(left, want) {
+		t.Fatalf("left = %v, want %v (newest first, order kept)", left, want)
+	}
+	got, _ := s.Estimate("scripts/verify.mjs", "/p", 3*gb)
+	if want := 4010*mb + 4010*mb/5; got != want {
+		t.Fatalf("estimate = %d, want %d (4.0 GB × 1.2)", got, want)
+	}
+	// written at once: a store opened now reads the change
+	if again, _ := e.open().Estimate("scripts/verify.mjs", "/p", 3*gb); again != got {
+		t.Fatalf("reopened estimate = %d, want %d", again, got)
+	}
+}
+
+func TestForgetAllDropsTheKeyAndTheEstimateIsTheTable(t *testing.T) {
+	e := newEnv(t)
+	s := e.open()
+	s.Record("task check:ts", "/p", true, 2*gb)
+	s.Record("task check:ts", "/p", true, 3*gb)
+	s.Record("task check:ts", "/q", true, gb)
+	dropped, left, ok := s.Forget("task check:ts", "/p", true)
+	if !ok || !slices.Equal(dropped, []uint64{3 * gb, 2 * gb}) || len(left) != 0 {
+		t.Fatalf("forget all = %v %v %v, want both peaks dropped, none left", dropped, left, ok)
+	}
+	if s.Has("task check:ts", "/p") || !s.Has("task check:ts", "/q") {
+		t.Fatal("want /p's key gone and /q's kept")
+	}
+	if got, basis := e.open().Estimate("task check:ts", "/p", 5*gb); got != 5*gb || basis.Measured {
+		t.Fatalf("reopened estimate = %d %+v, want the table's 5 GB", got, basis)
+	}
+}
+
+func TestForgetTheOnlyPeakDropsTheKey(t *testing.T) {
+	s := newEnv(t).open()
+	s.Record("task check:ts", "/p", true, 2*gb)
+	if _, left, ok := s.Forget("task check:ts", "/p", false); !ok || len(left) != 0 || s.Has("task check:ts", "/p") {
+		t.Fatalf("left %v, ok %v, has %v: want the key gone", left, ok, s.Has("task check:ts", "/p"))
+	}
+}
+
+// a learned unknown pattern left with no heavy peak is light again, and leaves the learned file
+func TestForgetTheHeavyPeakOfALearnedPatternMakesItLight(t *testing.T) {
+	e := newEnv(t)
+	s := e.open()
+	s.Record("make build", "/p", false, Threshold)
+	s.Record("make build", "/p", false, Threshold/4)
+	if _, _, ok := s.Forget("make build", "/p", false); !ok {
+		t.Fatal("no key to forget")
+	}
+	if s.Has("make build", "/p") || len(s.Learned()) != 0 || len(e.learnedFile()) != 0 {
+		t.Fatalf("learned %v, file %v: want the pattern light again", s.Learned(), e.learnedFile())
+	}
+}
+
+func TestForgetNoKey(t *testing.T) {
+	s := newEnv(t).open()
+	s.Record("task check:ts", "/p", true, 2*gb)
+	if _, _, ok := s.Forget("task check:ts", "/other", false); ok {
+		t.Fatal("forgot a key that is not there")
+	}
+	if _, _, ok := (*Store)(nil).Forget("task check:ts", "/p", false); ok {
+		t.Fatal("a nil store forgot something")
+	}
+}

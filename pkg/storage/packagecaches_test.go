@@ -8,7 +8,10 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
+	"sync"
 	"testing"
+	"time"
 )
 
 func cacheByID(caches []PackageCache, id string) PackageCache {
@@ -88,6 +91,40 @@ func TestPackageCachesListsWhatExists(t *testing.T) {
 	}
 	if it := itemByID(rep.Items, "npm"); it.Kind != KindCache || it.Path != filepath.Join(root, "npm") || !it.Cleanable {
 		t.Fatalf("npm: %+v", it)
+	}
+}
+
+func TestPackageCachesAreSizedConcurrentlyAndListedInTheirOrder(t *testing.T) {
+	root := t.TempDir()
+	var caches []PackageCache
+	for _, id := range []string{"npm", "go-mod", "pip", "cargo-registry"} {
+		writeFile(t, filepath.Join(root, id, "f"), 1)
+		caches = append(caches, PackageCache{ID: id, Label: id, Path: filepath.Join(root, id)})
+	}
+	// every size waits until all four have begun: a walk that sizes one cache after another never gets past the first
+	var begun sync.WaitGroup
+	begun.Add(len(caches))
+	allBegun := make(chan struct{})
+	go func() { begun.Wait(); close(allBegun) }()
+	size := func(p string) int64 {
+		begun.Done()
+		select {
+		case <-allBegun:
+		case <-time.After(5 * time.Second):
+			return -1
+		}
+		return int64(len(filepath.Base(p))) // a size of its own, so an item that took another's shows
+	}
+	rep := packageCaches{size: size}.measure(context.Background(), &Env{PackageCaches: caches})
+	var ids []string
+	for _, it := range rep.Items {
+		ids = append(ids, it.ID)
+		if want := int64(len(it.ID)); it.Bytes != want {
+			t.Errorf("%s = %d bytes, want %d: sized one after another, or one cache's size on another's row", it.ID, it.Bytes, want)
+		}
+	}
+	if want := []string{"npm", "go-mod", "pip", "cargo-registry"}; !slices.Equal(ids, want) {
+		t.Fatalf("items %v, want %v: the order of the caches, whichever size lands first", ids, want)
 	}
 }
 

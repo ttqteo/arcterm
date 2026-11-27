@@ -107,6 +107,8 @@ import {
     historyScrollAtom,
     refreshHistory,
 } from "@/app/view/agents/githistorystore";
+import { GRID_LAYOUTS } from "@/app/view/agents/gridlayouts";
+import { applyGridLayout, canApplyLayout, canSwapCells, swapGridCells } from "@/app/view/agents/gridlayoutstore";
 import { canHandToPhone } from "@/app/view/agents/handtophone";
 import { anyFilterActive } from "@/app/view/agents/historyquery";
 import { openInitiativeLinkPicker } from "@/app/view/agents/initiativepopover";
@@ -1677,7 +1679,30 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             redrawTerminal(blockId);
         }
     };
+    // the split's snap layouts (gridlayouts.ts), the header layout menu's rows by name. No chord: reached from the
+    // palette or `wsh ui do`, and listed only while the split on screen has as many cells as the layout has zones
+    const layoutRows: Binding[] = GRID_LAYOUTS.map((layout) => ({
+        id: `agent:layout-${layout.id}`,
+        keys: "",
+        group: "Agent",
+        label: layout.label,
+        when: (ctx: KeyContext) => ctx.surface === "agent" && !ctx.modalOpen && canApplyLayout(model, layout.id),
+        run: () => {
+            applyGridLayout(model, layout.id);
+        },
+    }));
     const bindings: Binding[] = [
+        ...layoutRows,
+        {
+            id: "agent:swap-cells",
+            keys: "",
+            group: "Agent",
+            label: "Swap cells",
+            when: (ctx) => ctx.surface === "agent" && !ctx.modalOpen && canSwapCells(model),
+            run: () => {
+                swapGridCells(model);
+            },
+        },
         {
             id: "subagent:back",
             keys: "Escape",

@@ -8,6 +8,7 @@ import { forwardRef, useImperativeHandle, useLayoutEffect, useRef, useState, typ
 import { wakeAgent, wakeErrorToast } from "./agentsleep";
 import { askBtw, logLine, submitToAgent } from "./agentsubmit";
 import type { AgentState, AgentVM } from "./agentsviewmodel";
+import { withBoardRef } from "./chatboardref";
 import { withResultLines } from "./chatinitiative";
 import { expandPastes, joinPastes, splitPastes } from "./chatpastes";
 import { btwQuestion, processGone, repeatsSend, sendFailure, type LastSend, type SendFailure } from "./chatpending";
@@ -109,13 +110,17 @@ export function useAgentSend(
     // wakeClears: a wake send empties the box at the press, as an awake send does (Chat, whose pending bubble shows the
     // message meanwhile), and puts the text back when the wake fails, telling onWakeFailed so the caller puts back what it
     // let go of; without it the text stays in the box until the agent is back (the composers with no conversation)
+    // boardRef: the id of a board picked to ride this message (chatboardchip.tsx), put at its end as `board:<id>`
+    // (chatboardref.withBoardRef), so the pending bubble, the repeat check and the wire all carry the same text
     {
         keepDraft = false,
         onBtwTyped,
         onWoken,
         wakeClears = false,
         onWakeFailed,
+        boardRef,
     }: {
+        boardRef?: string;
         keepDraft?: boolean;
         onBtwTyped?: (sent: string) => void;
         onWoken?: () => void;
@@ -134,7 +139,7 @@ export function useAgentSend(
     // a message now would undo the Sleep under way (or cut its compaction short): the box waits until it sleeps
     const fallingAsleep = useFallingAsleep(agent?.id, agent?.sleeping != null);
     // a long paste folded into a chip (chatpastes.ts) goes written out, in a <pasted_content> block its bubble folds
-    const message = messageWithAttachments(expandPastes(text, true).trim(), attachments ?? []);
+    const message = messageWithAttachments(withBoardRef(expandPastes(text, true).trim(), boardRef), attachments ?? []);
     const canSend = canSendComposer(message, blockId) && !waking && fallingAsleep == null;
     // a failed send's text back in the box, ahead of what was typed since (read from the store, not this render's text)
     const putBack = (t: string) => {

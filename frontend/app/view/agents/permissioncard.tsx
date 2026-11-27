@@ -13,11 +13,14 @@
 // The keyboard answers it too: with the chat box empty, ↑ and ↓ move a highlight over Allow, the second choice and Deny,
 // and Enter sends the highlighted one (permissionstore.ts's card keys, which the box reads); with a button of the card in
 // focus, the arrows move the highlight and the focus with it, so Enter or Space presses the highlighted button.
+// An agent put to sleep while it waited (sleeping.asking) keeps its card read-only: what it waited on, and one Wake button
+// in place of Allow and Deny, since a key typed now goes to a terminal with no process. The woken agent asks again.
 
 import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget } from "@/util/util";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { readTermLines } from "../term/termpaste";
+import { wakeAgent, wakeErrorToast } from "./agentsleep";
 import type { AgentVM } from "./agentsviewmodel";
 import {
     cardHead,
@@ -26,6 +29,7 @@ import {
     moreWaiting,
     PERMISSION_SCREEN_ROWS,
     permissionChoices,
+    permissionReadOnly,
     permissionSummaryLine,
     permissionTitle,
     secondChoice,
@@ -44,6 +48,7 @@ import {
     usePermissionRequestState,
 } from "./permissionstore";
 import { tuiPermissionOptions } from "./tuiscreen";
+import { useWaking } from "./wakingstore";
 
 // flex: the highlighted button carries its Enter key beside the label
 const PRIMARY_BTN =
@@ -129,17 +134,21 @@ export function PermissionCard({
 }) {
     const oref = agent.blockId != null ? `block:${agent.blockId}` : undefined;
     const requests = usePermission(oref);
-    const head = cardHead(requests, askShown);
+    // asleep while it waited: the card is read-only, and a question at the head is the question the chat draws (the
+    // kept ask, or its answer held for the wake), never a permission card of its own
+    const readOnly = permissionReadOnly(agent);
+    const head = cardHead(requests, askShown || readOnly);
     const { busy, error } = usePermissionRequestState(oref, head?.id);
     // A refusal outlives the request it refused (wavesrv refuses only one that has left the queue), so the card also
-    // draws for the error line alone once the queue is empty.
-    const shown = oref != null && (head != null || error != null) && cardShown(agent);
+    // draws for the error line alone once the queue is empty. A read-only card has nothing to refuse.
+    const shown = oref != null && (head != null || (error != null && !readOnly)) && cardShown(agent);
     const now = useNow(shown && head != null);
-    const second = useSecondChoice(agent.blockId, shown && head?.answerable ? head.id : undefined);
+    const second = useSecondChoice(agent.blockId, shown && !readOnly && head?.answerable ? head.id : undefined);
     const screen = head?.screenpick === true;
-    const yes = useScreenYes(oref, shown && screen ? head.id : undefined);
+    const yes = useScreenYes(oref, shown && !readOnly && screen ? head.id : undefined);
     // a ScreenPick head can be answered once its Yes shows on the terminal
-    const canAnswer = head != null && (head.answerable || (screen && yes != null));
+    const canAnswer = !readOnly && head != null && (head.answerable || (screen && yes != null));
+    const waking = useWaking(agent.id);
     // the head the keys answer: one the card can answer, while it shows
     const keyHead = oref != null && shown && canAnswer ? head.id : undefined;
     const hasSecond = second != null;
@@ -160,11 +169,19 @@ export function PermissionCard({
     if (!shown) {
         return null;
     }
-    const errorLine = error != null && (
+    const errorLine = error != null && !readOnly && (
         <div data-permission-error role="alert" className={cn("text-[12px] text-error", head != null && "mt-2")}>
             {error}
         </div>
     );
+    const wake = () =>
+        fireAndForget(async () => {
+            try {
+                await wakeAgent(agent.id);
+            } catch (e) {
+                wakeErrorToast(agent.name, e);
+            }
+        });
     if (head == null) {
         return (
             <div
@@ -217,7 +234,13 @@ export function PermissionCard({
             className="rounded-[9px] border border-asking/45 bg-askingbg p-3"
         >
             <div className="flex items-center gap-2 text-[12.5px]">
-                <span className="h-[7px] w-[7px] flex-none rounded-full bg-asking pulse-dot" />
+                {/* the pulse says a prompt is live; an asleep agent's is not, so its dot stands still */}
+                <span
+                    className={cn(
+                        "h-[7px] w-[7px] flex-none rounded-full bg-asking",
+                        readOnly ? "opacity-60" : "pulse-dot"
+                    )}
+                />
                 <span className="font-semibold text-primary">{permissionTitle(head.toolname)}</span>
                 <span className="text-muted">·</span>
                 <span className="tabular-nums text-muted">{waitingFor(head.ts, now)}</span>
@@ -229,7 +252,23 @@ export function PermissionCard({
                 {permissionSummaryLine(head)}
             </div>
             <div ref={rowRef} onKeyDown={onRowKey} className="mt-3 flex flex-wrap items-center gap-2">
-                {canAnswer ? (
+                {readOnly ? (
+                    <>
+                        <button
+                            type="button"
+                            data-permission-wake
+                            disabled={waking}
+                            title="Wake the agent: it asks again where it stopped"
+                            className={PRIMARY_BTN}
+                            onClick={wake}
+                        >
+                            {waking ? "Waking…" : "Wake"}
+                        </button>
+                        <span data-permission-asleep className="min-w-0 text-[11.5px] text-muted">
+                            Asleep: it asks again when it wakes
+                        </span>
+                    </>
+                ) : canAnswer ? (
                     <>
                         <button
                             type="button"

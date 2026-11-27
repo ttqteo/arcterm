@@ -172,6 +172,280 @@ func TestRescanPublishesEachCategoryAsItLands(t *testing.T) {
 	}
 }
 
+func TestScanParallelMapKeepsTheOrderOfItsItemsAndBoundsItsWorkers(t *testing.T) {
+	items := make([]int, 60)
+	for i := range items {
+		items[i] = i
+	}
+	var active, peak atomic.Int32
+	got := parallelMap(items, 3, func(n int) int {
+		cur := active.Add(1)
+		for p := peak.Load(); cur > p && !peak.CompareAndSwap(p, cur); p = peak.Load() {
+		}
+		runtime.Gosched()
+		active.Add(-1)
+		return n * n
+	})
+	if len(got) != len(items) {
+		t.Fatalf("got %d results, want %d", len(got), len(items))
+	}
+	for i, g := range got {
+		if g != i*i {
+			t.Fatalf("result %d = %d, want %d: results follow the items, not the order they finished", i, g, i*i)
+		}
+	}
+	if p := peak.Load(); p > 3 {
+		t.Fatalf("%d at once, want at most 3", p)
+	}
+	if got := parallelMap([]int(nil), 3, func(n int) int { return n }); len(got) != 0 {
+		t.Fatalf("no items gave %v", got)
+	}
+}
+
+func TestScanParallelMapRunsUpToItsLimitAtOnce(t *testing.T) {
+	var begun sync.WaitGroup
+	begun.Add(3)
+	all := make(chan struct{})
+	go func() { begun.Wait(); close(all) }()
+	got := parallelMap([]int{1, 2, 3}, 3, func(n int) int {
+		begun.Done()
+		select {
+		case <-all:
+			return n
+		case <-time.After(5 * time.Second):
+			return -1 // the others never began: the items ran one after another
+		}
+	})
+	if !slices.Equal(got, []int{1, 2, 3}) {
+		t.Fatalf("got %v, want all three to run at once", got)
+	}
+}
+
+func TestScanParallelMapAPanicInOneItemLeavesItsResultZeroAndFinishesTheRest(t *testing.T) {
+	got := parallelMap([]int{1, 2, 3, 4}, 2, func(n int) int {
+		if n == 2 {
+			panic("boom")
+		}
+		return n
+	})
+	if !slices.Equal(got, []int{1, 0, 3, 4}) {
+		t.Fatalf("got %v, want the panicking item zero and the rest done", got)
+	}
+}
+
+// walkFake is a background category (the package caches' kind: a Rescan does not wait for it) whose walk a test holds
+// by its gate.
+type walkFake struct{ fakeProvider }
+
+func (*walkFake) background() string { return "fake caches" }
+
+func newWalkFake(gate chan struct{}) *walkFake {
+	return &walkFake{fakeProvider{cat: CategoryPackageCaches, gate: gate, rep: report(CategoryPackageCaches,
+		[]StorageItem{{ID: "npm", Kind: KindCache, Label: "npm cache", Bytes: 30, Cleanable: true}}, nil)}}
+}
+
+// onceClose closes ch the first time it is called, and again is a no-op; a test's cleanup calls it too, so no walk is
+// left held.
+func onceClose(t *testing.T, ch chan struct{}) func() {
+	t.Helper()
+	var once sync.Once
+	release := func() { once.Do(func() { close(ch) }) }
+	t.Cleanup(release)
+	return release
+}
+
+func hasCategory(r StorageReport, c StorageCategory) bool {
+	_, ok := findCategory(r.Categories, c)
+	return ok
+}
+
+// walkScanner is a Scanner over a fast category and a held background walk.
+func walkScanner(t *testing.T) (s *Scanner, fast *fakeProvider, caches *walkFake, pub *publishedReports, release func()) {
+	t.Helper()
+	gate := make(chan struct{})
+	release = onceClose(t, gate)
+	fast = &fakeProvider{cat: CategoryRunWorktrees, rep: report(CategoryRunWorktrees, []StorageItem{{ID: "x", Bytes: 5}}, nil)}
+	caches = newWalkFake(gate)
+	pub = &publishedReports{}
+	s = &Scanner{env: testEnv(t), providers: []provider{fast, caches}, publish: pub.add}
+	t.Cleanup(func() { waitFor(t, func() bool { return !s.Report().Scanning }) })
+	return s, fast, caches, pub, release
+}
+
+func TestScanEndsWhileTheCachesWalkIsHeldAndPublishesTheirCategoryWhenItLands(t *testing.T) {
+	s, _, caches, pub, release := walkScanner(t)
+	s.Rescan(context.Background())
+	waitFor(t, func() bool { return caches.scans.Load() == 1 && !s.Report().Scanning })
+
+	r := s.Report()
+	if r.ScannedTs == 0 {
+		t.Fatal("the scan ended with the walk held: it must be stamped")
+	}
+	if want := []StorageCategory{CategoryRunWorktrees}; !slices.Equal(categoryNames(r.Categories), want) {
+		t.Fatalf("categories %v, want %v: a first scan has no package caches until the walk lands", categoryNames(r.Categories), want)
+	}
+	pubs := pub.all()
+	if last := pubs[len(pubs)-1]; last.Scanning || last.ScannedTs != r.ScannedTs || hasCategory(last, CategoryPackageCaches) {
+		t.Fatalf("last published %+v, want the scan's end: stamped, not scanning, no package caches", last)
+	}
+
+	release()
+	waitFor(t, func() bool { return hasCategory(s.Report(), CategoryPackageCaches) })
+	waitFor(t, func() bool {
+		pubs := pub.all()
+		return hasCategory(pubs[len(pubs)-1], CategoryPackageCaches)
+	})
+	got := s.Report()
+	if want := []StorageCategory{CategoryRunWorktrees, CategoryPackageCaches}; !slices.Equal(categoryNames(got.Categories), want) {
+		t.Fatalf("categories %v, want %v (provider order)", categoryNames(got.Categories), want)
+	}
+	if got.ScannedTs != r.ScannedTs || got.Scanning {
+		t.Fatalf("report %+v: the walk landing leaves the scan's time and does not start a scan", got)
+	}
+	if c, _ := findCategory(got.Categories, CategoryPackageCaches); c.Bytes != 30 || len(c.Items) != 1 {
+		t.Fatalf("package caches %+v, want the walk's measure", c)
+	}
+}
+
+func TestScanDuringAHeldCachesWalkStartsNoSecondWalk(t *testing.T) {
+	s, fast, caches, _, release := walkScanner(t)
+	s.Rescan(context.Background())
+	waitFor(t, func() bool { return caches.scans.Load() == 1 && !s.Report().Scanning })
+	s.Rescan(context.Background())
+	s.Rescan(context.Background()) // a second ask during the scan only follows it once
+	waitFor(t, func() bool { return fast.scans.Load() == 3 && !s.Report().Scanning })
+	if n := caches.scans.Load(); n != 1 {
+		t.Fatalf("the caches were walked %d times while the first walk was held, want 1", n)
+	}
+
+	release()
+	waitFor(t, func() bool { return hasCategory(s.Report(), CategoryPackageCaches) })
+	// the walk is over: the next scan hands the caches to a new one
+	s.Rescan(context.Background())
+	waitFor(t, func() bool { return caches.scans.Load() == 2 })
+}
+
+func TestScanKeepsACachesWalkThatLandedDuringIt(t *testing.T) {
+	s, fast, caches, pub, release := walkScanner(t)
+	s.Rescan(context.Background())
+	waitFor(t, func() bool { return caches.scans.Load() == 1 && !s.Report().Scanning })
+
+	held := make(chan struct{})
+	releaseScan := onceClose(t, held)
+	fast.gate = held // the next scan stops in its first category
+	s.Rescan(context.Background())
+	waitFor(t, func() bool { return fast.scans.Load() == 2 })
+	if !s.Report().Scanning {
+		t.Fatal("the second scan must still be running: nothing below proves the point otherwise")
+	}
+
+	release() // the first walk lands while the second scan runs
+	waitFor(t, func() bool { return hasCategory(s.Report(), CategoryPackageCaches) })
+	releaseScan()
+	waitFor(t, func() bool { return !s.Report().Scanning })
+
+	got := s.Report()
+	if c, ok := findCategory(got.Categories, CategoryPackageCaches); !ok || c.Bytes != 30 {
+		t.Fatalf("categories %v: the scan's end undid the walk that landed during it", categoryNames(got.Categories))
+	}
+	pubs := pub.all()
+	if last := pubs[len(pubs)-1]; !hasCategory(last, CategoryPackageCaches) || last.Scanning {
+		t.Fatalf("the last report out is %+v, want the scan's end with the walk's caches", last)
+	}
+}
+
+func TestScanNowMeasuresTheCachesInlineAndStartsNoWalk(t *testing.T) {
+	s, _, caches, _, release := walkScanner(t)
+	release() // ScanNow waits for the caches: there is no walk to hold it apart from
+	r := s.ScanNow(context.Background())
+	if want := []StorageCategory{CategoryRunWorktrees, CategoryPackageCaches}; !slices.Equal(categoryNames(r.Categories), want) {
+		t.Fatalf("categories %v, want %v", categoryNames(r.Categories), want)
+	}
+	if n := caches.scans.Load(); n != 1 {
+		t.Fatalf("measured %d times, want once, inline", n)
+	}
+}
+
+func TestScanHandsOnlyThePackageCachesToABackgroundWalk(t *testing.T) {
+	var background []StorageCategory
+	for _, p := range defaultProviders() {
+		if _, ok := p.(backgroundProvider); ok {
+			background = append(background, p.category())
+		}
+	}
+	if want := []StorageCategory{CategoryPackageCaches}; !slices.Equal(background, want) {
+		t.Fatalf("background categories %v, want %v", background, want)
+	}
+}
+
+func TestPackageCachesCleanMeasuresThemInlineAndLandsThem(t *testing.T) {
+	s, fast, caches, pub, release := walkScanner(t)
+	release() // the rescan Clean starts hands the caches to a walk that is not held
+	res, err := s.Clean(context.Background(), CategoryPackageCaches, []string{"npm"}, CleanOpts{})
+	if err != nil || len(res.Cleaned) != 1 {
+		t.Fatalf("got %+v, %v; want the cache cleaned", res, err)
+	}
+	// the inline re-measure lands before Clean returns: no wait for a walk
+	pubs := pub.all()
+	if len(pubs) == 0 || !hasCategory(pubs[0], CategoryPackageCaches) {
+		t.Fatalf("first published %+v, want Clean's own re-measure of the caches", pubs)
+	}
+	waitFor(t, func() bool { return fast.scans.Load() == 1 && caches.scans.Load() >= 2 && !s.Report().Scanning })
+}
+
+// cleanedWalkFake is a background category whose first measure (the walk) holds a snapshot from before a clean, and
+// whose later ones (Clean's own re-measure) see what the clean left.
+type cleanedWalkFake struct {
+	fakeProvider
+	before, after StorageCategoryReport
+}
+
+func (*cleanedWalkFake) background() string { return "fake caches" }
+
+func (f *cleanedWalkFake) measure(ctx context.Context, env *Env) StorageCategoryReport {
+	if f.scans.Add(1) == 1 {
+		<-f.gate
+		return f.before
+	}
+	return f.after
+}
+
+func TestScanDiscardsACachesWalkThatCategoryWasCleanedDuring(t *testing.T) {
+	gate := make(chan struct{})
+	release := onceClose(t, gate)
+	fast := &fakeProvider{cat: CategoryRunWorktrees, rep: report(CategoryRunWorktrees, nil, nil)}
+	caches := &cleanedWalkFake{
+		fakeProvider: fakeProvider{cat: CategoryPackageCaches, gate: gate},
+		before:       report(CategoryPackageCaches, []StorageItem{{ID: "npm", Bytes: 30}, {ID: "pip", Bytes: 4}}, nil),
+		after:        report(CategoryPackageCaches, []StorageItem{{ID: "pip", Bytes: 4}}, nil),
+	}
+	s := &Scanner{env: testEnv(t), providers: []provider{fast, caches}}
+	t.Cleanup(func() { waitFor(t, func() bool { return !s.Report().Scanning }) })
+	s.Rescan(context.Background())
+	waitFor(t, func() bool { return caches.scans.Load() == 1 && !s.Report().Scanning }) // the walk is held
+
+	if _, err := s.Clean(context.Background(), CategoryPackageCaches, []string{"npm"}, CleanOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return fast.scans.Load() == 2 && !s.Report().Scanning }) // the rescan Clean started is over
+	cats := func() []StorageItem {
+		c, _ := findCategory(s.Report().Categories, CategoryPackageCaches)
+		return c.Items
+	}
+	if got := cats(); len(got) != 1 || got[0].ID != "pip" {
+		t.Fatalf("package caches %v after Clean, want its re-measure (pip alone)", got)
+	}
+	release()
+	waitFor(t, func() bool {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return !s.walking[CategoryPackageCaches]
+	})
+	if got := cats(); len(got) != 1 || got[0].ID != "pip" {
+		t.Fatalf("package caches %v after the old walk ended, want the clean's re-measure kept: that walk read the tree before the clean", got)
+	}
+}
+
 func TestCleanDispatchesToItsCategoryAndRescans(t *testing.T) {
 	f := &fakeProvider{cat: CategoryHousekeeping}
 	var published atomic.Int32

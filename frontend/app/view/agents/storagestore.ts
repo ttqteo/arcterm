@@ -2,8 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The Storage report the page and the nudge share: one atom, loaded on mount and replaced by every storage:scan
-// event, the reasons the last clean skipped items, by item id, and the items a clean is removing now.
+// event, the reasons the last clean skipped items, by item id, and the items a clean is removing now. Also the two
+// commands that size build output, which the server runs and reports back as the report's `sizing`.
 
+import { pushToast } from "@/app/cockpit/notificationstore";
 import { globalStore } from "@/app/store/jotaiStore";
 import { waveEventSubscribeSingle } from "@/app/store/wps";
 import { RpcApi } from "@/app/store/wshclientapi";
@@ -107,6 +109,31 @@ export async function scanSessionsForIdeas(paths: string[]): Promise<void> {
         unsubscribe();
         throw e;
     }
+}
+
+/** Asks the server to size build output. It returns at once and the walk is the server's: the report's `sizing` and
+ *  each walked project's new size arrive with the storage:scan events, so nothing is set here. `projects` is a row's
+ *  open (the server skips folders sized in the last day); an empty list with `force` is Size all, every project. A
+ *  refused or failed ask is a toast, not a silent drop. */
+export function sizeBuildOutput(projects: string[], force = false): void {
+    fireAndForget(async () => {
+        try {
+            await RpcApi.SizeBuildOutputCommand(TabRpcClient, { projects, force });
+        } catch (e) {
+            pushToast({ title: "Storage", message: `Couldn't size build output: ${String(e)}`, level: "error" });
+        }
+    });
+}
+
+/** The Size all button while it reads Stop sizing: the walk in progress finishes, the rest of the queue is dropped. */
+export function stopSizingBuildOutput(): void {
+    fireAndForget(async () => {
+        try {
+            await RpcApi.StopSizingBuildOutputCommand(TabRpcClient);
+        } catch (e) {
+            pushToast({ title: "Storage", message: `Couldn't stop sizing: ${String(e)}`, level: "error" });
+        }
+    });
 }
 
 /** Starts a scan. The head says Scanning… at once, set before the RPC goes out: the server publishes only when a

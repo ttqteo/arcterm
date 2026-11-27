@@ -7,12 +7,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 
 	"github.com/wavetermdev/waveterm/pkg/agentperm"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/util/utilfn"
+	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wps"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
@@ -486,6 +488,67 @@ func TestAnswerScreenPickDenyTypesEsc(t *testing.T) {
 	if got := f.typedKeys(); len(got) != 1 || got[0] != "\x1b" {
 		t.Fatalf("typed %q, want Esc", got)
 	}
+}
+
+// an asleep agent's Allow and Deny would type keys into a PTY that has no process, and Deny's DropAll would take away
+// the summary the read-only card shows: the answer is refused before the queue is touched, and the request stays for the
+// card
+func TestPermissionAnswerAsleep(t *testing.T) {
+	asleep := waveobj.MetaMapType{waveobj.MetaKey_AgentSleeping: float64(5000), waveobj.MetaKey_AgentSleepAsking: true}
+	t.Run("refuses Allow and Deny and leaves the queue", func(t *testing.T) {
+		f := newPermFixture(t)
+		swap(t, &readBlockMeta, func(context.Context, string) (waveobj.MetaMapType, error) { return asleep, nil })
+		swap(t, &controllerExited, func(string) (bool, int) { return true, -1 })
+		f.raise("Bash", `{"command":"rm -rf build"}`)
+		f.raise("Bash", `{"command":"two"}`)
+		head := f.pending().Requests[0]
+		before := f.published()
+		for _, allow := range []bool{true, false} {
+			err := f.answer(head.Id, allow)
+			if err == nil || !strings.Contains(err.Error(), "asleep") || !strings.Contains(err.Error(), "wake it and it will ask again") {
+				t.Fatalf("answer (allow=%v) = %v, want a refusal that says the agent is asleep", allow, err)
+			}
+		}
+		if got := f.typedKeys(); len(got) != 0 {
+			t.Fatalf("typed %q into an asleep agent", got)
+		}
+		if got := f.pending().Requests; len(got) != 2 || got[0].Id != head.Id || got[0].Summary != "rm -rf build" {
+			t.Fatalf("queue after the refusals = %+v, want both requests as they were", got)
+		}
+		if got := f.published(); !equalRows(got, before) {
+			t.Fatalf("published = %v, want no event beyond the raises (%v)", got, before)
+		}
+	})
+	t.Run("a sleeping mark over a running process is stale and answers as before", func(t *testing.T) {
+		f := newPermFixture(t)
+		swap(t, &readBlockMeta, func(context.Context, string) (waveobj.MetaMapType, error) { return asleep, nil })
+		swap(t, &controllerExited, func(string) (bool, int) { return false, 0 })
+		f.raise("Bash", `{"command":"one"}`)
+		if err := f.answer(f.pending().Requests[0].Id, true); err != nil {
+			t.Fatalf("answer = %v, want an awake agent's answer typed", err)
+		}
+		if got := f.typedKeys(); len(got) != 1 || got[0] != "1" {
+			t.Fatalf("typed %q, want exactly 1", got)
+		}
+	})
+	t.Run("a block that cannot be read answers as before", func(t *testing.T) {
+		f := newPermFixture(t)
+		swap(t, &readBlockMeta, func(context.Context, string) (waveobj.MetaMapType, error) { return nil, errors.New("no such block") })
+		swap(t, &controllerExited, func(string) (bool, int) { return true, -1 })
+		f.raise("Bash", `{"command":"one"}`)
+		if err := f.answer(f.pending().Requests[0].Id, true); err != nil {
+			t.Fatalf("answer = %v, want it typed as before", err)
+		}
+	})
+	t.Run("an agent slept idle has no request to refuse", func(t *testing.T) {
+		f := newPermFixture(t)
+		swap(t, &readBlockMeta, func(context.Context, string) (waveobj.MetaMapType, error) { return waveobj.MetaMapType{}, nil })
+		swap(t, &controllerExited, func(string) (bool, int) { return true, -1 })
+		f.raise("Bash", `{"command":"one"}`)
+		if err := f.answer(f.pending().Requests[0].Id, true); err != nil {
+			t.Fatalf("answer = %v, want an unmarked block's answer typed as before", err)
+		}
+	})
 }
 
 func TestAnswerChoiceOutOfRange(t *testing.T) {

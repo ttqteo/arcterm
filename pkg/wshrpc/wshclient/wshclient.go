@@ -1454,6 +1454,12 @@ func JarvisStatusCommand(w *wshutil.WshRpc, data wshrpc.CommandJarvisStatusData,
 	return resp, err
 }
 
+// command "jobpeaksforget", wshserver.JobPeaksForgetCommand
+func JobPeaksForgetCommand(w *wshutil.WshRpc, data wshrpc.CommandJobPeaksForgetData, opts *wshrpc.RpcOpts) (*wshrpc.JobPeaksForgetResult, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.JobPeaksForgetResult](w, "jobpeaksforget", data, opts)
+	return resp, err
+}
+
 // command "jobqueuerunnow", wshserver.JobQueueRunNowCommand
 func JobQueueRunNowCommand(w *wshutil.WshRpc, data wshrpc.CommandJobQueueActData, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "jobqueuerunnow", data, opts)
@@ -2136,6 +2142,12 @@ func ShellRunCommand(w *wshutil.WshRpc, data wshrpc.CommandShellRunData, opts *w
 	return resp, err
 }
 
+// command "sizebuildoutput", wshserver.SizeBuildOutputCommand
+func SizeBuildOutputCommand(w *wshutil.WshRpc, data wshrpc.CommandSizeBuildOutputData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "sizebuildoutput", data, opts)
+	return err
+}
+
 // command "stopdevserver", wshserver.StopDevServerCommand
 func StopDevServerCommand(w *wshutil.WshRpc, data wshrpc.CommandStopDevServerData, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "stopdevserver", data, opts)
@@ -2151,6 +2163,12 @@ func StopProcessCommand(w *wshutil.WshRpc, data wshrpc.CommandStopProcessData, o
 // command "stoprunworker", wshserver.StopRunWorkerCommand
 func StopRunWorkerCommand(w *wshutil.WshRpc, data wshrpc.CommandStopRunWorkerData, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "stoprunworker", data, opts)
+	return err
+}
+
+// command "stopsizingbuildoutput", wshserver.StopSizingBuildOutputCommand
+func StopSizingBuildOutputCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "stopsizingbuildoutput", nil, opts)
 	return err
 }
 

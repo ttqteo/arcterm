@@ -48,10 +48,21 @@ export function moreWaiting(n: number): string {
     return n > 0 ? `${n} more waiting` : "";
 }
 
+/** Pure: whether the agent's permission request is read-only: it was put to sleep while it waited on you
+ *  (`sleeping.asking`, block meta agent:sleepasking). Its process is gone, so Allow and Deny would type into a dead
+ *  terminal; the card and the row say what it waited on and offer Wake, and the resumed agent asks again. */
+export function permissionReadOnly(agent: Pick<AgentVM, "sleeping">): boolean {
+    return agent.sleeping?.asking === true;
+}
+
 /** Pure: the card shows only for an agent that is awake and not idle, so a queue a killed process left behind (it
- *  never reported Stop) stays hidden. */
+ *  never reported Stop) stays hidden. An agent put to sleep while it waited on you keeps its card, read-only, whatever
+ *  state its roster row reads (a sleeping row reads idle). */
 export function cardShown(agent: Pick<AgentVM, "state" | "sleeping">): boolean {
-    return agent.sleeping == null && agent.state !== "idle";
+    if (agent.sleeping != null) {
+        return permissionReadOnly(agent);
+    }
+    return agent.state !== "idle";
 }
 
 /** Pure: the request the card draws, or undefined. An AskUserQuestion at the head is also a permission request (Claude
@@ -74,26 +85,31 @@ export function permissionSummaryLine(request: Pick<AgentPermissionRequest, "too
 // ---- the sidebar row (permissionrow.tsx): what an agent's row in the tree says of its queue and offers to answer ----
 
 /** What an agent's sidebar row does with its permission queue: Allow and Deny (`screen`: a ScreenPick head, whose Allow
- *  picks its Yes off the terminal), "Answer in chat" for a head it may not allow, or the refusal line alone once the
- *  refused request has left the queue. */
+ *  picks its Yes off the terminal), "Answer in chat" for a head it may not allow, Wake alone for an agent put to sleep
+ *  while it waited (`asleep`, read-only), or the refusal line alone once the refused request has left the queue. */
 export type RowPermission =
     | { kind: "answer"; head: AgentPermissionRequest; screen: boolean }
     | { kind: "chat"; head: AgentPermissionRequest }
+    | { kind: "asleep"; head: AgentPermissionRequest }
     | { kind: "refusal" };
 
 /** Pure: what the row shows for queue `requests`, head first, or null for nothing. `shown` is cardShown (a stale queue
- *  of an asleep or idle agent stays hidden); `otherAsk` is another ask on the row (a held card such as Token burn, a doc
- *  review, a brainstorm's ask), which keeps the row and is never answered past by an Allow; `refused` is the agent's
- *  refusal line, which outlives the request it refused. An AskUserQuestion head is a question, not a permission: the
- *  row leaves it as it is. */
+ *  of an idle agent, or of one that slept with no ask kept, stays hidden); `otherAsk` is another ask on the row (a held
+ *  card such as Token burn, a doc review, a brainstorm's ask), which keeps the row and is never answered past by an
+ *  Allow; `refused` is the agent's refusal line, which outlives the request it refused. An AskUserQuestion head is a
+ *  question, not a permission: the row leaves it as it is. `asleep` is permissionReadOnly: the head is shown as it
+ *  stood, whatever it is (an Allow could not reach a dead terminal), with nothing to refuse, so no refusal line. */
 export function rowPermission(
     requests: readonly AgentPermissionRequest[],
-    opts: { shown: boolean; otherAsk: boolean; refused: boolean }
+    opts: { shown: boolean; otherAsk: boolean; refused: boolean; asleep?: boolean }
 ): RowPermission | null {
     if (!opts.shown || opts.otherAsk) {
         return null;
     }
     const head = requests[0];
+    if (opts.asleep) {
+        return head != null && head.toolname !== "AskUserQuestion" ? { kind: "asleep", head } : null;
+    }
     if (head == null) {
         return opts.refused ? { kind: "refusal" } : null;
     }

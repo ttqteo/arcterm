@@ -132,6 +132,7 @@ export type BuildProjectRow = {
     bytes: number;
     ids: string[]; // the folders a clean may take now; empty while something runs in the project
     lastUsed: number; // unix ms an agent last worked in it, 0 when none did
+    sizedTs: number; // unix ms of the oldest kept size among the folders that have one, 0 when none was ever sized
     reason?: string;
     skipped?: string;
 };
@@ -139,6 +140,12 @@ export type BuildProjectRow = {
 /** A path's last segment, either separator, a trailing one ignored. */
 export function projectName(path: string): string {
     return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+}
+
+/** The oldest kept size among the folders that were sized; 0 when none was (a folder never sized has no time to count). */
+function oldestSized(rows: StorageItem[]): number {
+    const stamps = rows.map((r) => r.sizedts ?? 0).filter((t) => t > 0);
+    return stamps.length > 0 ? Math.min(...stamps) : 0;
 }
 
 export function buildProjectRows(card: StorageCard): BuildProjectRow[] {
@@ -155,6 +162,7 @@ export function buildProjectRows(card: StorageCard): BuildProjectRow[] {
         bytes: sum(rows.map((r) => r.bytes)),
         ids: rows.filter((r) => r.cleanable).map((r) => r.id),
         lastUsed: Math.max(0, ...rows.map((r) => r.modts ?? 0)),
+        sizedTs: oldestSized(rows),
         reason: rows.find((r) => r.reason)?.reason,
         skipped: rows.find((r) => r.skipped)?.skipped,
     }));
@@ -175,6 +183,42 @@ export function lastUsedText(lastUsed: number, nowMs: number): string {
         return `used ${days} day${days === 1 ? "" : "s"} ago`;
     }
     return `used ${Math.round(days / 30)} months ago`;
+}
+
+/** The size cell of a build output folder or project: `not sized` until it was sized once. pkg/storage keeps a size
+ *  of 0 for a folder never sized, so only `sizedTs` (0 = never) tells an empty folder from an unmeasured one. */
+export function sizeText(bytes: number, sizedTs: number | undefined): string {
+    return (sizedTs ?? 0) > 0 ? formatSize(bytes) : "not sized";
+}
+
+/** `sized N days ago`, from a whole day on: a size from today says nothing, and neither does one never taken. */
+export function sizedAgoText(sizedTs: number, nowMs: number): string {
+    if (sizedTs <= 0) {
+        return "";
+    }
+    const days = Math.floor((nowMs - sizedTs) / DAY_MS);
+    return days < 1 ? "" : `sized ${days} day${days === 1 ? "" : "s"} ago`;
+}
+
+/** A build output project's detail line: when an agent last worked in it, then how old its kept size is. */
+export function buildDetailText(lastUsed: number, sizedTs: number, nowMs: number): string {
+    const used = lastUsedText(lastUsed, nowMs);
+    const sized = sizedAgoText(sizedTs, nowMs);
+    return sized === "" ? used : `${used} · ${sized}`;
+}
+
+/** The Build output card's Size all button: Stop sizing with its progress while the server has a queue. Done counts
+ *  the projects finished, so the one in hand is Done + 1, and never past Total (between two projects nothing walks). */
+export function sizeAllLabel(sizing: StorageSizing | null | undefined): string {
+    if (sizing == null) {
+        return "Size all";
+    }
+    return `Stop sizing (${Math.min(sizing.done + 1, sizing.total)} of ${sizing.total})`;
+}
+
+/** Whether this project is the one being walked now: only it spins, not every project queued behind it. */
+export function isWalking(sizing: StorageSizing | null | undefined, project: string): boolean {
+    return sizing?.walking != null && sizing.walking !== "" && sizing.walking === project;
 }
 
 export function cleanableTotal(report: StorageReport | null, days: SessionDays, nowMs: number): number {
@@ -323,11 +367,14 @@ export function confirmFor(
                 message: `Remove the ${rows[0]?.label ?? "cache"} (${size})? Every project on this machine shares it: the next install or build fetches or rebuilds what it needs, slower that once.`,
                 confirmLabel: "Remove",
             };
-        default:
+        default: {
+            // a folder never sized has no size to say: "(0 KB)" would be wrong, so the size is left out until one was kept
+            const sized = rows.some((r) => (r.sizedts ?? 0) > 0);
             return {
                 title: "Remove build output",
-                message: `Remove the build output of ${projectName(rows[0]?.detail ?? "")} (${size}): ${rows.map((r) => r.label).join(", ")}? The next build or install recreates it.`,
+                message: `Remove the build output of ${projectName(rows[0]?.detail ?? "")}${sized ? ` (${size})` : ""}: ${rows.map((r) => r.label).join(", ")}? The next build or install recreates it.`,
                 confirmLabel: "Remove",
             };
+        }
     }
 }

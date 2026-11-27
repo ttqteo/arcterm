@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_REFS, promptRefs, refsContext } from "./refs-core";
+import { boardShapesContext, MAX_REFS, MAX_SHAPE_BOARDS, promptBoardIds, promptRefs, refsContext } from "./refs-core";
 
 describe("promptRefs", () => {
     it("reads a kind:id address, tab: as agent:", () => {
@@ -86,5 +86,21 @@ describe("refsContext", () => {
         expect(lines[0]).toContain("`agent:700db496`");
         expect(lines[0]).not.toContain("board:3f2a1b9c");
         expect(lines[1]).toContain("`board:3f2a1b9c`");
+    });
+});
+
+describe("board shapes", () => {
+    it("names the boards a prompt carries, two at most", () => {
+        expect(promptBoardIds("xem thử board:4e0f9655 và run:0c28170c")).toEqual(["4e0f9655"]);
+        expect(promptBoardIds("board:aaaa1111 board:bbbb2222 board:cccc3333")).toHaveLength(MAX_SHAPE_BOARDS);
+        expect(promptBoardIds("không có board nào")).toEqual([]);
+    });
+
+    it("carries the list and the link format, or nothing for an empty list", () => {
+        const line = boardShapesContext("4e0f9655", "rect0001 23/10 M4\n");
+        expect(line).toContain("board:4e0f9655");
+        expect(line).toContain("[the words](#shape-<id>)");
+        expect(line?.endsWith("rect0001 23/10 M4")).toBe(true);
+        expect(boardShapesContext("4e0f9655", "  \n")).toBeNull();
     });
 });

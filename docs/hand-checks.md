@@ -24,6 +24,46 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
 
 ## 2026-11-27
 
+- [ ] (arcterm) **Storage: the Build output row's spinner.** Settings → Storage, Build output: open a project whose
+  size is over a day old (or `not sized`). Its row shows a small spinner left of the size while its folders are walked
+  and the spinner goes when the walk lands, with nothing else on the row shifting: the size cell, the Remove button and
+  the label stay where they were. Only the project being walked spins, not the ones queued behind it (press Size all
+  and watch the spinner hop down the list). With reduced motion the spinner shows without turning. No scenario watches
+  it (`settings-storage` steps 7c-7f read the end states from the DOM only).
+- [ ] (arcterm) **Storage: `not sized` becoming a number.** On a project row that reads `not sized`, open it: when its
+  walk lands the cell swaps to the size in place (same width, no jump), and a size over a day old adds `sized N days
+  ago` after `used …` in the detail line. Open its folders: each shows its own size, or `not sized` for one never
+  measured.
+- [ ] (arcterm) **Storage: Size all and Stop sizing.** Press Size all on Build output: the button turns to `Stop sizing
+  (1 of N)` and counts up as each project lands, the card's size and the head's total growing with it. Press Stop
+  sizing: the project in hand finishes, the button goes back to `Size all` and the rest stay as they were. Leave
+  Settings and come back mid-run: the button and the spinner are still there.
+- [ ] (arcterm) **A sleeping agent's question and permission in Chat** (`sleepheldview.tsx`, `permissioncard.tsx`,
+  `permissionrow.tsx`, the sleep-keeps-ask run). The run's Final passed `sleep-keeps-ask` on a fixture tab (end state
+  only); no real agent was slept while asking, and no motion was watched. With the build
+  installed, let a Claude agent ask you something (AskUserQuestion, arc mod on) and Sleep it from its row menu: Chat
+  should keep the question beside "Asleep since …" and Wake. Pick an option: the question card goes and your answer
+  grows in under the conversation with "Goes in when <name> wakes" (a spring open, no jump; at once under reduced
+  motion), and the agent stays asleep. Press Wake: that block should fold away on the same spring and the agent
+  carries on with your answer. Then let an agent wait on a permission prompt (a Bash command) and Sleep it: its Chat
+  card and its sidebar row should show the command and Wake alone (no Allow, Deny or Answer in Terminal), the dot not
+  pulsing; Wake pressed twice quickly should wake it once.
+- [ ] (arcterm) **Pair: judge replies read in the working agent's Chat lower the ⚖ count.** In a paired agent with
+  several judge replies unread, scroll its Chat down past them without opening the pair: the number on the ⚖ line (tree
+  row and header button) drops as each judge card's head comes on screen, and the working agent's own turns never count.
+  The judge cards and the "paired this agent with" line name the judge "Judge: …", not the project, old replies too.
+  (b9659f45b, 861017c4a)
+- [ ] (arcterm) **Priority badges and recent-project buttons on Jarvis initiatives.** In the dev app open Jarvis with
+  an initiative whose open chunks have levels set (`wsh effort chunk priority …`): its card shows pills like
+  "1 critical" (red) "4 high" right of the `n/m %` count, and its row in All initiatives shows them after the title; at
+  a narrow window the row keeps a few words of the title and the pills clip, never the reverse. With more than seven
+  projects, three project buttons sit left of the `project ▾` menu (the last launched-into, sorted by name); a press
+  filters to it and shows it pressed, a second press goes back to all. Not seen in the running app: no dev app was up.
+
+- [ ] (arcterm) **`wsh jobslot forget` drops a bad peak.** After a build with it installed, in the arcterm checkout run
+  `wsh jobslot forget scripts/verify.mjs`: it should print `dropped 10.6 GB` (the 21:42 run of 2026-11-27), the four
+  kept peaks, and `admitted on 4.8 GB`; the next queued verify.mjs row in the Jobs popover reads about 4.8 GB, and
+  `jobpeaks.json` (data dir) no longer holds the 10.6 GB peak. `wshcmd-jobslotforget.go`, `jobpeaks.Forget`.
 - [ ] (arcterm) **A paused run keeps its worker's open question.** After a build, start a run whose worker asks you
   something (AskUserQuestion, arc mod on), pause the run while the question is open: it should stay in Needs you and on
   the run. Answer it while paused, resume: the reopened worker should start with "the person answered your question:

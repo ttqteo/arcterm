@@ -60,7 +60,7 @@ import {
     stepDrawing,
     type Drawing,
 } from "./boarddrawings";
-import { linkAt, linkDrawing, linkTarget, sceneAt } from "./boardlinks";
+import { linkAt, linkDrawing, linkTarget, pushBack, sceneAt } from "./boardlinks";
 import { parseBoardFile, serializeBoard, withReadableFont, wrapEarlier, type BoardScene } from "./boardmodel";
 import {
     boardParts,
@@ -76,6 +76,9 @@ import {
     type PartElement,
     type Viewport,
 } from "./boardparts";
+import { PointerGlow } from "./boardpointerglow";
+import { pointerShapes, pointPlan, rectsBounds, shapeRects } from "./boardpointers";
+import { boardFlashAtom, boardPointAtom, boardPointerShapesAtom, type BoardPoint } from "./boardpointerstore";
 import { copyBoardView } from "./boardshot";
 import {
     boardBackAtom,
@@ -214,6 +217,11 @@ function OpenBoard({ project, boardId, part: partProp, onPart, onParts }: BoardC
     // a pick in the drawings row; one made before this canvas opened is not for it
     const pick = useAtomValue(boardPickAtom(boardId));
     const seenPickRef = useRef(pick);
+    // a click on a board pointer in a Chat beside it (boardpointers.ts); one made before this canvas opened is not for it
+    const point = useAtomValue(boardPointAtom(boardId));
+    const seenPointRef = useRef(point);
+    // the scene the pointers' shapes were last published from (boardPointerShapesAtom)
+    const pointerSigRef = useRef("");
     // the wrapper, which Copy view reads Excalidraw's canvas from
     const rootRef = useRef<HTMLDivElement>(null);
     // How the board opens, set as the file loads: a board never opened here, or left following its newest drawing, is
@@ -772,6 +780,43 @@ function OpenBoard({ project, boardId, part: partProp, onPart, onParts }: BoardC
         fitDrawing(target, false);
     }, [ready, pick]);
 
+    useEffect(() => {
+        if (!ready || apiRef.current == null || point == null || point === seenPointRef.current) {
+            return;
+        }
+        seenPointRef.current = point;
+        showPointed(point);
+    }, [ready, point]);
+
+    // A board pointer's click: the view eases to its shapes in the drawing pointPlan picks (the one in view when it
+    // holds some; the next on a second press), the drawing left goes on the Back stack, and the shapes flash once
+    function showPointed(p: BoardPoint): void {
+        const api = apiRef.current;
+        if (api == null) {
+            return;
+        }
+        const elements = api.getSceneElements();
+        const drawings = drawingsOf(elements);
+        const plan = pointPlan(
+            elements,
+            drawings.map((d) => d.id),
+            p.ids,
+            inViewRef.current,
+            p.step
+        );
+        const bounds = plan != null ? rectsBounds(shapeRects(elements, plan.ids)) : null;
+        const st = api.getAppState();
+        if (plan == null || bounds == null || st.width === 0 || st.height === 0) {
+            return;
+        }
+        if (plan.drawing != null && plan.drawing !== inViewRef.current) {
+            globalStore.set(boardBackAtom(boardId), (stack) => pushBack(stack, inViewRef.current, plan.drawing!));
+        }
+        closePart();
+        easeTo(drawingViewport({ id: "", n: 0, title: "", bounds }, st.width, st.height));
+        globalStore.set(boardFlashAtom(boardId), { ids: plan.ids, ts: p.ts });
+    }
+
     // These shapes off the board as one undo step, saved, with a toast whose Undo brings them back (Ctrl+Z only reaches
     // Excalidraw in Edit). `moved` places the view once they are gone, `back` once Undo restored them.
     function deleteWithUndo(
@@ -969,6 +1014,11 @@ function OpenBoard({ project, boardId, part: partProp, onPart, onParts }: BoardC
         }
         syncView(elements, appState);
         const sig = elementsSig(elements);
+        // what a Chat beside the board can point at, again each time the shapes change
+        if (sig !== pointerSigRef.current) {
+            pointerSigRef.current = sig;
+            globalStore.set(boardPointerShapesAtom(boardId), pointerShapes(elements));
+        }
         if (sigRef.current === "" || sig === sigRef.current || sceneRef.current == null) {
             sigRef.current = sigRef.current || sig;
             return;
@@ -1068,6 +1118,14 @@ function OpenBoard({ project, boardId, part: partProp, onPart, onParts }: BoardC
                 {theme === "dark" ? <Sun size={14} strokeWidth={2} /> : <Moon size={14} strokeWidth={2} />}
             </button>
             {ready && part == null && !selecting ? <PartHover parts={parts} views={views} onPick={setPart} /> : null}
+            {ready ? (
+                <PointerGlow
+                    boardId={boardId}
+                    views={views}
+                    elements={() => apiRef.current?.getSceneElements() ?? []}
+                    onFlashDone={(ts) => globalStore.set(boardFlashAtom(boardId), (f) => (f?.ts === ts ? null : f))}
+                />
+            ) : null}
         </div>
     );
 }

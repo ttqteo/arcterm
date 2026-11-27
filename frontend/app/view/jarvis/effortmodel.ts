@@ -1,4 +1,4 @@
-import { orderOfWork } from "./chunkorder";
+import { openPriorityCounts, orderOfWork, type PriorityCount } from "./chunkorder";
 import { planChunks } from "./laterchunk";
 
 export type ChunkTone = "done" | "active" | "blocked" | "deferred" | "skipped" | "pending";
@@ -40,6 +40,8 @@ export type EffortCardModel = {
     // every chunk's tone in plan order, the skipped ones left out as the count's denominator leaves them out
     segments: ChunkTone[];
     blockedChunks: string[];
+    // the open chunks per level, highest first (openPriorityCounts): the badges on the card and the list row
+    priorities?: PriorityCount[];
     // each blocked chunk's trail by label, beside the labels (which other models read as strings)
     blockedDetail: Record<string, BlockedChunk>;
     // the chunks an agent proposed and nobody accepted yet, in plan order: out of the bar, the chips and every count
@@ -114,6 +116,7 @@ export function buildEffortCard(e: EffortSummary): EffortCardModel {
         // claim someone is on it when it is only next in line
         segments: chunks.filter((c) => c.status !== "skipped").map((c) => chunkTone(c.status)),
         blockedChunks: chunks.filter((c) => c.status === "blocked").map((c) => c.label),
+        priorities: openPriorityCounts(chunks),
         blockedDetail: Object.fromEntries(
             chunks
                 .filter((c) => c.status === "blocked")

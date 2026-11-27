@@ -26,6 +26,7 @@ import {
     resolveBrowseDir,
     type BrowseEntry,
 } from "./launchermention";
+import { menuGhost } from "./menughost";
 import { homeDir } from "./pathlinkroute";
 import { PickerList, type PickerLook } from "./pickerlist";
 import { insertRef, refHitMask, refMatches, refToken, type RefItem } from "./refmention";
@@ -35,6 +36,10 @@ export interface FileMentionState {
     list: ReactNode;
     // the list is on screen (rows, or a note while it is being read)
     shown: boolean;
+    // the rest of the highlighted row's name, drawn faint after the caret at the text's end (menughost.ts); "" for none
+    ghost: string;
+    // takes the ghost: picks the highlighted row, as Tab does
+    takeGhost: () => void;
     onKeyDown: (e: KeyLike) => void;
     onCaret: (el: EditorLike) => void;
 }
@@ -322,7 +327,27 @@ export function useFileMention({
             }}
         />
     );
-    return { list, shown, onKeyDown, onCaret };
+    // a file's ghost goes on from its path or its name, whichever the word starts; a folder entry's from its name; an
+    // agent's, run's or council's from its label
+    const row = rows[at];
+    const typed = browse != null ? browse.leaf : (mention?.query ?? "");
+    const ghost =
+        row == null || caret !== task.length
+            ? ""
+            : menuGhost(
+                  typed,
+                  row.kind === "path"
+                      ? [row.path, row.path.slice(row.path.lastIndexOf("/") + 1)]
+                      : row.kind === "entry"
+                        ? [row.name]
+                        : [row.item.label]
+              );
+    const takeGhost = () => {
+        if (row != null) {
+            choose(row);
+        }
+    };
+    return { list, shown, ghost, takeGhost, onKeyDown, onCaret };
 }
 
 // a slice of a listed path (or a reference's label) with the characters the query matched in the accent colour

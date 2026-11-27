@@ -2525,6 +2525,13 @@ declare global {
         status: CaptureStatus;
     };
 
+    // wshrpc.CommandJobPeaksForgetData
+    type CommandJobPeaksForgetData = {
+        command: string;
+        cwd: string;
+        all?: boolean;
+    };
+
     // wshrpc.CommandJobQueueActData
     type CommandJobQueueActData = {
         id: string;
@@ -3134,6 +3141,12 @@ declare global {
         cwd: string;
         command: string;
         timeoutms?: number;
+    };
+
+    // wshrpc.CommandSizeBuildOutputData
+    type CommandSizeBuildOutputData = {
+        projects?: string[];
+        force?: boolean;
     };
 
     // wshrpc.CommandStopDevServerData
@@ -4680,6 +4693,16 @@ declare global {
         autonomous?: boolean;
     };
 
+    // wshrpc.JobPeaksForgetResult
+    type JobPeaksForgetResult = {
+        pattern: string;
+        project: string;
+        dropped: number[];
+        left?: number[];
+        bytes: number;
+        measured?: boolean;
+    };
+
     // wshrpc.JobQueueBypass
     type JobQueueBypass = {
         name: string;
@@ -5010,6 +5033,7 @@ declare global {
         "agent:loginemail"?: string;
         "agent:sleeping"?: number;
         "agent:sleepfreed"?: number;
+        "agent:sleepasking"?: boolean;
         "agent:wakefailed"?: string;
         count?: number;
     };
@@ -6145,6 +6169,7 @@ declare global {
         guarded?: boolean;
         reason?: string;
         unscanned?: boolean;
+        sizedts?: number;
     };
 
     // storage.StorageReport
@@ -6154,6 +6179,15 @@ declare global {
         categories: StorageCategoryReport[];
         storebytes: number;
         lastauto?: StorageAutoClean;
+        sizing?: StorageSizing;
+    };
+
+    // storage.StorageSizing
+    type StorageSizing = {
+        queued: string[];
+        walking?: string;
+        done: number;
+        total: number;
     };
 
     // storage.StorageSkipped

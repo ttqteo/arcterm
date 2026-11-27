@@ -4,8 +4,9 @@
 // Settings > Storage: what arcterm and its agents leave on disk, per category, and cleaning it. storagemodel.ts
 // decides what each card holds and says; pkg/storage measures and cleans, re-checking every rule at removal. The
 // head and the category cards read the storage report (Design canvases is a summary with no rows: they are cleaned
-// in the gallery; a build output project's row opens onto its folders); the Auto-clean card's rows are settings.json
-// (storage:*).
+// in the gallery; a build output project's row opens onto its folders and asks the server to size them, which the scan
+// itself never does: a size is the one last kept, `not sized` before the first, and Size all sizes every project); the
+// Auto-clean card's rows are settings.json (storage:*).
 
 import { pushToast } from "@/app/cockpit/notificationstore";
 import { getSettingsKeyAtom } from "@/app/store/global";
@@ -21,6 +22,7 @@ import type { AgentsViewModel } from "../agents";
 import { formatAgo } from "../agentsviewmodel";
 import { CardFooter, Segmented, SettingCard, SettingRow, Toggle, writeConfig } from "../settingsui";
 import {
+    buildDetailText,
     buildProjectRows,
     CARD_COPY,
     CARD_ORDER,
@@ -31,9 +33,11 @@ import {
     DEFAULT_NUDGE_GB,
     DEFAULT_SESSION_DAYS,
     formatSize,
-    lastUsedText,
+    isWalking,
     NUDGE_GB_CHOICES,
     SESSION_DAYS,
+    sizeAllLabel,
+    sizeText,
     storageCards,
     usedTotal,
     type SessionDays,
@@ -44,6 +48,8 @@ import {
     cleanStorage,
     rescanStorage,
     scanSessionsForIdeas,
+    sizeBuildOutput,
+    stopSizingBuildOutput,
     storageCleaningAtom,
     storageSkippedAtom,
     useStorageReport,
@@ -68,10 +74,14 @@ type Entry = {
     title?: string;
     detail?: string;
     detailTitle?: string;
-    bytes: number;
+    size: string; // the size cell's text: a size, or `not sized` for build output that was never measured
+    unsized?: boolean; // the size cell says `not sized`
+    sizing?: boolean; // a build output project: whether its folders are being walked now. Only a project has it, and
+    // it holds a place for its spinner whether or not it spins
     why?: string;
     warn: boolean;
     onRemove?: () => void;
+    onOpen?: () => void; // the row was opened: a build output project asks for its folders to be sized
     busy: boolean; // a clean is removing it now
     folders?: Entry[];
 };
@@ -148,7 +158,8 @@ function entriesOf(
     card: StorageCard | null,
     days: SessionDays,
     now: number,
-    cleaning: Record<string, true>
+    cleaning: Record<string, true>,
+    sizing: StorageSizing | undefined
 ): Entry[] {
     // canvases are listed and cleaned in the gallery; here they are a size and a count
     if (card == null || category === "canvases") {
@@ -156,14 +167,18 @@ function entriesOf(
     }
     if (category === "buildoutput") {
         // cleaned per project (spec 4.4): one row and one button each, the row opening onto each folder and its own
-        // button; a busy project's row says why it stays
+        // button; a busy project's row says why it stays. The scan lists build folders without measuring them: a size
+        // is the one last kept, `not sized` before the first, and opening a project's row asks the server to size it
         return buildProjectRows(card).map((p) => ({
             id: p.project,
             label: p.name,
             title: p.project,
-            detail: lastUsedText(p.lastUsed, now),
+            detail: buildDetailText(p.lastUsed, p.sizedTs, now),
             detailTitle: p.dirs.join(", "),
-            bytes: p.bytes,
+            size: sizeText(p.bytes, p.sizedTs),
+            unsized: p.sizedTs === 0,
+            sizing: isWalking(sizing, p.project),
+            onOpen: p.project !== "" ? () => sizeBuildOutput([p.project]) : undefined,
             why: p.reason ?? p.skipped,
             warn: false,
             busy: p.ids.some((id) => cleaning[id]),
@@ -181,7 +196,8 @@ function entriesOf(
                 id: r.id,
                 label: r.label,
                 title: r.path,
-                bytes: r.bytes,
+                size: sizeText(r.bytes, r.sizedts),
+                unsized: (r.sizedts ?? 0) === 0,
                 why: r.skipped,
                 warn: r.skipped != null,
                 busy: !!cleaning[r.id],
@@ -193,7 +209,7 @@ function entriesOf(
         id: r.id,
         label: r.label,
         detail: r.detail,
-        bytes: r.bytes,
+        size: formatSize(r.bytes),
         why: r.reason ?? r.skipped,
         warn: !!r.guarded || r.skipped != null,
         busy: !!cleaning[r.id],
@@ -222,6 +238,8 @@ function EntryRow({ e, nested }: { e: Entry; nested?: boolean }) {
             <div
                 data-storage-row={e.id}
                 data-storage-folder={nested ? "" : undefined}
+                data-storage-unsized={e.unsized ? "" : undefined}
+                data-storage-sizing={e.sizing ? "" : undefined}
                 className={cn(
                     "flex min-w-0 items-center gap-3 border-t border-edge-mid py-2 text-[12px]",
                     nested ? "pr-4 pl-10" : "px-4"
@@ -233,7 +251,12 @@ function EntryRow({ e, nested }: { e: Entry; nested?: boolean }) {
                         data-storage-open={open ? "" : undefined}
                         title={e.title ?? e.label}
                         aria-expanded={open}
-                        onClick={() => setOpen(!open)}
+                        onClick={() => {
+                            setOpen(!open);
+                            if (!open) {
+                                e.onOpen?.(); // once per open: the server's 24 h rule decides whether anything walks
+                            }
+                        }}
                         className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left text-primary"
                     >
                         <ChevronRight
@@ -254,12 +277,24 @@ function EntryRow({ e, nested }: { e: Entry; nested?: boolean }) {
                 {e.detail ? (
                     <span
                         title={e.detailTitle ?? e.detail}
-                        className="min-w-0 max-w-[220px] shrink truncate text-muted"
+                        className="min-w-0 max-w-[260px] shrink truncate text-muted"
                     >
                         {e.detail}
                     </span>
                 ) : null}
-                <span className="w-[64px] flex-none text-right tabular-nums text-muted">{formatSize(e.bytes)}</span>
+                {e.sizing != null ? (
+                    // a project holds a place for its spinner whether or not it spins, so the row does not shift
+                    // when a walk starts or lands; the size cell below keeps its own place at the right
+                    <span
+                        className="flex w-3 flex-none items-center justify-center"
+                        title={e.sizing ? "Sizing…" : undefined}
+                    >
+                        {e.sizing ? (
+                            <Loader2 size={12} aria-hidden className="animate-spin motion-reduce:animate-none" />
+                        ) : null}
+                    </span>
+                ) : null}
+                <span className="w-[64px] flex-none text-right tabular-nums text-muted">{e.size}</span>
                 {e.why ? (
                     <span data-storage-reason className={cn("flex-none", e.warn ? "text-warning" : "text-muted")}>
                         {e.why}
@@ -290,6 +325,8 @@ function CategoryCard({
     onDays,
     model,
     now,
+    sizing,
+    scanned,
 }: {
     category: Category;
     card: StorageCard | null;
@@ -297,12 +334,14 @@ function CategoryCard({
     onDays: (d: SessionDays) => void;
     model: AgentsViewModel;
     now: number;
+    sizing: StorageSizing | undefined; // the server's build output sizing queue, nil when idle
+    scanned: boolean; // a scan has landed: the server sizes the folders that scan listed
 }) {
     const [open, setOpen] = useState(false);
     const copy = CARD_COPY[category];
     const noun = COUNT_NOUN[category];
     const cleaning = useAtomValue(storageCleaningAtom);
-    const entries = entriesOf(category, card, days, now, cleaning);
+    const entries = entriesOf(category, card, days, now, cleaning, sizing);
     const shown = open ? entries : entries.slice(0, ROWS_SHOWN);
     const ids = card != null ? cleanAllIds(card) : [];
     const cleaningAll = ids.some((id) => cleaning[id]);
@@ -344,6 +383,25 @@ function CategoryCard({
                             onClick={() => showLibrary(model, "canvases")}
                         >
                             Open the gallery
+                        </button>
+                    ) : null}
+                    {category === "buildoutput" ? (
+                        // its own button, not copy.action: that one is the card's clean button, which build output
+                        // has none of (each project is cleaned on its row)
+                        <button
+                            type="button"
+                            data-storage-sizeall
+                            data-storage-busy={sizing != null ? "" : undefined}
+                            className={BUTTON}
+                            title={
+                                sizing != null
+                                    ? "Finish the project being walked and drop the rest of the queue"
+                                    : "Measure the build folders of every project, the longest since measured first"
+                            }
+                            disabled={!scanned || (sizing == null && (card?.rows.length ?? 0) === 0)}
+                            onClick={() => (sizing != null ? stopSizingBuildOutput() : sizeBuildOutput([], true))}
+                        >
+                            {sizeAllLabel(sizing)}
                         </button>
                     ) : null}
                     {category === "sessions" ? (
@@ -444,6 +502,8 @@ export function StoragePage({ model }: { model: AgentsViewModel }) {
                     onDays={setDays}
                     model={model}
                     now={now}
+                    sizing={report?.sizing}
+                    scanned={scanned}
                 />
             ))}
             <SettingCard
