@@ -183,3 +183,25 @@ Made by the run's lead on 2026-11-27, with nobody at the cockpit. Tasks cite the
 16. **`wsh storage size` output.** Without `--wait` it prints what was queued. With `--wait` it polls `getstorage` until
     `sizing` is nil and prints each build output project with its size, `not sized` or `sized N days ago`. `report`
     prints `not sized` / `sized N days ago` after the item's label for build output items.
+
+### Added in fix round 1 (the Final's step 0 still timed out)
+
+The round-1 Final failed `settings-storage` step 0 again ("the scan of the fixtures was still running after 181 s"),
+with no "storage scan took" line in the dev app's log. Measured on the same machine right after (loaded: wavesrv logged
+`[paging] critical`, commit 46 GB on 31.8 GB RAM), `TestStorageMeasure` full: **3m37s**, of which build output's
+listing alone (no walk) **1m23s** and the package caches (9 caches, 59 GB) **2m14s**; every other category under 0.1 s.
+The 2-minute auto-clean starts a scan, and the scenario's rescan then waits for it and a second one.
+
+18. **The scan never waits on the package caches.** A scan started by `Rescan` hands the package caches to one
+    background walk (none starts while one runs) and ends without them: `Scanning` goes false and `ScannedTs` is set
+    when the other categories are measured. The walk measures its caches concurrently, lands its category through
+    `landed` when it ends, and logs its own time. Until a first walk lands the report has no `packagecaches` category,
+    and the card shows `…` as it does before any scan (no UI change; the caches are left out of the head's totals,
+    the nudge and the Tray already). A walk that lands while a scan runs is not undone by that scan's end. `ScanNow`
+    (tests, the measure test) still measures them inline. The `wsh storage` report prints what the report holds.
+19. **Build output is listed in parallel.** `buildProjects`' `repoTop` calls and each project's
+    `buildCandidates` / `gitIgnored` / `hasTrackedFiles` run on a bounded pool (8), and the results are merged in
+    the sequential order, so the projects, items, their order and the "listed once, under the first" rule are as
+    before.
+20. **The scenario's scan waits** (`ssWaitScan`, 60 s) take `ssWaitSecs(180)` like `ssRescanAndWait`, and step 7b waits
+    for the `packagecaches` category to land (up to `ssWaitSecs(600)`) before it reads the card.
