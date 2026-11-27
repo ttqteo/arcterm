@@ -299,6 +299,29 @@ func TestApplyOpsReopenUndoesAdvance(t *testing.T) {
 	}
 }
 
+// a ticked later chunk reopened must not take the plan's active chunk off it (and the plan's reopen leaves a later one alone)
+func TestReopenKeepsThePlanAndLaterActiveChunksApart(t *testing.T) {
+	e := mkEffort()
+	e.Chunks = []waveobj.EffortChunk{
+		{Label: "A", Status: "active"},
+		{Label: "L", Status: "done", Later: true},
+		{Label: "M", Status: "active", Later: true},
+		{Label: "B", Status: "done"},
+	}
+	if err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "reopen", Chunk: "L"}}, "", effortNow); err != nil {
+		t.Fatal(err)
+	}
+	if e.Chunks[0].Status != "active" || e.Chunks[1].Status != "active" || e.Chunks[2].Status != "pending" {
+		t.Fatalf("after reopening L: %+v, want A still active, L active, M back to pending", e.Chunks)
+	}
+	if err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "reopen", Chunk: "B"}}, "", effortNow); err != nil {
+		t.Fatal(err)
+	}
+	if e.Chunks[0].Status != "pending" || e.Chunks[1].Status != "active" || e.Chunks[3].Status != "active" {
+		t.Fatalf("after reopening B: %+v, want A back to pending, B active, the later L untouched", e.Chunks)
+	}
+}
+
 func TestApplyOpsReopenNonDoneRejected(t *testing.T) {
 	e := mkEffort()
 	err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "reopen", Chunk: "Phase 3"}}, "", effortNow)
@@ -838,5 +861,275 @@ func TestApplyOpsArchiveClearsThePin(t *testing.T) {
 	}
 	if e.PinnedTs != 42 {
 		t.Fatalf("PinnedTs = %d after pause, want 42", e.PinnedTs)
+	}
+}
+
+// ---- Save for later: the chunk's later mark ----
+
+func TestSetChunkLaterMarksAndClears(t *testing.T) {
+	e := mkEffort()
+	if err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "setChunkLater", Chunk: "Phase 3", Later: true}}, "", effortNow); err != nil {
+		t.Fatal(err)
+	}
+	if !e.Chunks[2].Later {
+		t.Fatalf("Phase 3 not marked later: %+v", e.Chunks[2])
+	}
+	notes := e.Chunks[2].Notes
+	if len(notes) != 1 || notes[0].Text != "marked for later" || notes[0].Ts != effortNow {
+		t.Fatalf("trail after marking: %+v", notes)
+	}
+	// a mark completes nothing and adds nothing to the delta, as a due date does not
+	if len(e.Events) != 0 {
+		t.Fatalf("expected no delta events, got %+v", e.Events)
+	}
+	// the op resolves by index as the other chunk ops do
+	if err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "setChunkLater", Chunk: "3", Later: false}}, "", effortNow+1); err != nil {
+		t.Fatal(err)
+	}
+	if e.Chunks[2].Later {
+		t.Fatalf("mark not dropped: %+v", e.Chunks[2])
+	}
+	notes = e.Chunks[2].Notes
+	if len(notes) != 2 || notes[1].Text != "no longer for later" {
+		t.Fatalf("trail after clearing: %+v", notes)
+	}
+}
+
+func TestSetChunkLaterNoOpWritesNoNote(t *testing.T) {
+	e := mkEffort()
+	// off on a chunk that is not later: nothing to write
+	if err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "setChunkLater", Chunk: "Phase 3", Later: false}}, "", effortNow+5); err != nil {
+		t.Fatal(err)
+	}
+	if len(e.Chunks[2].Notes) != 0 || e.Chunks[2].UpdatedTs != effortNow {
+		t.Fatalf("a no-op off wrote to the chunk: %+v", e.Chunks[2])
+	}
+	// on twice: the second changes nothing
+	for i := 0; i < 2; i++ {
+		if err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "setChunkLater", Chunk: "Phase 3", Later: true}}, "", effortNow+10); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(e.Chunks[2].Notes) != 1 {
+		t.Fatalf("a repeated mark wrote %d notes, want 1: %+v", len(e.Chunks[2].Notes), e.Chunks[2].Notes)
+	}
+}
+
+func TestSetChunkLaterUnknownChunk(t *testing.T) {
+	e := mkEffort()
+	err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "setChunkLater", Chunk: "nope", Later: true}}, "", effortNow)
+	expectErrCode(t, err, "EC-UNKNOWN-CHUNK")
+}
+
+func TestSetChunkLaterStampsTheAuthor(t *testing.T) {
+	e := mkEffort()
+	by := NoteAuthor{Who: "agent", Session: "agent:tab1", Conversation: "conv-1"}
+	if err := ApplyEffortOpsAs(e, []wshrpc.EffortOp{{Op: "setChunkLater", Chunk: "Phase 3", Later: true}}, "", effortNow, by); err != nil {
+		t.Fatal(err)
+	}
+	n := e.Chunks[2].Notes[0]
+	if n.Author != "agent" || n.Session != "agent:tab1" || n.Conversation != "conv-1" {
+		t.Fatalf("note = %+v, want the agent stamp with its conversation", n)
+	}
+}
+
+func TestAddChunkLaterSetsTheMark(t *testing.T) {
+	e := mkEffort()
+	if err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "addChunk", Label: "Push DEV", Later: true}}, "", effortNow); err != nil {
+		t.Fatal(err)
+	}
+	c := e.Chunks[3]
+	if c.Label != "Push DEV" || !c.Later || c.Status != "pending" {
+		t.Fatalf("chunk: %+v", c)
+	}
+	// with no Note there is no first note
+	if len(c.Notes) != 0 {
+		t.Fatalf("a later chunk with no note has notes: %+v", c.Notes)
+	}
+	// a plain add is not later
+	if err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "addChunk", Label: "Phase 4"}}, "", effortNow); err != nil {
+		t.Fatal(err)
+	}
+	if e.Chunks[4].Later {
+		t.Fatalf("a plain add came out later: %+v", e.Chunks[4])
+	}
+}
+
+func TestAddChunkLaterFirstNote(t *testing.T) {
+	op := wshrpc.EffortOp{Op: "addChunk", Label: "Decide which parser takes audit: logs", Later: true,
+		Note: "> take it to a colleague\n\nFrom the chat.", Session: "agent:tab9", Conversation: "conv-9", Due: "2026-12-01"}
+
+	// the cockpit ("you"): the op names the session and the conversation
+	e := mkEffort()
+	if err := ApplyEffortOpsAs(e, []wshrpc.EffortOp{op}, "", effortNow, NoteAuthor{Who: "you"}); err != nil {
+		t.Fatal(err)
+	}
+	c := e.Chunks[3]
+	if !c.Later || c.Due != "2026-12-01" || len(c.Notes) != 1 {
+		t.Fatalf("chunk: %+v", c)
+	}
+	n := c.Notes[0]
+	if n.Text != op.Note || n.Author != "you" || n.Session != "agent:tab9" || n.Conversation != "conv-9" || n.Ts != effortNow {
+		t.Fatalf("first note: %+v", n)
+	}
+	if c.UpdatedTs != effortNow {
+		t.Fatalf("UpdatedTs = %d, want the add's", c.UpdatedTs)
+	}
+
+	// a terminal: the batch's author decides, and the op's session and conversation are ignored
+	e = mkEffort()
+	by := NoteAuthor{Who: "agent", Session: "agent:real", Run: "run:r1", Conversation: "conv-real"}
+	if err := ApplyEffortOpsAs(e, []wshrpc.EffortOp{op}, "", effortNow, by); err != nil {
+		t.Fatal(err)
+	}
+	n = e.Chunks[3].Notes[0]
+	if n.Author != "agent" || n.Session != "agent:real" || n.Run != "run:r1" || n.Conversation != "conv-real" || n.Text != op.Note {
+		t.Fatalf("a terminal's first note: %+v, want the derived author, not the op's claim", n)
+	}
+
+	// no author at all: the op's claim is ignored too, and the note keeps no origin
+	e = mkEffort()
+	if err := ApplyEffortOps(e, []wshrpc.EffortOp{op}, "", effortNow); err != nil {
+		t.Fatal(err)
+	}
+	n = e.Chunks[3].Notes[0]
+	if n.Author != "" || n.Session != "" || n.Conversation != "" || n.Text != op.Note {
+		t.Fatalf("an unattributed first note: %+v", n)
+	}
+}
+
+func TestAddChunkBlankNoteWritesNone(t *testing.T) {
+	e := mkEffort()
+	if err := ApplyEffortOpsAs(e, []wshrpc.EffortOp{{Op: "addChunk", Label: "X", Note: "  \n", Session: "agent:t"}}, "", effortNow, NoteAuthor{Who: "you"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(e.Chunks[3].Notes) != 0 {
+		t.Fatalf("a blank note was written: %+v", e.Chunks[3].Notes)
+	}
+	// a note is kept without the whitespace round it, as create's and editNote's are
+	e = mkEffort()
+	if err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "addChunk", Label: "X", Note: "\n  the passage \n"}}, "", effortNow); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.Chunks[3].Notes; len(got) != 1 || got[0].Text != "the passage" {
+		t.Fatalf("notes: %+v, want the passage trimmed", got)
+	}
+	// the batch's own note is the effort's trail text, never the chunk's first note
+	e = mkEffort()
+	if err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "addChunk", Label: "X"}}, "from the batch", effortNow); err != nil {
+		t.Fatal(err)
+	}
+	if len(e.Chunks[3].Notes) != 0 {
+		t.Fatalf("the batch note became the chunk's: %+v", e.Chunks[3].Notes)
+	}
+}
+
+func TestAddChunkProposedWithNoteKeepsBothNotes(t *testing.T) {
+	e := mkEffort()
+	by := NoteAuthor{Who: "agent", Session: "agent:t1", Conversation: "c1"}
+	if err := ApplyEffortOpsAs(e, []wshrpc.EffortOp{{Op: "addChunk", Label: "P", Status: "proposed", Note: "why"}}, "", effortNow, by); err != nil {
+		t.Fatal(err)
+	}
+	var texts []string
+	for _, n := range e.Chunks[3].Notes {
+		texts = append(texts, n.Text)
+	}
+	if len(texts) != 2 || texts[0] != "why" || texts[1] != ProposedNote {
+		t.Fatalf("notes: %v, want [why proposed]", texts)
+	}
+}
+
+func TestAdvanceSkipsLater(t *testing.T) {
+	e := mkEffort()
+	e.Chunks = []waveobj.EffortChunk{
+		{Label: "A", Status: "active"},
+		{Label: "L", Status: "pending", Later: true},
+		{Label: "B", Status: "pending"},
+	}
+	if err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "advance"}}, "", effortNow); err != nil {
+		t.Fatal(err)
+	}
+	if e.Chunks[0].Status != "done" || e.Chunks[1].Status != "pending" || e.Chunks[2].Status != "active" {
+		t.Fatalf("chunks: %+v", e.Chunks)
+	}
+	if len(e.Chunks[1].Notes) != 0 {
+		t.Fatalf("a later chunk was written to: %+v", e.Chunks[1].Notes)
+	}
+}
+
+func TestAdvanceSkipsLaterWhenItIsAllThatIsLeft(t *testing.T) {
+	e := mkEffort()
+	e.Chunks = []waveobj.EffortChunk{
+		{Label: "A", Status: "active"},
+		{Label: "L", Status: "blocked", Later: true},
+		{Label: "M", Status: "deferred", Later: true},
+	}
+	if err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "advance"}}, "", effortNow); err != nil {
+		t.Fatal(err)
+	}
+	if e.Chunks[0].Status != "done" || e.Chunks[1].Status != "blocked" || e.Chunks[2].Status != "deferred" {
+		t.Fatalf("chunks: %+v", e.Chunks)
+	}
+	// with no active chunk it still activates nothing but plan work
+	if err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "advance"}}, "", effortNow); err != nil {
+		t.Fatal(err)
+	}
+	if e.Chunks[1].Status != "blocked" || e.Chunks[2].Status != "deferred" {
+		t.Fatalf("a later chunk was activated: %+v", e.Chunks)
+	}
+}
+
+func TestAdvanceStillTicksAnActiveLaterChunk(t *testing.T) {
+	e := mkEffort()
+	e.Chunks = []waveobj.EffortChunk{
+		{Label: "L", Status: "active", Later: true},
+		{Label: "B", Status: "pending"},
+	}
+	if err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "advance", Note: "done it"}}, "", effortNow); err != nil {
+		t.Fatal(err)
+	}
+	if e.Chunks[0].Status != "done" || e.Chunks[1].Status != "active" {
+		t.Fatalf("chunks: %+v", e.Chunks)
+	}
+	if len(e.Events) == 0 || e.Events[0].Kind != "chunk-done" || e.Events[0].Label != "L" {
+		t.Fatalf("events: %+v, want chunk-done for L", e.Events)
+	}
+}
+
+func TestAdvanceTicksThePlanChunkBeforeALaterOne(t *testing.T) {
+	e := mkEffort()
+	e.Chunks = []waveobj.EffortChunk{
+		{Label: "L", Status: "active", Later: true},
+		{Label: "A", Status: "active"},
+		{Label: "B", Status: "pending"},
+	}
+	if err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "advance"}}, "", effortNow); err != nil {
+		t.Fatal(err)
+	}
+	if e.Chunks[0].Status != "active" || e.Chunks[1].Status != "done" || e.Chunks[2].Status != "active" {
+		t.Fatalf("chunks: %+v, want the plan's A ticked and B next, L left alone", e.Chunks)
+	}
+}
+
+func TestRemoveLastLaterChunk(t *testing.T) {
+	// the initiative holds just the saved item: Move to… has to be able to take it out
+	e := mkEffort()
+	e.Chunks = []waveobj.EffortChunk{{Label: "only", Status: "pending", Later: true}}
+	if err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "removeChunk", Chunk: "only"}}, "", effortNow); err != nil {
+		t.Fatal(err)
+	}
+	if len(e.Chunks) != 0 {
+		t.Fatalf("chunks: %+v", e.Chunks)
+	}
+	// the guard still holds for a plan chunk
+	e.Chunks = []waveobj.EffortChunk{{Label: "only", Status: "pending"}}
+	expectErrCode(t, ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "removeChunk", Chunk: "only"}}, "", effortNow), "EC-LAST-CHUNK")
+	// a plan chunk beside a later one is not the last chunk
+	e.Chunks = []waveobj.EffortChunk{{Label: "plan", Status: "pending"}, {Label: "later", Status: "pending", Later: true}}
+	if err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "removeChunk", Chunk: "later"}}, "", effortNow); err != nil {
+		t.Fatal(err)
+	}
+	if len(e.Chunks) != 1 || e.Chunks[0].Label != "plan" {
+		t.Fatalf("chunks: %+v", e.Chunks)
 	}
 }

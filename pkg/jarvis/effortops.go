@@ -79,13 +79,28 @@ type NoteAuthor struct {
 	Who     string // "you" | "agent" | ""
 	Session string // "agent:<tabid>"
 	Run     string // "run:<oid>"
+	// Conversation is the id of the conversation the author is in (the stem of its transcript file): what Ask agent
+	// resumes by once the tab is gone. The server fills it for an agent's terminal; "" when there is none.
+	Conversation string
 }
 
 func chunkNote(e *waveobj.Effort, idx int, text string, now int64, by NoteAuthor) {
 	e.Chunks[idx].Notes = append(e.Chunks[idx].Notes, waveobj.EffortNote{
-		Ts: now, Text: text, Author: by.Who, Session: by.Session, Run: by.Run,
+		Ts: now, Text: text, Author: by.Who, Session: by.Session, Run: by.Run, Conversation: by.Conversation,
 	})
 	e.Chunks[idx].UpdatedTs = now
+}
+
+// firstNoteAuthor is who an addChunk's first note (EffortOp.Note) is attributed to: the batch's author. The cockpit
+// ("you") saving a passage from a Chat names the agent session and conversation it came from on the op; from a
+// terminal the server has already derived both into by, so a caller's claim on the op is ignored there, as it is
+// with no author at all.
+func firstNoteAuthor(by NoteAuthor, op wshrpc.EffortOp) NoteAuthor {
+	if by.Who == "you" {
+		by.Session = strings.TrimSpace(op.Session)
+		by.Conversation = strings.TrimSpace(op.Conversation)
+	}
+	return by
 }
 
 func effortNote(e *waveobj.Effort, text string, now int64) {
@@ -215,10 +230,12 @@ func ApplyEffortOpsAs(e *waveobj.Effort, ops []wshrpc.EffortOp, cmdNote string, 
 			if _, err := ResolveChunkIndex(e, op.Chunk); err != nil {
 				return err
 			}
-			if len(e.Chunks) == 1 && e.Chunks[0].Status != "proposed" {
+			// the guard keeps an initiative's plan from emptying: a proposal and a later chunk are not the plan, and
+			// an initiative that holds only a saved item must be able to give it up (Move to…)
+			if len(e.Chunks) == 1 && e.Chunks[0].Status != "proposed" && !e.Chunks[0].Later {
 				return fmt.Errorf("EC-LAST-CHUNK: cannot remove the last chunk")
 			}
-		case "renameChunk", "moveChunk", "setChunkStatus", "setChunkStage", "setChunkDue", "setOwner", "recheckChunk":
+		case "renameChunk", "moveChunk", "setChunkStatus", "setChunkStage", "setChunkDue", "setChunkLater", "setOwner", "recheckChunk":
 			if _, err := ResolveChunkIndex(e, op.Chunk); err != nil {
 				return err
 			}
@@ -358,10 +375,15 @@ func ApplyEffortOpsAs(e *waveobj.Effort, ops []wshrpc.EffortOp, cmdNote string, 
 			if op.Status == "proposed" {
 				status, verb = "proposed", "proposed"
 			}
-			c := waveobj.EffortChunk{Label: op.Label, Status: status, Stage: strings.TrimSpace(op.Stage), Owner: op.Owner, Due: op.Due, BaseCommit: op.Base, UpdatedTs: now}
+			c := waveobj.EffortChunk{Label: op.Label, Status: status, Stage: strings.TrimSpace(op.Stage), Owner: op.Owner, Due: op.Due, Later: op.Later, BaseCommit: op.Base, UpdatedTs: now}
 			e.Chunks = append(e.Chunks[:idx], append([]waveobj.EffortChunk{c}, e.Chunks[idx:]...)...)
 			effortNote(e, "chunk "+verb+": "+op.Label+noteSuffix(cmdNote), now)
 			effortEvent(e, "chunk-added", op.Label, "", now)
+			// the op's own note is the chunk's first: the passage a later chunk keeps, with where it came from. The
+			// batch's note (cmdNote) is the effort's trail text above, never the chunk's.
+			if text := strings.TrimSpace(op.Note); text != "" {
+				chunkNote(e, idx, text, now, firstNoteAuthor(by, op))
+			}
 			// a proposed chunk keeps who proposed it, so its plan review opens that session (ProposerORef)
 			if status == "proposed" && by.Session != "" {
 				chunkNote(e, idx, ProposedNote, now, by)
@@ -445,6 +467,19 @@ func ApplyEffortOpsAs(e *waveobj.Effort, ops []wshrpc.EffortOp, cmdNote string, 
 			idx, _ := ResolveChunkIndex(e, op.Chunk)
 			e.Chunks[idx].Due = op.Due
 			chunkNote(e, idx, "due set to "+orNone(op.Due), now, by)
+		case "setChunkLater":
+			// trail-only like a due date. Setting the mark to the value it already has changes nothing, so it writes
+			// no note: a second "marked for later" would say it happened twice.
+			idx, _ := ResolveChunkIndex(e, op.Chunk)
+			if e.Chunks[idx].Later == op.Later {
+				break
+			}
+			e.Chunks[idx].Later = op.Later
+			text := "marked for later"
+			if !op.Later {
+				text = "no longer for later"
+			}
+			chunkNote(e, idx, text, now, by)
 		case "setOwner":
 			idx, _ := ResolveChunkIndex(e, op.Chunk)
 			e.Chunks[idx].Owner = op.Owner
@@ -453,9 +488,11 @@ func ApplyEffortOpsAs(e *waveobj.Effort, ops []wshrpc.EffortOp, cmdNote string, 
 			advance(e, note, now, by)
 		case "reopen":
 			idx, _ := ResolveChunkIndex(e, op.Chunk)
-			// undo of advance: reopened chunk active, the previously active chunk back to pending
+			// undo of advance: reopened chunk active, the previously active chunk back to pending. The plan and the later
+			// chunks each keep their own active one (advance ticks the plan's first), so reopening a ticked later chunk
+			// leaves the plan's active chunk alone, and the other way round.
 			for i := range e.Chunks {
-				if i != idx && e.Chunks[i].Status == "active" {
+				if i != idx && e.Chunks[i].Status == "active" && e.Chunks[i].Later == e.Chunks[idx].Later {
 					e.Chunks[i].Status = "pending"
 				}
 			}
@@ -509,12 +546,24 @@ func ApplyEffortOpsAs(e *waveobj.Effort, ops []wshrpc.EffortOp, cmdNote string, 
 
 // advance marks the active chunk done and activates the next non-done chunk (the run-card contract:
 // one active at a time). With no active chunk it activates the first non-done.
+//
+// A later chunk is not the initiative's work: advance never activates one. It does mark an active later chunk done
+// (that is a tick, by the person or an agent), but a plan chunk that is active goes first, so a later chunk someone
+// started never takes the plan's place in "the active chunk".
 func advance(e *waveobj.Effort, note string, now int64, by NoteAuthor) {
 	active := -1
 	for i, c := range e.Chunks {
-		if c.Status == "active" {
+		if c.Status == "active" && !c.Later {
 			active = i
 			break
+		}
+	}
+	if active < 0 {
+		for i, c := range e.Chunks {
+			if c.Status == "active" {
+				active = i
+				break
+			}
 		}
 	}
 	if active >= 0 {
@@ -527,6 +576,9 @@ func advance(e *waveobj.Effort, note string, now int64, by NoteAuthor) {
 		effortEvent(e, "chunk-done", e.Chunks[active].Label, note, now)
 	}
 	for i, c := range e.Chunks {
+		if c.Later {
+			continue
+		}
 		if c.Status == "pending" || c.Status == "blocked" || c.Status == "deferred" {
 			e.Chunks[i].Status = "active"
 			chunkNote(e, i, "activated", now, by)

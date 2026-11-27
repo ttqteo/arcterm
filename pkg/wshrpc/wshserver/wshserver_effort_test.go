@@ -99,6 +99,96 @@ func agentBlock(t *testing.T) (blockORef, tabID string) {
 	return "block:" + blockID, tabID
 }
 
+// agentBlockWithTranscript is agentBlock for an agent whose block reports a transcript file.
+func agentBlockWithTranscript(t *testing.T, transcript string) (blockORef, tabID string) {
+	t.Helper()
+	blockORef, tabID = agentBlock(t)
+	oref, err := waveobj.ParseORef(blockORef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wstore.UpdateObjectMeta(context.Background(), oref,
+		waveobj.MetaMapType{waveobj.MetaKey_AgentTranscriptPath: transcript}, false); err != nil {
+		t.Fatal(err)
+	}
+	return blockORef, tabID
+}
+
+// Every note an agent writes from a terminal names the conversation too: the stem of its block's transcript file, the id a
+// past session is reopened by. A block with no transcript yet names none, and the session stays the tab as before.
+func TestAgentAuthorConversation(t *testing.T) {
+	ctx := context.Background()
+	for name, tc := range map[string]struct{ transcript, want string }{
+		"a posix path":      {"/home/me/.claude/projects/p/3f0c9a2e-1111-4222-8333-444455556666.jsonl", "3f0c9a2e-1111-4222-8333-444455556666"},
+		"a windows path":    {`C:\Users\me\.claude\projects\p\abc-123.jsonl`, "abc-123"},
+		"no extension":      {"/t/just-a-name", "just-a-name"},
+		"no transcript yet": {"", ""},
+	} {
+		block, tabID := agentBlockWithTranscript(t, tc.transcript)
+		by := agentAuthorForBlock(ctx, block)
+		if by.Who != "agent" || by.Session != "agent:"+tabID || by.Conversation != tc.want {
+			t.Errorf("%s: author = %+v, want an agent on agent:%s in conversation %q", name, by, tabID, tc.want)
+		}
+	}
+	// a block that is gone has no tab and no conversation, as before
+	if by := agentAuthorForBlock(ctx, "block:"+uuid.NewString()); by.Who != "agent" || by.Session != "" || by.Conversation != "" {
+		t.Errorf("an unknown block: author = %+v, want a bare agent", by)
+	}
+}
+
+// addChunk's op note is the chunk's first note. From a terminal the server derives where it came from (the tab and the
+// conversation of the calling block) and ignores what the op claims; from the cockpit ("you") the op names them.
+func TestAddChunkFirstNote(t *testing.T) {
+	ctx := context.Background()
+	ws := &WshServer{}
+	newEffort := func() string {
+		rtn, err := ws.EffortCreateCommand(ctx, wshrpc.CommandEffortCreateData{Title: "Leave it for later " + uuid.NewString()[:8]})
+		if err != nil {
+			t.Fatal(err)
+		}
+		cleanupEffort(t, rtn.EffortOID)
+		return rtn.EffortOID
+	}
+	add := func(data wshrpc.CommandEffortMutateData) waveobj.EffortChunk {
+		t.Helper()
+		got, err := ws.EffortMutateCommand(ctx, data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got.Effort.Chunks) != 1 {
+			t.Fatalf("chunks: %+v", got.Effort.Chunks)
+		}
+		return got.Effort.Chunks[0]
+	}
+	op := wshrpc.EffortOp{Op: "addChunk", Label: "Push DEV", Later: true, Note: "> push DEV first\n\nFrom the chat.",
+		Session: "agent:claimed", Conversation: "claimed-conv"}
+
+	// the cockpit: Author "you" and no terminal, so the op names the agent session and the conversation
+	c := add(wshrpc.CommandEffortMutateData{EffortOID: newEffort(), Author: "you", Ops: []wshrpc.EffortOp{op}})
+	if !c.Later || len(c.Notes) != 1 {
+		t.Fatalf("a cockpit add: %+v", c)
+	}
+	if n := c.Notes[0]; n.Text != op.Note || n.Author != "you" || n.Session != "agent:claimed" || n.Conversation != "claimed-conv" || n.Run != "" {
+		t.Errorf("the cockpit's first note: %+v", n)
+	}
+
+	// a terminal: the calling block's tab and transcript, whatever the op claims
+	block, tabID := agentBlockWithTranscript(t, "/projects/p/real-conv.jsonl")
+	c = add(wshrpc.CommandEffortMutateData{EffortOID: newEffort(), SourceBlock: block, Author: "you", Ops: []wshrpc.EffortOp{op}})
+	if len(c.Notes) != 1 {
+		t.Fatalf("a terminal add: %+v", c)
+	}
+	if n := c.Notes[0]; n.Author != "agent" || n.Session != "agent:"+tabID || n.Conversation != "real-conv" {
+		t.Errorf("a terminal's first note: %+v, want agent on agent:%s in real-conv, not the op's claim", n, tabID)
+	}
+
+	// neither "you" nor a terminal: the op's claim is not taken on trust
+	c = add(wshrpc.CommandEffortMutateData{EffortOID: newEffort(), Author: "agent", Ops: []wshrpc.EffortOp{op}})
+	if len(c.Notes) != 1 || c.Notes[0].Author != "" || c.Notes[0].Session != "" || c.Notes[0].Conversation != "" {
+		t.Errorf("an unattributed add: notes %+v, want a note with no origin", c.Notes)
+	}
+}
+
 // createWithSeeds runs `effort create` for two seeded chunks and returns the stored effort.
 func createWithSeeds(t *testing.T, proposed bool, sourceBlock string) *waveobj.Effort {
 	t.Helper()
@@ -151,6 +241,17 @@ func TestEffortCreateProposedSeedsProposalsWithTheSessionNote(t *testing.T) {
 	// proposals stay out of the initiative's Total until accepted
 	if got := jarvisstate.EffortSummaryOf(e); got.Total != 0 {
 		t.Errorf("total %d, want 0 until the proposals are accepted", got.Total)
+	}
+}
+
+// a seeded proposal's note names the conversation too, as every agent note does
+func TestEffortCreateProposedNamesTheConversation(t *testing.T) {
+	block, _ := agentBlockWithTranscript(t, "/projects/p/conv-77.jsonl")
+	e := createWithSeeds(t, true, block)
+	for _, c := range e.Chunks {
+		if len(c.Notes) != 1 || c.Notes[0].Conversation != "conv-77" {
+			t.Errorf("chunk %q notes: %+v, want one proposed note in conversation conv-77", c.Label, c.Notes)
+		}
 	}
 }
 

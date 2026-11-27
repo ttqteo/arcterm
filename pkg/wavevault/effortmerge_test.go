@@ -376,6 +376,43 @@ func TestMergeEffort(t *testing.T) {
 	}
 }
 
+// A chunk's later mark merges like its due: the side that changed it from the base wins. It is a bool, so two sides that
+// both changed it agree, and a side that did not touch it never undoes the other's edit just by being newer.
+func TestMergeLater(t *testing.T) {
+	withLater := func(ts int64, later bool, tweak func(c *waveobj.EffortChunk)) *waveobj.Effort {
+		c := chunk("a", ts)
+		c.Later = later
+		if tweak != nil {
+			tweak(&c)
+		}
+		return effort(ts, c)
+	}
+	owner := func(c *waveobj.EffortChunk) { c.Owner = "x" }
+	cases := []struct {
+		name               string
+		base, ours, theirs *waveobj.Effort
+		want               bool
+	}{
+		{"only the older side marked it", withLater(10, false, nil), withLater(20, true, nil), withLater(30, false, owner), true},
+		{"only the older side dropped it", withLater(10, true, nil), withLater(20, false, nil), withLater(30, true, owner), false},
+		{"only the newer side marked it", withLater(10, false, nil), withLater(20, false, owner), withLater(30, true, nil), true},
+		{"both dropped it", withLater(10, true, nil), withLater(20, false, nil), withLater(30, false, owner), false},
+		{"both marked it", withLater(10, false, nil), withLater(20, true, nil), withLater(30, true, owner), true},
+		{"only ours changed it, though theirs is newer", withLater(10, true, nil), withLater(20, false, nil), withLater(30, true, nil), false},
+		{"only theirs changed it, though ours is newer", withLater(10, false, nil), withLater(30, false, nil), withLater(20, true, nil), true},
+		{"neither changed it", withLater(10, true, nil), withLater(20, true, owner), withLater(30, true, nil), true},
+		{"no base: the newer chunk whole", nil, withLater(20, true, nil), withLater(30, false, nil), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := findChunk(MergeEffort(tc.base, tc.ours, tc.theirs), "a")
+			if got == nil || got.Later != tc.want {
+				t.Fatalf("chunk = %+v, want later=%v", got, tc.want)
+			}
+		})
+	}
+}
+
 // A pin keeps UpdatedTs, so it cannot ride the newer-side rule: the side that pinned is often the older.
 func TestMergeEffortPinnedTs(t *testing.T) {
 	pinned := func(ts, pinnedTs int64) *waveobj.Effort {
