@@ -45,7 +45,12 @@ The board holds drawings side by side, each one answer. On the board each drawin
   coordinates, never a frame and never another drawing's shapes. The drawing keeps its title. The turn names the
   drawing in view; with none in view, draw a new drawing.
 
-An agent's request is always a new drawing.
+An agent's request has no drawing in view. It is a new drawing, unless it asks to fix, change or delete a drawing
+already on the board ("drop the long arrows in Part 1"): then it is an edit of that drawing, and `"drawing"` names its
+frame's id. Find the drawing by its title or its shapes. One turn edits one drawing.
+
+To delete a whole drawing, an edit puts its frame's id in `remove`, with no `add` or `update`: Arc removes the frame
+and every shape in it. Do it only when the line asks for that drawing to go.
 
 Keep every drawing short: one idea, a handful of boxes, a few words per box, no sentences or paragraphs on the
 canvas. When there is more to say, draw the core of it: the person asks for more, and that becomes another drawing,
@@ -53,12 +58,13 @@ never a denser one.
 
 - `title`: what the drawing shows, in a few words ("wavesrv, opened up"). It names the frame. Required whenever you
   add, update or remove anything.
-- `edit`: `true` only to edit the drawing in view; leave it out for a new drawing.
+- `edit`: `true` only to edit a drawing; leave it out for a new drawing.
+- `drawing`: on the agent's request only, the frame id of the drawing the edit changes.
 - `add`: new Excalidraw element skeletons.
-- `update`: changes to shapes of the drawing in view, each `{"id":"<an id from the board>"}` plus any of `x`, `y`,
+- `update`: changes to shapes of the edited drawing, each `{"id":"<an id from the board>"}` plus any of `x`, `y`,
   `width`, `height` (numbers), `text` (a text element's words), `label` (a container's or an arrow's label, a
   string), `strokeColor`, `backgroundColor`. Arrows bound to a shape you move follow it.
-- `remove`: ids of the drawing in view's shapes to delete.
+- `remove`: ids of the edited drawing's shapes to delete, or its frame's id alone to delete the whole drawing.
 - At most 40 shapes in `add` (a `chart` counts as one), and at most 12 words in any text or label: Arc refuses an
   answer past either. A drawing changes at least one shape.
 
@@ -93,6 +99,10 @@ Example, for "draw how wavesrv talks to the frontend":
 A follow-up "drop the label", with that drawing in view (its frame `f1`, its arrow `ab` on the board):
 
 {"title":"wavesrv and the frontend, plainer","edit":true,"update":[{"id":"ab","label":""}]}
+
+The agent's request "drop the websocket label", with that drawing on the board:
+
+{"title":"wavesrv and the frontend, plainer","edit":true,"drawing":"f1","update":[{"id":"ab","label":""}]}
 
 And for "why one websocket and not two?": {"question":true}
 

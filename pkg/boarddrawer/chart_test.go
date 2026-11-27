@@ -12,7 +12,7 @@ import (
 
 func chartAdd(t *testing.T, add string) []map[string]any {
 	t.Helper()
-	a, err := ParseAnswer(answerWith(`,"add":`+add), checkScene, "")
+	a, err := ParseAnswer(answerWith(`,"add":`+add), checkScene, "", false)
 	if err != nil {
 		t.Fatalf("chart refused: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestChartKeepsOtherEntriesAndBindings(t *testing.T) {
 	if shapes[0]["id"] != "r" || shapes[len(shapes)-1]["id"] != "rc" {
 		t.Errorf("order: first %v, last %v", shapes[0]["id"], shapes[len(shapes)-1]["id"])
 	}
-	a, err := ParseAnswer(answerWith(`,"add":[{"type":"chart","id":"c","kind":"bar","x":0,"y":0,"data":[["a",1]]}]`), checkScene, "")
+	a, err := ParseAnswer(answerWith(`,"add":[{"type":"chart","id":"c","kind":"bar","x":0,"y":0,"data":[["a",1]]}]`), checkScene, "", false)
 	if err != nil || a.Added != 1 {
 		t.Errorf("a chart counts as one entry: %+v %v", a, err)
 	}
@@ -122,7 +122,7 @@ func TestChartRefusals(t *testing.T) {
 		{"id clash", `[{"type":"text","id":"c-bar-0","x":0,"y":0,"text":"x"},{"type":"chart","id":"c","kind":"bar","x":0,"y":0,"data":[["a",1]]}]`, `makes the id "c-bar-0"`},
 	}
 	for _, tc := range cases {
-		_, err := ParseAnswer(answerWith(`,"add":`+tc.add), checkScene, "")
+		_, err := ParseAnswer(answerWith(`,"add":`+tc.add), checkScene, "", false)
 		if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 			t.Errorf("%s: got %v, want %q", tc.name, err, tc.wantErr)
 		}

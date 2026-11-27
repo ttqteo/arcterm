@@ -9,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
+	"slices"
 	"strings"
 )
 
@@ -43,13 +45,16 @@ var updateKeys = map[string]string{
 }
 
 // Answer is a checked drawer reply: a drawing, or a question flagged for the board's agent. Add and Update are
-// compact JSON arrays, "" when empty. A drawing is new, or with Edit, a change to the drawing in view.
+// compact JSON arrays, "" when empty. A drawing is new, or with Edit, a change to the drawing DrawingId names: the one
+// in view, or for the agent's request the one the answer picked. An edit that removes its drawing's frame deletes the
+// whole drawing: Remove then holds the frame and every shape in it.
 type Answer struct {
 	Title, Add, Update      string
 	Remove                  []string
 	Added, Changed, Removed int
 	Question                bool
 	Edit                    bool
+	DrawingId               string
 }
 
 func (a Answer) HasDrawing() bool {
@@ -72,10 +77,11 @@ type bindingId struct {
 }
 
 // ParseAnswer checks the drawer's reply against the scene it was shown and drawing, the frame id of the drawing in
-// view (none when it is not a live frame). Code, not the drawer, decides whether an answer is usable: one that would
-// not apply, or reaches outside its drawing, fails the turn with the reason. Keys the drawer is not told about (a
-// words reply, elsewhere) are ignored.
-func ParseAnswer(reply string, scene Scene, drawing string) (Answer, error) {
+// view (none when it is not a live frame). pick is the agent's request, which has no drawing in view: its edit names
+// the drawing it changes with the answer's drawing key, any drawing on the board. Code, not the drawer, decides whether
+// an answer is usable: one that would not apply, or reaches outside its drawing, fails the turn with the reason. Keys
+// the drawer is not told about (a words reply, elsewhere, a person's ask's drawing key) are ignored.
+func ParseAnswer(reply string, scene Scene, drawing string, pick bool) (Answer, error) {
 	body := strings.TrimSpace(reply)
 	if body == "" {
 		return Answer{}, unusable("the drawer ended without a reply")
@@ -87,6 +93,7 @@ func ParseAnswer(reply string, scene Scene, drawing string) (Answer, error) {
 		Remove   []string          `json:"remove"`
 		Question bool              `json:"question"`
 		Edit     bool              `json:"edit"`
+		Drawing  string            `json:"drawing"`
 	}
 	obj, err := oneObject(unfence(body))
 	if err != nil {
@@ -124,8 +131,26 @@ func ParseAnswer(reply string, scene Scene, drawing string) (Answer, error) {
 			return Answer{}, unusable("remove names %q, which is not on the board", id)
 		}
 	}
-	if err := checkScope(a, append(updated, raw.Remove...), scene, drawing); err != nil {
+	if pick && a.Edit && a.HasDrawing() {
+		if drawing = strings.TrimSpace(raw.Drawing); drawing == "" {
+			return Answer{}, unusable("it edits a drawing, but its drawing key names none")
+		}
+		if _, ok := scene.Frames[drawing]; !ok {
+			return Answer{}, unusable("it edits %q, which is no drawing on the board", drawing)
+		}
+	}
+	if err := checkScope(a, updated, raw.Remove, scene, drawing); err != nil {
 		return Answer{}, err
+	}
+	if a.Edit && a.HasDrawing() {
+		a.DrawingId = drawing
+	}
+	if a.Edit && slices.Contains(raw.Remove, drawing) {
+		if a.Added+a.Changed > 0 {
+			return Answer{}, unusable("it deletes the drawing %q and also adds or updates shapes in it", drawing)
+		}
+		raw.Remove = wholeDrawing(scene, drawing)
+		a.Remove, a.Removed = raw.Remove, len(raw.Remove)-1
 	}
 	if a.Add, err = compactArray(raw.Add); err != nil {
 		return Answer{}, err
@@ -157,9 +182,10 @@ func couldNotDraw(what, how string) error {
 }
 
 // checkScope keeps an answer to one drawing: a new drawing only adds, and an edit changes (updates or removes) only
-// shapes of the drawing in view, never a frame. Both are kept short. An answer that draws nothing has no drawing to
-// keep to, so its edit key is moot. changed is the ids the answer updates and removes.
-func checkScope(a Answer, changed []string, scene Scene, drawing string) error {
+// shapes of the drawing it edits, never a frame but its own, which it may remove to delete the drawing. Both are kept
+// short. An answer that draws nothing has no drawing to keep to, so its edit key is moot. updated and removed are the
+// ids the answer updates and removes.
+func checkScope(a Answer, updated, removed []string, scene Scene, drawing string) error {
 	if a.Added > MaxDrawingAdds {
 		return unusable("it adds %d shapes, more than %d", a.Added, MaxDrawingAdds)
 	}
@@ -169,7 +195,18 @@ func checkScope(a Answer, changed []string, scene Scene, drawing string) error {
 	if !a.Edit && a.Changed+a.Removed > 0 {
 		return unusable("a new drawing only adds shapes, and it updates or removes shapes on the board")
 	}
-	for _, id := range changed {
+	for _, id := range removed {
+		if id == drawing {
+			continue // its own frame: the whole drawing goes
+		}
+		if scene.Types[id] == typeFrame {
+			return unusable("it changes %q, a drawing's frame, which only Arc changes", id)
+		}
+		if scene.FrameOf[id] != drawing {
+			return unusable("it changes %q, which is outside the drawing it edits", id)
+		}
+	}
+	for _, id := range updated {
 		if scene.Types[id] == typeFrame {
 			return unusable("it changes %q, a drawing's frame, which only Arc changes", id)
 		}
@@ -178,6 +215,18 @@ func checkScope(a Answer, changed []string, scene Scene, drawing string) error {
 		}
 	}
 	return nil
+}
+
+// wholeDrawing is every shape of the drawing, sorted, then its frame: what deleting it removes. A container's bound
+// text is no shape of the scene; the board removes it with its container.
+func wholeDrawing(scene Scene, drawing string) []string {
+	var ids []string
+	for _, id := range slices.Sorted(maps.Keys(scene.FrameOf)) {
+		if scene.FrameOf[id] == drawing {
+			ids = append(ids, id)
+		}
+	}
+	return append(ids, drawing)
 }
 
 // tooWordy is the words a text or label has, when over MaxLabelWords; else 0.

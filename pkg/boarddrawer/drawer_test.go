@@ -769,20 +769,25 @@ func TestRetryKeepsTheDrawingInView(t *testing.T) {
 	}
 }
 
-// an agent's request has no drawing in view, so it is always a new drawing, even on a board with drawings
-func TestRequestMakesNewDrawings(t *testing.T) {
+// an agent's request has no drawing in view: it is a new drawing, or an edit of the drawing its answer names, any
+// drawing on the board. An edit that names none fails the turn.
+func TestRequestDrawsNewOrEditsTheDrawingItNames(t *testing.T) {
 	turns := map[string]wshrpc.BoardTurn{
 		"a briefing":         requests("Draw the store.", "facts"),
-		"a one-line request": requests("Draw the retry loop.", ""),
+		"a one-line request": requests("Drop the API box's label.", ""),
+	}
+	answers := map[string]struct {
+		answer, drawingId, failure string
+	}{
+		"a new drawing":                 {answer: drawAnswer},
+		"an edit of f2":                 {answer: `{"title":"API, plainer","edit":true,"drawing":"f2","update":[{"id":"api","x":520}]}`, drawingId: "f2"},
+		"a delete of f1":                {answer: `{"title":"Cache path, gone","edit":true,"drawing":"f1","remove":["f1"]}`, drawingId: "f1"},
+		"an edit that names no drawing": {answer: editAnswer, failure: "names none"},
 	}
 	for name, in := range turns {
-		for _, edit := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s, edit %v", name, edit), func(t *testing.T) {
-				answer := drawAnswer
-				if edit {
-					answer = editAnswer
-				}
-				f := newFake(reply(answer))
+		for aname, c := range answers {
+			t.Run(name+", "+aname, func(t *testing.T) {
+				f := newFake(reply(c.answer))
 				f.files["b1"] = framedSceneFile
 				d := New(f.deps())
 				f.landsAnswers(d, board)
@@ -790,20 +795,31 @@ func TestRequestMakesNewDrawings(t *testing.T) {
 					t.Fatal(err)
 				}
 				got := settled(t, f, d).Turns[0]
-				if p := f.callList()[0].Prompt; strings.Contains(p, drawingInViewHead) || !strings.Contains(p, "draw it as a new drawing") {
-					t.Errorf("a request has no drawing in view and is drawn as a new one:\n%s", p)
+				if p := f.callList()[0].Prompt; strings.Contains(p, drawingInViewHead) || !strings.Contains(p, requestDrawingLine) {
+					t.Errorf("a request has no drawing in view and may edit one it names:\n%s", p)
 				}
-				if edit {
-					if got.State != StateFailed || !strings.Contains(got.Reason, "no drawing is in view") || f.deliveredCount() != 0 {
-						t.Errorf("an edit must fail the request's turn: %+v, delivered %d", got, f.deliveredCount())
+				if c.failure != "" {
+					if got.State != StateFailed || !strings.Contains(got.Reason, c.failure) || f.deliveredCount() != 0 {
+						t.Errorf("want a failed turn: %+v, delivered %d", got, f.deliveredCount())
 					}
 					return
 				}
-				if got.State != StateAnswered || len(f.delivered) != 1 || f.delivered[0].DrawingId != "" || f.delivered[0].Title != "wavesrv, opened up" {
-					t.Errorf("want a new drawing: %+v, delivered %+v", got, f.delivered)
+				if got.State != StateAnswered || len(f.delivered) != 1 || f.delivered[0].DrawingId != c.drawingId {
+					t.Errorf("want drawing %q: %+v, delivered %+v", c.drawingId, got, f.delivered)
 				}
 			})
 		}
+	}
+	// deleting a drawing removes its shapes and its frame
+	f := newFake(reply(answers["a delete of f1"].answer))
+	f.files["b1"] = framedSceneFile
+	d := New(f.deps())
+	f.landsAnswers(d, board)
+	if _, err := d.Ask(board, requests("Delete the cache drawing.", "")); err != nil {
+		t.Fatal(err)
+	}
+	if got := settled(t, f, d).Turns[0]; got.Removed != 1 || len(f.delivered) != 1 || strings.Join(f.delivered[0].Remove, ",") != "cache,f1" {
+		t.Errorf("a delete removes the drawing whole: %+v, delivered %+v", got, f.delivered)
 	}
 }
 
