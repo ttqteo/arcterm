@@ -560,6 +560,7 @@ func noteAgentInTurn(ctx context.Context, ev *wps.WaveEvent) {
 	}
 	if blockId := statusBlockId(ctx, data.ORef); blockId != "" {
 		blockcontroller.NoteAgentState(blockId, data.State)
+		blockcontroller.NoteAgentReported(blockId)
 	}
 }
 

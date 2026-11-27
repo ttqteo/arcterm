@@ -49,6 +49,56 @@ const MetaKey_AgentLive = "agent:live"
 // MetaKey_AgentInTurn is true while a tracked agent is mid-turn: working, waiting on a permission, or asking.
 const MetaKey_AgentInTurn = "agent:inturn"
 
+// MetaKey_AgentRestoring holds when the boot began bringing a block's agent back (UnixMilli), until the agent reports
+// its first status, its process exits, or its start fails. The status a cockpit lists an agent by lives in this
+// server's memory, so the server that just started has none for an agent it is restoring: the cockpit reads this mark
+// as an idle agent meanwhile (frontend agentsleep.ts rosterStatus), or its first load would drop the agent from the
+// split it was a cell of.
+const MetaKey_AgentRestoring = "agent:restoring"
+
+// restoringBlocks are the blocks this server marked restoring and has not cleared yet, so a status report costs a map
+// read, not a store read.
+var restoringBlocks = struct {
+	sync.Mutex
+	m map[string]bool
+}{m: map[string]bool{}}
+
+// markRestoring marks the blocks the boot is about to bring back.
+func markRestoring(ctx context.Context, blockIds []string, now time.Time) {
+	restoringBlocks.Lock()
+	defer restoringBlocks.Unlock()
+	for _, blockId := range blockIds {
+		oref := waveobj.MakeORef(waveobj.OType_Block, blockId)
+		if _, err := wstore.UpdateObjectMeta(ctx, oref, waveobj.MetaMapType{MetaKey_AgentRestoring: now.UnixMilli()}, false); err != nil {
+			log.Printf("marking agent block %s restoring: %v\n", blockId, err)
+			continue
+		}
+		restoringBlocks.m[blockId] = true
+	}
+}
+
+// NoteAgentReported clears a restored agent's restoring mark once it reports a status of its own: the cockpit reads
+// that from then on.
+func NoteAgentReported(blockId string) {
+	clearRestoring(blockId)
+}
+
+// clearRestoring removes the restoring mark of a block this server marked; any other block is left alone.
+func clearRestoring(blockId string) {
+	restoringBlocks.Lock()
+	defer restoringBlocks.Unlock()
+	if !restoringBlocks.m[blockId] {
+		return
+	}
+	delete(restoringBlocks.m, blockId)
+	ctx, cancelFn := context.WithTimeout(context.Background(), DefaultTimeout)
+	defer cancelFn()
+	oref := waveobj.MakeORef(waveobj.OType_Block, blockId)
+	if _, err := wstore.UpdateObjectMeta(ctx, oref, waveobj.MetaMapType{MetaKey_AgentRestoring: nil}, false); err != nil {
+		log.Printf("clearing agent block %s restoring mark: %v\n", blockId, err)
+	}
+}
+
 // restoreNudge is the first turn of an agent the boot brings back mid-turn.
 const restoreNudge = "The app restarted while you were working, and your process stopped with it. Check the working tree and your last steps, then carry on where you left off. If you were waiting on the person, for a permission or an answer, ask again."
 
@@ -329,6 +379,8 @@ func clearAgentLive(blockId, token string) {
 	if !shouldClearAgentLive(block.Meta.GetString(MetaKey_AgentLive, ""), token, shuttingDown.Load()) {
 		return
 	}
+	// a restored agent that exits before it reports is no agent to list as idle
+	clearRestoring(blockId)
 	inTurnNoted.Lock()
 	defer inTurnNoted.Unlock()
 	delete(inTurnNoted.m, blockId)
@@ -493,11 +545,14 @@ func RestoreLiveAgents(ctx context.Context) {
 	var restore []restoreAgent
 	nudged := 0
 	for _, block := range blocks {
-		if block.Meta.GetString(MetaKey_AgentLive, "") == "" && !block.Meta.GetBool(MetaKey_AgentInTurn, false) {
+		// a restoring mark the last server left (its agent never reported) is stale too
+		if block.Meta.GetString(MetaKey_AgentLive, "") == "" && !block.Meta.GetBool(MetaKey_AgentInTurn, false) &&
+			!block.Meta.HasKey(MetaKey_AgentRestoring) {
 			continue
 		}
 		oref := waveobj.MakeORef(waveobj.OType_Block, block.OID)
-		if _, err := wstore.UpdateObjectMeta(ctx, oref, waveobj.MetaMapType{MetaKey_AgentLive: nil, MetaKey_AgentInTurn: nil}, false); err != nil {
+		clear := waveobj.MetaMapType{MetaKey_AgentLive: nil, MetaKey_AgentInTurn: nil, MetaKey_AgentRestoring: nil}
+		if _, err := wstore.UpdateObjectMeta(ctx, oref, clear, false); err != nil {
 			log.Printf("clearing agent block %s live mark: %v\n", block.OID, err)
 		}
 		if shouldRestoreAgent(block.Meta) {
@@ -528,6 +583,12 @@ func RestoreLiveAgents(ctx context.Context) {
 	if len(restore) == 0 {
 		return
 	}
+	// before the cockpit connects: its first load must find every agent coming back
+	ids := make([]string, len(restore))
+	for i, r := range restore {
+		ids[i] = r.blockId
+	}
+	markRestoring(ctx, ids, time.Now())
 	log.Printf("restoring %d agents left running by the last server, nudging %d it left mid-turn, %d asleep for a session another runs\n", len(restore), nudged, len(extra))
 	go func() {
 		defer func() {
@@ -547,6 +608,7 @@ func restoreOne(r restoreAgent) {
 	defer cancelFn()
 	tabId, err := wstore.DBFindTabForBlockId(ctx, r.blockId)
 	if err != nil {
+		clearRestoring(r.blockId)
 		return // its tab is gone
 	}
 	if text := restoreNudgeText(r.nudge, stoppedBackground(r.transcript)); text != "" {
@@ -554,6 +616,7 @@ func restoreOne(r restoreAgent) {
 	}
 	if err := restartAgentBlock(ctx, tabId, r.blockId); err != nil {
 		takeRestoreNudge(r.blockId, time.Now())
+		clearRestoring(r.blockId)
 		log.Printf("restoring agent block %s: %v\n", r.blockId, err)
 	}
 }

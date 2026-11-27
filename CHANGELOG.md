@@ -48,6 +48,11 @@ and a picture given to a line that is not big.
 - One letter after `@` picks a kind: `@a` lists agents, `@r` runs, `@c` councils, `@s` conversations, `@e` initiatives
   and `@b` boards, ahead of the files.
 
+### Fixed
+
+- A split keeps its agents across a restart of arcterm: an agent coming back used to drop out of its split until it
+  spoke, and a board beside it lost its split with it.
+
 ## 1.12.0 — 2026-11-27
 
 ### Added
