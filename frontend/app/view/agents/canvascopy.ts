@@ -8,10 +8,15 @@
 import type { DOMRectLike } from "./canvasmarks";
 import { tauriSendIO } from "./canvassend";
 import { tauriThumbIO } from "./canvasthumb";
+import { withOverlaysHidden } from "./protocapture";
 
 export type CopyShotIO = {
     // the part of the board inside its scroll pane, in CSS px; null when it is not on screen
     boardRect(el: HTMLElement): DOMRectLike | null;
+    // runs fn (the window capture) with Arc's own overlays hidden from the board's frame, as the A/B/C chips are, so the
+    // copy holds none of them (protocapture.ts withOverlaysHidden). A member of the io so a suite without a window can
+    // pass fn straight through
+    hideOverlays<T>(frameEl: HTMLElement, fn: () => Promise<T>): Promise<T>;
     capture(): Promise<Blob>;
     crop(png: Blob, rect: DOMRectLike): Promise<Blob>;
     writeImage(png: Blob): Promise<void>;
@@ -28,7 +33,7 @@ export async function copyBoardShot(io: CopyShotIO, boardEl: HTMLElement): Promi
     }
     let png: Blob;
     try {
-        png = await io.crop(await io.capture(), rect);
+        png = await io.hideOverlays(boardEl, async () => io.crop(await io.capture(), rect));
     } catch (e) {
         throw new Error(`Couldn't capture the board: ${errText(e)}`);
     }
@@ -41,6 +46,7 @@ export async function copyBoardShot(io: CopyShotIO, boardEl: HTMLElement): Promi
 
 export const tauriCopyShotIO: CopyShotIO = {
     boardRect: tauriThumbIO.boardRect,
+    hideOverlays: withOverlaysHidden,
     capture: tauriSendIO.capture,
     crop: tauriSendIO.crop,
     async writeImage(png) {
