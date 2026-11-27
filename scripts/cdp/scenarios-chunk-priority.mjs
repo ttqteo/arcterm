@@ -18,7 +18,9 @@
 // chunk-priority-rail (surface agent): the Agent rail's Initiative tab for a fixture Claude agent over a real tab whose
 // session:effort names an initiative the scenario makes (no real agent is launched, AGENTS.md: a real agent costs tokens).
 // The agent holds chunk 1 (active); chunks 2 (low), 3 (no level) and 4 (critical) are pending. `i` opens the tab and its
-// Chunks section lists chunks 3 and 4 as next (the order of work), not chunk 2. It passes once the plan's Task 3 has landed.
+// Chunks section lists chunk 4 and then chunk 3 as next, in the order of work (bandRows puts the window's next rows in that
+// order, so the critical chunk is drawn before the unset one though it sits after it in the plan), not chunk 2. It passes once
+// the plan's Task 3 has landed.
 
 import * as AC from "./agent-page-fixtures.mjs";
 import { waitFor } from "./attach.mjs";
@@ -470,7 +472,7 @@ const chunkPriorityRail = (kit) => {
             const step = stepper(steps);
             const A = ctx.tab.tabId;
 
-            await step("1. i opens the Initiative tab; its Chunks section lists chunks 3 and 4 as next, not chunk 2", async () => {
+            await step("1. i opens the Initiative tab; its Chunks section lists chunk 4 then chunk 3 as next, not chunk 2", async () => {
                 await h.cdp("Emulation.setFocusEmulationEnabled", { enabled: true });
                 await AC.focusAgent(h, A);
                 // the page reads the initiative (an effort made after it loaded) before the chip can name it
@@ -501,9 +503,11 @@ const chunkPriorityRail = (kit) => {
                 if (got.title !== RAIL_TITLE) problems.push(`title "${got.title}"`);
                 if (kind(R.own) !== "mine") problems.push(`the agent's own chunk is "${kind(R.own)}", want mine`);
                 // the next rows are the open chunks of highest rank, not the first two by position: chunk 2 (low) is no longer
-                // among them. The window lists its rows in plan order, so 3 comes before 4 on screen; the pair is what is checked.
+                // among them. bandRows puts the window's next rows in the order of work (they fill the window's next places, best
+                // ranked first) and the pane draws the window as it comes, so on screen chunk 4 (critical) comes before chunk 3
+                // (no level, ranked as medium) though 3 sits first in the plan: the order of the rows is what is checked.
                 const next = got.rows.filter((r) => r.kind === "next").map((r) => r.label);
-                if (next.slice().sort().join() !== [R.unset, R.crit].sort().join()) problems.push(`next rows [${next.join(" | ")}], want ${R.unset} and ${R.crit}`);
+                if (JSON.stringify(next) !== JSON.stringify([R.crit, R.unset])) problems.push(`next rows [${next.join(" | ")}], want [${R.crit} | ${R.unset}] in that order`);
                 if (got.rows.some((r) => r.label === R.low)) problems.push(`"${R.low}" is listed (as ${kind(R.low)}), it ranks below both`);
                 return { ok: problems.length === 0, detail: problems.join("; ") || `rows ${got.rows.map((r) => `${r.kind}: ${r.label}`).join(" | ")}` };
             });

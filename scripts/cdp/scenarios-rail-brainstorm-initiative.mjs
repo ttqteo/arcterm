@@ -1,12 +1,13 @@
 // The Agent rail's Brainstorm and Initiative tabs (docs/superpowers/specs/2026-11-20-agent-rail-brainstorm-initiative-tabs-design.md;
 // frontend/app/view/agents/railbrainstormpane.tsx, railinitiativepane.tsx), which took the Chat band's two parts and the
-// header's ◇ popover, and the ◇ chip and `i` that open the Initiative tab. Three scenarios, each on fixture Claude agents over
+// header's ◇ popover, and the ◇ chip and `i` that open the Initiative tab (from Chat the key is its twin Alt+I: a bare letter
+// there is text). Three scenarios, each on fixture Claude agents over
 // real tabs and the page's dev mock roster (no real agent is launched), keys and clicks as real CDP input events:
 //
 //   rail-brainstorm-tab   the timeline of a brainstorm in the rail (the tab and its dot, the numbered decisions, a board under
 //                         its decision with `new`, Open parts), the board dialog over Chat and over the terminal (focus, ← / →,
 //                         Esc, `b`), and the tab's empty and error states. Also the What's new picture.
-//   rail-initiative-tab   a linked agent: `i`, the head, the three sections, `m`, `n`, `w` (the waiting line, a failed switch,
+//   rail-initiative-tab   a linked agent: Alt+I, the head, the three sections, `m`, `n`, `w` (the waiting line, a failed switch,
 //                         told at once), the status menu, `All chunks`, Plan to review (Accept), folding, `i` back, the ◇ chip,
 //                         the header's "N to review" chip, Terminal view, no chunk (Pick a chunk…), a failed read and its
 //                         Retry, and the chunk chips the box offers (done: / go on with:). It carries over what the Chat band's
@@ -188,6 +189,18 @@ export default function (kit) {
             if (key === "Enter") await h.cdp("Input.dispatchKeyEvent", { type: "char", key, code: key, text: "\r", windowsVirtualKeyCode: vk });
             await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", key, code: key, windowsVirtualKeyCode: vk });
         }
+        await polishNap(nap);
+    }
+
+    // The Alt twin of a bare agent key, as a person holds Alt (Option on a Mac) and types the letter: keyDown and keyUp with
+    // the Alt bit and no text. With the agent in Chat the bare letters are text (chatTakesLetters in bindings.ts: `i` from
+    // the surface types into the message box), and each button's key acts there through its twin (ALT_TWINS: Alt+I is
+    // agent:initiative-alt, the same run as `i`).
+    async function pressAlt(h, key, nap = 300) {
+        const code = `Key${key.toUpperCase()}`;
+        const windowsVirtualKeyCode = key.toUpperCase().charCodeAt(0);
+        await h.cdp("Input.dispatchKeyEvent", { type: "keyDown", key, code, windowsVirtualKeyCode, modifiers: 1 });
+        await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", key, code, windowsVirtualKeyCode, modifiers: 1 });
         await polishNap(nap);
     }
 
@@ -933,11 +946,12 @@ export default function (kit) {
                 })()`);
             const labels = (rows) => rows.map((r) => r.label).join(" | ");
 
-            // the tab on show with the keyboard in it: `i` from the surface, or already there
+            // the tab on show with the keyboard in it: Alt+I from the surface (the agent is in Chat, where a bare `i` is text),
+            // or already there
             async function openTab() {
                 if ((await h.ev(SELECTED)) !== "initiative" || !(await railOpen(h))) {
                     await focusSurface(h);
-                    await press(h, "i", 500);
+                    await pressAlt(h, "i", 500);
                 }
                 await polishWaitFor(h, `!!${IN(A)}`, WAIT_MS);
                 await focusPane();
@@ -982,19 +996,21 @@ export default function (kit) {
             await link(ctx.main, TITLE);
             await refreshEffort(h, ctx.main);
 
-            // 1. `i` shows the tab and the keyboard is in it
-            await run("1. i opens the tab", async (name) => {
+            // 1. Alt+I shows the tab and the keyboard is in it. The agent is in Chat, where the bare `i` types into the message
+            // box. The click on Overview first is the person's own pick: an agent whose tab nobody set opens on its initiative
+            // (contextPanel), and from the Initiative tab the key would step back.
+            await run("1. Alt+I opens the tab", async (name) => {
                 await selectTab(h, "overview");
                 const before = await h.ev(SELECTED);
                 await focusSurface(h);
-                await press(h, "i", 600);
+                await pressAlt(h, "i", 600);
                 const up = await polishWaitFor(h, `!!${IN(A)} && ${IN(A)}.querySelector("[data-rail-initiative-row]") != null`, WAIT_MS);
                 await polishNap(600);
                 const got = await read();
                 await closeToasts(h);
                 await shot("1-open");
                 rec(
-                    `${name}: from Overview, i selects the Initiative tab (the rail visible, the keyboard inside the tab); its head reads the title, "1/7" and "On 2 ${C.draw}" with Mark done and its m key; Chunks lists done · mine · next · next · other (${NAME_B}'s) and "All chunks (7)"; Plan to review is there with its count 3 and the tab's dot is the asking colour; the latest note is the one on the chunk, headed "Latest note on 2"; Open in Jarvis and Add note show; no [data-chat-band] or [data-initiative-popover]`,
+                    `${name}: from Overview, Alt+I (the twin of i, which in Chat types into the box) selects the Initiative tab (the rail visible, the keyboard inside the tab); its head reads the title, "1/7" and "On 2 ${C.draw}" with Mark done and its m key; Chunks lists done · mine · next · next · other (${NAME_B}'s) and "All chunks (7)"; Plan to review is there with its count 3 and the tab's dot is the asking colour; the latest note is the one on the chunk, headed "Latest note on 2"; Open in Jarvis and Add note show; no [data-chat-band] or [data-initiative-popover]`,
                     before === "overview" &&
                         up &&
                         got.selected === "initiative" &&
@@ -1458,7 +1474,7 @@ export default function (kit) {
                     await polishNap(300);
                     await selectTab(h, "overview");
                     await focusSurface(h);
-                    await press(h, "i", 600);
+                    await pressAlt(h, "i", 600);
                     const errorUp = await polishWaitFor(h, `!!${IN(A)}?.querySelector('[data-rail-initiative-state="error"]')`, WAIT_MS);
                     await polishNap(300);
                     const err = await read();
