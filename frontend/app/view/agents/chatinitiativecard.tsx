@@ -30,7 +30,7 @@ import {
     useInteractions,
 } from "@floating-ui/react";
 import { atom, useAtomValue } from "jotai";
-import { Check, ChevronDown, Flag, Loader2, X } from "lucide-react";
+import { Bookmark, Check, ChevronDown, Flag, Loader2, X } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion, type TargetAndTransition, type Variants } from "motion/react";
 import {
     createContext,
@@ -58,6 +58,7 @@ import {
     cardStatic,
     chipProgress,
     chunkOptions,
+    clipLabel,
     dismissedRecord,
     draftFromBlock,
     draftFromMessage,
@@ -66,8 +67,12 @@ import {
     foldRowParts,
     INITIATIVE_LANG,
     isFreshMessageCard,
+    isLaterDraft,
     kindLabel,
+    laterRowKeys,
+    laterVerb,
     messageDraftKey,
+    NEW_TARGET,
     parseInitiativeBlock,
     startsInEditor,
     topicsOf,
@@ -75,6 +80,8 @@ import {
     waitingDot,
     withEffort,
     withKind,
+    withLaterTarget,
+    withoutLaterItem,
     withTopic,
     type CardEvent,
     type CardOrigin,
@@ -99,6 +106,8 @@ import {
 } from "./chatinitiativestore";
 import { CodeBlock } from "./codeblock";
 import { agentChunk } from "./initiativepopovermodel";
+import { sessionIdFromTranscript } from "./launch";
+import { LaterSaveError, type LaterFrom } from "./savelater";
 
 // ---- the host: what a card reads off its agent ----
 
@@ -309,6 +318,39 @@ function Chip({ card, attr, empty }: { card: EffortCardModel | undefined; attr: 
                 {attr === "under" ? "topic" : chipProgress(card)}
             </span>
         </span>
+    );
+}
+
+// the card's top line: its icon and name, then "Waiting on you" while it waits on the person, or "Agent exited" when the agent
+// has gone and the card is static
+function CardHeader({
+    icon,
+    label,
+    phase,
+    exited,
+}: {
+    icon: ReactNode;
+    label: string;
+    phase: CardPhase;
+    exited: boolean;
+}) {
+    return (
+        <div className="flex items-center gap-[8px] text-[12px] text-muted">
+            {icon}
+            <span className="min-w-0 truncate">{label}</span>
+            {waitingDot(phase, exited) ? (
+                <span className="ml-[6px] flex flex-none items-center gap-[6px] text-warning">
+                    <span
+                        data-chat-initiative-waiting
+                        aria-hidden="true"
+                        className="h-[6px] w-[6px] flex-none rounded-full bg-asking pulse-dot"
+                    />
+                    Waiting on you
+                </span>
+            ) : cardStatic(exited) ? (
+                <span className="ml-[6px] flex-none text-muted">Agent exited</span>
+            ) : null}
+        </div>
     );
 }
 
@@ -910,24 +952,12 @@ function LiveCard({ host, origin, cardKey, initial, onAdded, onDismiss, onCancel
             data-chat-initiative-static={cardStatic(exited) ? "" : undefined}
             className="flex flex-col gap-[12px] rounded-[12px] border border-edge-strong bg-surface-raised px-[16px] py-[14px]"
         >
-            <div className="flex items-center gap-[8px] text-[12px] text-muted">
-                <Flag size={14} strokeWidth={2} className="flex-none" aria-hidden />
-                <span className="min-w-0 truncate">
-                    Add to initiative · {origin === "agent" ? "proposed by the agent" : "from your message"}
-                </span>
-                {waitingDot(entry.phase, exited) ? (
-                    <span className="ml-[6px] flex flex-none items-center gap-[6px] text-warning">
-                        <span
-                            data-chat-initiative-waiting
-                            aria-hidden="true"
-                            className="h-[6px] w-[6px] flex-none rounded-full bg-asking pulse-dot"
-                        />
-                        Waiting on you
-                    </span>
-                ) : cardStatic(exited) ? (
-                    <span className="ml-[6px] flex-none text-muted">Agent exited</span>
-                ) : null}
-            </div>
+            <CardHeader
+                icon={<Flag size={14} strokeWidth={2} className="flex-none" aria-hidden />}
+                label={`Add to initiative · ${origin === "agent" ? "proposed by the agent" : "from your message"}`}
+                phase={entry.phase}
+                exited={exited}
+            />
             <BodySwap editing={entry.editor} compact={compact} editor={editor} />
             {buttons}
             {failed && entry.error != null ? (
@@ -963,6 +993,256 @@ function LiveCard({ host, origin, cardKey, initial, onAdded, onDismiss, onCancel
                     onClose={closePicker}
                 />
             )}
+        </section>
+    );
+}
+
+// ---- a list the agent leaves for later ----
+
+// A ```arc-initiative block of kind chunk with `later: true` and `chunks[]` (Builder's call 13): one row per item with a remove
+// ×, the target (the agent's initiative, else the picker with Recent) and Add, which saves every row that is left as a later
+// chunk in one batch. There is no editor: the person trims the list and presses Add. The card folds like the others.
+type LaterCardProps = {
+    host: Host;
+    /** blockDraftKey(…): the card's draft (its remaining rows, its target) and its entry are kept under it */
+    cardKey: string;
+    /** the first draft, derived where the host's list is known */
+    initial: InitiativeDraft;
+    /** the write succeeded: keep the record (the card folds into its row) */
+    onAdded: (rec: HandledRecord) => void;
+    /** the card dismissed: keep the record */
+    onDismiss: (rec: HandledRecord) => void;
+};
+
+function LaterCard({ host, cardKey, initial, onAdded, onDismiss }: LaterCardProps) {
+    const { agent, exited, cards, want } = host;
+    const stored = useDraft(cardKey, initial);
+    const base = useMemo<CardEntry>(() => ({ phase: "waiting", editor: false }), []);
+    const entry = useCardEntry(cardKey, base);
+    const live = entry.phase !== "added" && entry.phase !== "dismissed";
+    // a card on its way out holds what it showed: the store drops the draft the moment the card is handled
+    const shownLast = useRef(stored);
+    if (live) {
+        shownLast.current = stored;
+    }
+    const draft = live ? stored : shownLast.current;
+    const rows = draft.later ?? [];
+    const keys = useMemo(() => laterRowKeys(rows), [rows]);
+    const busy = entry.phase === "adding";
+    const failed = entry.phase === "failed";
+    const toNew = draft.effort === NEW_TARGET;
+
+    useEffect(() => {
+        want();
+    }, [want]);
+
+    const update = (next: InitiativeDraft) => setDraft(cardKey, next);
+    const chosen = draft.effort != null && !toNew ? cards?.find((c) => effortOref(c.oref) === draft.effort) : undefined;
+    const [targetAnchor, setTargetAnchor] = useAnchor();
+    const [picking, setPicking] = useState(false);
+    const closePicker = () => {
+        setPicking(false);
+        targetAnchor?.focus({ preventScroll: true });
+    };
+    // the × of each row by its key, so removing a row hands the keyboard to the row beside it
+    const removers = useRef(new Map<string, HTMLButtonElement>());
+    const removeRow = (i: number) => {
+        const neighbour = keys[i + 1] ?? keys[i - 1];
+        update(withoutLaterItem(draft, i));
+        const next = neighbour != null ? removers.current.get(neighbour) : undefined;
+        (next ?? targetAnchor)?.focus({ preventScroll: true });
+    };
+
+    const run = () => {
+        if (!canAdd(draft) || busy) {
+            return;
+        }
+        // where the rows came from: the agent's tab, and the conversation's id, which outlives the tab
+        const from: LaterFrom = {
+            agentId: agent.id,
+            name: agent.name,
+            project: agent.project,
+            conversation: sessionIdFromTranscript(agent.transcriptPath),
+            title: draft.text,
+        };
+        stepCard(cardKey, base, failed ? "retry" : "add");
+        // the write is the store's, not this component's: a card Chat unmounts meanwhile still folds when it lands
+        writeInitiative(draft, agent.project, from).then(
+            (rec) => {
+                stepCard(cardKey, base, "added");
+                onAdded(rec);
+            },
+            (e) => {
+                // a new initiative is made before its chunks are added: a failure after that leaves it, empty, in Ideas.
+                // The card then targets it, so Try again adds the rows there and does not make a second one
+                const made = e instanceof LaterSaveError ? e.created : undefined;
+                if (made != null) {
+                    update(withLaterTarget(draft, made.oref));
+                }
+                stepCard(
+                    cardKey,
+                    base,
+                    "failed",
+                    made != null
+                        ? `${errorText(e)} “${made.title}” was made, so Try again adds the rows to it.`
+                        : errorText(e)
+                );
+            }
+        );
+    };
+    const dismiss = () => {
+        if (busy) {
+            return;
+        }
+        const rec = dismissedRecord(draft, { initiative: chosen?.title }, Date.now());
+        stepCard(cardKey, base, "dismiss");
+        onDismiss(rec);
+    };
+
+    const intoChip = toNew ? (
+        <span data-chat-initiative-into title={draft.text} className={CHIP}>
+            <span className="min-w-0 truncate">New initiative “{draft.text}”</span>
+            <span className="flex-none font-normal text-muted">new</span>
+        </span>
+    ) : (
+        <Chip card={chosen} attr="into" empty={cards == null ? "Loading…" : "No initiative"} />
+    );
+
+    return (
+        <section
+            aria-label="Save for later"
+            data-chat-initiative={entry.phase}
+            data-chat-initiative-origin="agent"
+            data-chat-initiative-later=""
+            data-chat-initiative-static={cardStatic(exited) ? "" : undefined}
+            className="flex flex-col gap-[12px] rounded-[12px] border border-edge-strong bg-surface-raised px-[16px] py-[14px]"
+        >
+            <CardHeader
+                icon={<Bookmark size={14} strokeWidth={2} className="flex-none" aria-hidden />}
+                label="Save for later · proposed by the agent"
+                phase={entry.phase}
+                exited={exited}
+            />
+            <div data-later-card-heading className="text-[13.5px] font-semibold leading-[1.4] text-primary">
+                {draft.text}
+            </div>
+            {/* a long list scrolls in place rather than running the card down the chat; -mb takes back the last row's margin */}
+            <ul
+                data-later-card-rows
+                aria-label="Items to save"
+                className="-mb-[4px] flex max-h-[336px] list-none flex-col overflow-y-auto p-0"
+            >
+                <AnimatePresence initial={false}>
+                    {rows.map((text, i) => (
+                        <motion.li
+                            key={keys[i]}
+                            variants={BODY_REVEAL}
+                            initial="initial"
+                            animate="animate"
+                            exit="exit"
+                            className="overflow-hidden"
+                        >
+                            <div
+                                data-later-card-row
+                                className="mb-[4px] flex items-start gap-[10px] rounded-[8px] bg-surface py-[6px] pl-[12px] pr-[6px] text-[13px] leading-[1.5] text-secondary"
+                            >
+                                <span
+                                    title={text}
+                                    className="min-w-0 flex-1 whitespace-pre-wrap break-words py-[1px] line-clamp-3"
+                                >
+                                    {text}
+                                </span>
+                                <button
+                                    ref={(el) => {
+                                        if (el != null) {
+                                            removers.current.set(keys[i], el);
+                                        } else {
+                                            removers.current.delete(keys[i]);
+                                        }
+                                    }}
+                                    type="button"
+                                    data-later-card-remove
+                                    aria-label={`Remove “${clipLabel(text)}” from the list`}
+                                    title="Remove from the list"
+                                    disabled={busy}
+                                    onClick={() => removeRow(i)}
+                                    className={cn(
+                                        "flex h-[22px] w-[22px] flex-none cursor-pointer items-center justify-center rounded-full border-0 bg-transparent p-0 text-muted hover:bg-surface-hover hover:text-primary disabled:cursor-default disabled:opacity-50",
+                                        FOCUS_RING
+                                    )}
+                                >
+                                    <X size={13} strokeWidth={2.2} aria-hidden />
+                                </button>
+                            </div>
+                        </motion.li>
+                    ))}
+                </AnimatePresence>
+            </ul>
+            <TargetRow label="Into">
+                {intoChip}
+                <button
+                    ref={setTargetAnchor}
+                    type="button"
+                    data-later-card-target
+                    aria-haspopup="dialog"
+                    aria-expanded={picking}
+                    disabled={busy}
+                    onClick={() => setPicking(true)}
+                    className={cn(CHANGE, FOCUS_RING)}
+                >
+                    {draft.effort == null ? "Pick…" : "Change…"}
+                </button>
+            </TargetRow>
+            <div className="flex flex-wrap items-center gap-[8px]">
+                <button
+                    type="button"
+                    {...(failed ? { "data-chat-initiative-retry": "" } : { "data-chat-initiative-add": "" })}
+                    disabled={busy || !canAdd(draft)}
+                    title={busy ? undefined : (addBlocker(draft) ?? undefined)}
+                    aria-busy={busy}
+                    onClick={run}
+                    className={cn(PRIMARY, FOCUS_RING)}
+                >
+                    {busy ? (
+                        <Loader2
+                            size={13}
+                            strokeWidth={2.4}
+                            aria-hidden
+                            className="animate-spin motion-reduce:animate-none"
+                        />
+                    ) : null}
+                    {failed ? "Try again" : laterVerb(rows.length)}
+                </button>
+                <button
+                    type="button"
+                    data-chat-initiative-dismiss
+                    disabled={busy}
+                    onClick={dismiss}
+                    className={cn(SECONDARY, FOCUS_RING)}
+                >
+                    Dismiss
+                </button>
+            </div>
+            {failed && entry.error != null ? (
+                <div role="alert" data-chat-initiative-error className={ERROR_LINE}>
+                    {entry.error}
+                </div>
+            ) : null}
+            {live ? (
+                <InitiativePicker
+                    open={picking}
+                    anchor={targetAnchor}
+                    project={agent.project ?? ""}
+                    pickVerb="save to"
+                    recent
+                    title="Save for later in…"
+                    onPick={(pick) => {
+                        update(withLaterTarget(draft, pick));
+                        closePicker();
+                    }}
+                    onClose={closePicker}
+                />
+            ) : null}
         </section>
     );
 }
@@ -1017,6 +1297,9 @@ function HandledRow({ rec, model }: { rec: HandledRecord; model: AgentsViewModel
 function BlockLive({ host, block, k }: { host: Host; block: InitiativeBlock; k: string }) {
     const initial = useMemo(() => draftFromBlock(block, host.ctx), [block, host.ctx]);
     const keep = (rec: HandledRecord) => markHandled(k, rec, host.agent.id);
+    if (isLaterDraft(initial)) {
+        return <LaterCard host={host} cardKey={blockDraftKey(k)} initial={initial} onAdded={keep} onDismiss={keep} />;
+    }
     return (
         <LiveCard
             host={host}

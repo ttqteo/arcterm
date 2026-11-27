@@ -42,6 +42,30 @@ func TestClassifyChunk(t *testing.T) {
 	}
 }
 
+// a later chunk is a kept item, never DUM-E's work, even one handed to dum-e: no status of it is in DUM-E's queue
+func TestClassifyLater(t *testing.T) {
+	live := func(id string) bool { return id == "run-live" }
+	for _, status := range []string{"pending", "active", "blocked", "done", "deferred", "skipped"} {
+		c := chunk("x", status, Owner, StartedNote("run-live", "wave/dume-a"))
+		c.Later = true
+		if got := ClassifyChunk(c, live); got != StateNone {
+			t.Fatalf("a later %s chunk classified %v, want StateNone", status, got)
+		}
+		c.Later = false
+		if status == "pending" || status == "active" || status == "blocked" || status == "done" {
+			if got := ClassifyChunk(c, live); got == StateNone {
+				t.Fatalf("the same %s chunk with no mark is StateNone: the test proves nothing", status)
+			}
+		}
+	}
+	waiting := chunk("w", "pending", Owner)
+	waiting.Later = true
+	s := Summarize([]*waveobj.Effort{{OID: "e1", Title: "One", Project: "arcterm", Status: "active", Chunks: []waveobj.EffortChunk{waiting}}}, live)
+	if len(s.Waiting) != 0 || s.Done != 0 || s.Blocked != 0 {
+		t.Fatalf("summary = %+v, want nothing of a later chunk", s)
+	}
+}
+
 func TestParseStarted(t *testing.T) {
 	run, branch, ok := ParseStarted(StartedNote("abc", "wave/dume-1"))
 	if !ok || run != "abc" || branch != "wave/dume-1" {

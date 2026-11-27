@@ -51,7 +51,7 @@ An effort too foggy to name its phases gets a tracker of decisions first, not bu
 | Command | What it does |
 |---|---|
 | `wsh effort list [--project P] [--archived] [--topics]` | efforts: oid, title, status, done/total, next chunk (the active one, else the first in the order of work); archived hidden unless `--archived`; `--topics` keeps only the efforts others are linked under |
-| `wsh effort show <effort>` | full detail: chunks in plan order with statuses, owners, due days, priorities, note trails, and for each open chunk the commit it was written at and the commits since; an `Order of work:` line under the title numbers the open chunks in the order they open, and `← next` marks the first |
+| `wsh effort show <effort>` | full detail: chunks in plan order with statuses, owners, due days, priorities, note trails, and for each open chunk the commit it was written at and the commits since; an `Order of work:` line under the title numbers the open chunks in the order they open, and `← next` marks the first; a chunk saved for later reads `· later`, is left out of the done/total and of the order of work, and is never next |
 | `wsh effort rename <effort> <title>` | retitle |
 | `wsh effort project <effort> <project\|"">` | set/clear project |
 | `wsh effort ticket <effort> <ticket\|"">` | set/clear ticket |
@@ -62,7 +62,8 @@ An effort too foggy to name its phases gets a tracker of decisions first, not bu
 | `wsh effort delete <effort> [--force]` | delete (refuses unless archived or `--force`) |
 | `wsh effort advance <effort> [--note "..."]` | active chunk → done; marker moves to the next chunk in the order of work: the pending chunk with the highest priority (ties by position; unset ranks as medium, `information` last), and only when none is pending the best blocked or deferred one |
 | `wsh effort reopen <effort> <chunk>` | undo an advance (done → active, previous active back to pending) |
-| `wsh effort chunk add <effort> "<label>" [--at N] [--owner X] [--due YYYY-MM-DD\|+Nd] [--priority critical\|high\|medium\|low\|information] [--proposed]` | add a chunk; `--proposed` leaves it for the person to accept or drop |
+| `wsh effort chunk add <effort> "<label>" [--at N] [--owner X] [--due YYYY-MM-DD\|+Nd] [--priority critical\|high\|medium\|low\|information] [--proposed] [--later]` | add a chunk; `--proposed` leaves it for the person to accept or drop; `--later` saves it for later (below) |
+| `wsh effort chunk later <effort> <chunk> [--off]` | save a chunk for later, or with `--off` take it back into the plan |
 | `wsh effort chunk rename <effort> <chunk> "<label>"` | rename a chunk (its commit moves to today's HEAD) |
 | `wsh effort chunk recheck <effort> <chunk> [--note "..."]` | mark an open chunk still right for today's code: its commit moves to the project's HEAD |
 | `wsh effort stale [effort]` | list open chunks whose named files changed or went away since they were written (all active initiatives without an argument) |
@@ -117,6 +118,10 @@ Chunks are always referenced by exact label, never index.
     following it.
   - **Once it is right for today's code**, `wsh effort chunk recheck <effort> "<chunk>" [--note "what you checked"]`
     moves its commit to the project's HEAD, and the chunk card stops counting.
+- **A chunk saved for later is not the initiative's work.** `chunk add --later` (or `chunk later <effort> <chunk>` on
+  an existing one) marks a task or a question that can wait: it waits in the Brief's Later section until it is done,
+  skipped or deferred, never in Needs you. It is left out of done/total, and `advance`, Work on and runs never pick it
+  up, so do not tick it as plan progress or claim it. `chunk later <effort> <chunk> --off` makes it plan work again.
 - **Skipped shrinks the denominator**: an effort that finishes by skipping still reads 100%.
 - Run↔chunk links detach automatically when the run's evidence seals; session workrefs detach at
   session end. Nothing auto-ticks — completion is always a deliberate action.
@@ -124,7 +129,8 @@ Chunks are always referenced by exact label, never index.
 ## In a Claude agent's Chat: write it yourself
 
 When the person reads you in arcterm's Chat, you write to initiatives with `wsh effort` yourself, as everywhere else.
-The person does not add chunks or notes by hand, so never hand them a card or a block to add:
+The person does not add chunks or notes by hand, so never hand them a card or a block to add (one exception, the
+last bullet below):
 
 - **Your own work:** progress notes and status on the chunk you hold, claiming it, ticking it done, as above.
 - **What the person asked for** ("bỏ vào initiative đi", "add that as a chunk", or a yes to a chunk you offered):
@@ -135,10 +141,26 @@ The person does not add chunks or notes by hand, so never hand them a card or a 
 - **A note on a chunk you do not hold:** `chunk note`, saying in the note what it comes from.
 - **A new initiative nobody asked for:** name it and its first chunks in one line and ask; `create` it on a yes,
   under its topic (`--parent`).
+- **When the person tells you to leave things for later** ("leave these for later", "để đó làm sau", "keep these for
+  later"): write one later block listing every item, and add nothing yourself with `wsh effort`. It is the one case
+  where you write a block. Chat draws it as a card with a row per item; the person removes the rows they do not want
+  and presses Add, which saves each remaining row as a later chunk on the initiative you are linked to (or on the one
+  they pick). The block is a fenced code block whose info string is `arc-initiative`, holding one JSON object:
+
+  ````
+  ```arc-initiative
+  {"kind":"chunk","later":true,"text":"Left for later","chunks":["Push DEV","Delete the backup branch","Check where branch X stands","Decide which parser takes audit: logs"]}
+  ```
+  ````
+
+  `text` is the card's heading and is required; `chunks` is the list, one short line per item (it becomes the chunk's
+  label, so write each as a task or a question that still makes sense days later, not "that one"). You need not name
+  an initiative: the card targets the one you are linked to, or the person picks. List every item you were asked to
+  keep and nothing else.
 
 Then say in one line what you wrote where. Chat still draws the `arc-initiative` blocks of older replies as cards, and
 a line `initiative: added …`, `created …` or `dismissed …` opening a message is the outcome of one of those: nothing to
-act on, and never write a new block.
+act on, and never write a new block (the later block above is the only one you write).
 
 A line `initiative: switched you to chunk <n> <label> (effort:<oid>)` opening a message is different: the person moved
 you to that chunk in the initiative's band. Work on it from now on, as if you had been attached to it; there is nothing

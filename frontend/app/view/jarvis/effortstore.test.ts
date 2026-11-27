@@ -30,6 +30,7 @@ import {
     moveChunk,
     removeChunks,
     renameChunk,
+    setChunkLater,
     togglePin,
 } from "./effortstore";
 
@@ -71,6 +72,16 @@ describe("effortChunkRows", () => {
             ["S1", [{ oref: "run:r1" }]],
             ["", []],
         ]);
+    });
+
+    it("carries a chunk's later mark, absent on a chunk that has none", () => {
+        const rows = effortChunkRows({
+            chunks: [
+                { label: "A", status: "pending", later: true },
+                { label: "B", status: "pending" },
+            ],
+        } as unknown as Effort);
+        expect(rows.map((r) => r.later)).toEqual([true, undefined]);
     });
 
     it("has no latest note for a chunk with no notes", () => {
@@ -204,6 +215,30 @@ describe("togglePin", () => {
         rpc.EffortPinCommand.mockResolvedValue({ pinned: false });
         await togglePin("effort:on");
         expect(globalStore.get(effortDetailAtom).get("effort:on").pinnedts).toBe(0);
+    });
+});
+
+describe("setChunkLater", () => {
+    beforeEach(() => {
+        rpc.EffortMutateCommand.mockReset();
+        rpc.EffortMutateCommand.mockResolvedValue({ effort: { oid: "l1", chunks: [] } });
+    });
+
+    it("writes one setChunkLater op for the chunk, from the person", async () => {
+        await setChunkLater("effort:l1", "Saved item", false);
+        expect(rpc.EffortMutateCommand).toHaveBeenCalledWith(
+            expect.anything(),
+            { effortoid: "l1", ops: [{ op: "setChunkLater", chunk: "Saved item", later: false }], author: "you" },
+            expect.anything()
+        );
+    });
+
+    it("sends the mark when it turns it on, and refreshes the cached detail", async () => {
+        await setChunkLater("effort:l1", "Saved item", true);
+        expect(rpc.EffortMutateCommand.mock.calls[0][1].ops).toEqual([
+            { op: "setChunkLater", chunk: "Saved item", later: true },
+        ]);
+        expect(globalStore.get(effortDetailAtom).get("effort:l1")).toEqual({ oid: "l1", chunks: [] });
     });
 });
 

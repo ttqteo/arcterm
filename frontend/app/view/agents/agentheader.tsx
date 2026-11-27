@@ -19,7 +19,6 @@ import { globalStore } from "@/app/store/jotaiStore";
 import * as WOS from "@/app/store/wos";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { nextChunk } from "@/app/view/jarvis/effortmodel";
 import { attachAgent, createIdea, effortDetailAtom, loadEffortDetail } from "@/app/view/jarvis/effortstore";
 import { InitiativePicker } from "@/app/view/jarvis/initiativepicker";
 import { openOrPeek, openTarget } from "@/app/view/jarvis/openref";
@@ -119,7 +118,7 @@ import {
     type HeaderWidth,
 } from "./headermodel";
 import { initiativeLinkPickerAtom } from "./initiativepopover";
-import { chipCount } from "./initiativepopovermodel";
+import { chipCount, linkChunk } from "./initiativepopovermodel";
 import { KeyTip } from "./keytip";
 import { openLauncher } from "./launcherstore";
 import { rosterSeededAtom } from "./liveagents";
@@ -278,7 +277,7 @@ function InitiativeLink({ model, agent, width }: { model: AgentsViewModel; agent
 
 // An agent with no initiative: `/ + initiative` after its project opens the picker (as `i` does; no keycap, its title
 // says so). A pick writes the tab's session:effort, and attaches the agent to the initiative's active chunk (else its
-// first pending one) so the chunk reads as its work; a new initiative made from the session is an idea with no chunk, so
+// highest-ranked pending one, never one saved for later) so the chunk reads as its work; a new initiative made from the session is an idea with no chunk, so
 // nothing is attached.
 function LinkToInitiative({ agent, project, width }: { agent: AgentVM; project: string; width: HeaderWidth }) {
     const open = useAtomValue(initiativeLinkPickerAtom) === agent.id;
@@ -307,8 +306,9 @@ function LinkToInitiative({ agent, project, width }: { agent: AgentVM; project: 
                 }
                 await loadEffortDetail(oref, Number.MAX_SAFE_INTEGER);
                 const chunks = globalStore.get(effortDetailAtom).get(oref)?.chunks ?? [];
-                // the chunk the initiative goes on with: the active one, else the highest-ranked pending one
-                const chunk = nextChunk(chunks);
+                // the chunk the initiative goes on with: the active one, else the highest-ranked pending one of the
+                // plan (a chunk saved for later is never the one picked, whatever its level)
+                const chunk = linkChunk(chunks);
                 if (chunk != null) {
                     await attachAgent(oref, chunkRef(planEditChunks(chunks), chunk.label), agent.id);
                 }

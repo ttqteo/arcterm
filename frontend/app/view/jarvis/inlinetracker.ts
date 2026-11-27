@@ -11,6 +11,7 @@
 
 import { groupChunksByStage, nextChunk } from "./effortmodel";
 import type { ChunkRowModel } from "./effortstore";
+import { isLater, planChunks } from "./laterchunk";
 import { proposedRows, type ProposedRow } from "./proposedmodel";
 
 export type DetailRow =
@@ -38,10 +39,17 @@ export type DetailRow =
     // a folded stage past its preview: how many chunks the fold hides, and the key that unfolds it (the stage row's id,
     // or a flat plan's flatPlanId)
     | { kind: "more"; id: string; oref: string; stageId: string; n: number }
+    // the chunks saved for later (EffortChunk.later), any status, after the plan: kept on Jarvis rather than worked, so they
+    // are no part of the plan's rows, its count or its next arrow. Each is drawn with the ordinary chunk row, under the
+    // key (`id`) a plan chunk of that label has.
+    | { kind: "later"; id: string; oref: string; rows: LaterRow[] }
     | { kind: "pending"; id: string; oref: string; message: string };
+
+export type LaterRow = { id: string; row: ChunkRowModel; notes: number };
 
 export const chunkRowId = (oref: string, label: string): string => `${oref}/chunk:${label}`;
 const proposedRowId = (oref: string): string => `${oref}/proposed`;
+export const laterRowId = (oref: string): string => `${oref}/later`;
 // position-keyed, because a stage is a label on a run of chunks and the same name can head two runs.
 // This doubles as the key an explicit collapse/expand is stored under, so there is one identifier,
 // not a row id and a separate override key that can drift apart.
@@ -73,6 +81,9 @@ export const flatPlanId = (oref: string): string => `${oref}/flat`;
  *
  * The chunks an agent proposed and nobody accepted yet are held out of the plan: they are their own group, first, and
  * are not in the stage groups, the chunk rows or the facts count (the way the summary leaves them out of done/total).
+ *
+ * The chunks saved for later are held out the same way and are their own group, last ("Later · N"): not in the stage
+ * groups, the facts count or the next arrow. An initiative whose only chunks are later draws that group alone.
  */
 export function initiativeRows(args: {
     oref: string;
@@ -90,12 +101,30 @@ export function initiativeRows(args: {
         out.push({ kind: "pending", id: oref + "/pending", oref, message: "No chunks on this initiative yet." });
         return out;
     }
-    const proposed = proposedRows(all.map((c) => ({ ...c, notes: c.trail })));
+    // a later chunk is its own group whatever its status, so it is no part of the proposed group or the plan
+    const plan = planChunks(all);
+    const proposed = proposedRows(plan.map((c) => ({ ...c, notes: c.trail })));
     if (proposed.length > 0) {
         out.push({ kind: "proposed", id: proposedRowId(oref), oref, rows: proposed });
     }
-    const chunks = all.filter((c) => c.status !== "proposed");
+    const chunks = plan.filter((c) => c.status !== "proposed");
+    const pushLater = () => {
+        const later = all.filter(isLater);
+        if (later.length > 0) {
+            out.push({
+                kind: "later",
+                id: laterRowId(oref),
+                oref,
+                rows: later.map((row) => ({
+                    id: chunkRowId(oref, row.label),
+                    row,
+                    notes: noteCounts.get(row.label) ?? 0,
+                })),
+            });
+        }
+    };
     if (chunks.length === 0) {
+        pushLater();
         return out;
     }
     const doneN = chunks.filter((c) => c.status === "done").length;
@@ -139,6 +168,7 @@ export function initiativeRows(args: {
         } else {
             pushPreview(chunks, id);
         }
+        pushLater();
         return out;
     }
     groupChunksByStage(chunks).forEach((group, at) => {
@@ -162,6 +192,7 @@ export function initiativeRows(args: {
             pushPreview(group.rows, id);
         }
     });
+    pushLater();
     return out;
 }
 

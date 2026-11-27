@@ -341,8 +341,11 @@ var effortReopenCmd = &cobra.Command{
 }
 
 var effortChunkAddCmd = &cobra.Command{
-	Use:     "add <effort> \"<label>\" [--at N] [--owner X] [--stage S] [--due YYYY-MM-DD|+Nd] [--priority critical|high|medium|low|information] [--proposed]",
-	Short:   "add a chunk (phase)",
+	Use:   "add <effort> \"<label>\" [--at N] [--owner X] [--stage S] [--due YYYY-MM-DD|+Nd] [--priority critical|high|medium|low|information] [--proposed] [--later]",
+	Short: "add a chunk (phase)",
+	Long: `Add a chunk to an initiative. --later saves it for later instead: a task or question kept on the Brief's Later
+section until someone resolves it. A later chunk is not part of the initiative's work: it is left out of done/total, and
+advance, Work on and runs never pick it up, whatever its priority.`,
 	Args:    cobra.ExactArgs(2),
 	PreRunE: preRunSetupRpcClient,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -369,6 +372,9 @@ func chunkAddOp(cmd *cobra.Command, args []string, now time.Time) (wshrpc.Effort
 	}
 	if p, _ := cmd.Flags().GetBool("proposed"); p {
 		op.Status = "proposed"
+	}
+	if l, _ := cmd.Flags().GetBool("later"); l {
+		op.Later = true
 	}
 	return op, nil
 }
@@ -482,6 +488,28 @@ revisit or a measurement to retake, and say in a chunk note what to measure and 
 		chunkRef(&op, args[1])
 		return mutateOne(args[0], op, isJSON(cmd))
 	},
+}
+
+var effortChunkLaterCmd = &cobra.Command{
+	Use:   "later <effort> <chunk> [--off]",
+	Short: "save a chunk for later, or with --off take it back into the plan",
+	Long: `Mark a chunk as saved for later. A later chunk is something to come back to (a question to take to someone, a
+task that can wait), not part of the initiative's work: it is left out of done/total and of the next chunk, so
+advance, Work on and runs never pick it up, and it waits in the Brief's Later section, never in Needs you, until it is
+done, skipped or deferred. --off drops the mark without finishing the chunk, so it is plan work again.`,
+	Args:    cobra.ExactArgs(2),
+	PreRunE: preRunSetupRpcClient,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		off, _ := cmd.Flags().GetBool("off")
+		return mutateOne(args[0], chunkLaterOp(args[1], off), isJSON(cmd))
+	},
+}
+
+// chunkLaterOp is the op `effort chunk later` sends: the mark on, or off with --off.
+func chunkLaterOp(chunk string, off bool) wshrpc.EffortOp {
+	op := wshrpc.EffortOp{Op: "setChunkLater", Later: !off}
+	chunkRef(&op, chunk)
+	return op
 }
 
 var effortChunkPriorityCmd = &cobra.Command{
@@ -664,11 +692,12 @@ func formatEffortShowWith(e *waveobj.Effort, drift chunkDrift) string {
 				fmt.Fprintf(&b, "  -- %s --\n", stage)
 			}
 		}
+		// the number is the chunk's place in the whole list, later chunks included: it is the ref `effort chunk` takes
 		mark := ""
 		if i == next {
 			mark = " ← next"
 		}
-		fmt.Fprintf(&b, "  %d. [%s] %s%s%s%s%s%s\n", i+1, c.Status, c.Label, ownerSuffix(c.Owner), dueSuffix(c.Due), prioritySuffix(c.Priority), baseSuffix(c, drift), mark)
+		fmt.Fprintf(&b, "  %d. [%s] %s%s%s%s%s%s%s\n", i+1, c.Status, c.Label, laterSuffix(c), ownerSuffix(c.Owner), dueSuffix(c.Due), prioritySuffix(c.Priority), baseSuffix(c, drift), mark)
 		for _, n := range c.Notes {
 			fmt.Fprintf(&b, "      · %s: %s\n", timeStr(n.Ts), n.Text)
 		}
@@ -676,25 +705,34 @@ func formatEffortShowWith(e *waveobj.Effort, drift chunkDrift) string {
 	return b.String()
 }
 
+// countDone is the progress done. A later chunk is not the initiative's work, so ticking one never moves it.
 func countDone(e *waveobj.Effort) int {
 	n := 0
 	for _, c := range e.Chunks {
-		if c.Status == "done" {
+		if c.Status == "done" && !c.Later {
 			n++
 		}
 	}
 	return n
 }
 
-// countProgress is the progress total.
+// countProgress is the progress total. A later chunk is left out, as the summary's Total leaves it out.
 func countProgress(e *waveobj.Effort) int {
 	n := 0
 	for _, c := range e.Chunks {
-		if inProgressTotal(c.Status) {
+		if inProgressTotal(c.Status) && !c.Later {
 			n++
 		}
 	}
 	return n
+}
+
+// laterSuffix marks a chunk saved for later on its line, so a reader of `show` knows it is not part of the plan.
+func laterSuffix(c waveobj.EffortChunk) string {
+	if !c.Later {
+		return ""
+	}
+	return " · later"
 }
 
 // inProgressTotal says whether a chunk counts toward the progress total, as the cockpit counts it (the initiative band
@@ -903,6 +941,8 @@ func init() {
 	effortChunkAddCmd.Flags().String("due", "", "the day it comes due: YYYY-MM-DD or +Nd")
 	effortChunkAddCmd.Flags().String("priority", "", "critical, high, medium, low or information: which open chunk opens first")
 	effortChunkAddCmd.Flags().Bool("proposed", false, "propose the chunk; it counts once accepted")
+	effortChunkAddCmd.Flags().Bool("later", false, "save it for later: kept on the Brief's Later section, not part of the plan")
+	effortChunkLaterCmd.Flags().Bool("off", false, "drop the later mark: the chunk is plan work again")
 	effortChunkStatusCmd.Flags().String("note", "", "annotation")
 	effortChunkRecheckCmd.Flags().String("note", "", "what was checked")
 	effortChunkNoteCmd.Flags().String("note", "", "annotation text (required)")
@@ -920,6 +960,6 @@ func init() {
 		effortDeleteCmd, effortAdvanceCmd, effortReopenCmd, effortStaleCmd, effortChunkCmd)
 	effortChunkCmd.AddCommand(effortChunkAddCmd, effortChunkRenameCmd, effortChunkRecheckCmd, effortChunkMoveCmd,
 		effortChunkRemoveCmd, effortChunkStatusCmd, effortChunkNoteCmd, effortChunkOwnerCmd,
-		effortChunkStageCmd, effortChunkDueCmd, effortChunkPriorityCmd, effortChunkAttachCmd, effortChunkDetachCmd, effortChunkBackfillBaseCmd)
+		effortChunkStageCmd, effortChunkDueCmd, effortChunkLaterCmd, effortChunkPriorityCmd, effortChunkAttachCmd, effortChunkDetachCmd, effortChunkBackfillBaseCmd)
 	rootCmd.AddCommand(effortCmd)
 }

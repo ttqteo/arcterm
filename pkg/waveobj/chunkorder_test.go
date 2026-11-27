@@ -88,6 +88,27 @@ func TestChunkOrderLeavesInputAlone(t *testing.T) {
 	}
 }
 
+// a later chunk is saved for later, not the initiative's work: whatever its level, it is in no order of work and is
+// never the next chunk (the filter comes before the rank)
+func TestChunkOrderLeavesLaterChunksOut(t *testing.T) {
+	chunks := []EffortChunk{
+		{Label: "a", Status: "pending", Priority: "low"},
+		{Label: "later critical", Status: "pending", Priority: "critical", Later: true},
+		{Label: "later active", Status: "active", Priority: "critical", Later: true},
+		{Label: "b", Status: "pending", Priority: "medium"},
+	}
+	if got, want := ChunkOrderOfWorkOf(chunks), []int{3, 0}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("order of work = %v, want %v (the later chunks are out; indices stay positions in the plan)", got, want)
+	}
+	if got := NextChunkIndexOf(chunks); got != 3 {
+		t.Fatalf("next chunk = %d, want 3 (the later critical chunk is not next)", got)
+	}
+	onlyLater := []EffortChunk{{Label: "l", Status: "pending", Priority: "critical", Later: true}}
+	if got := NextChunkIndexOf(onlyLater); got != -1 {
+		t.Fatalf("next chunk of an initiative holding only later chunks = %d, want -1", got)
+	}
+}
+
 func TestChunkRank(t *testing.T) {
 	f := loadChunkOrderFile(t)
 	if !reflect.DeepEqual(ChunkPriorities, f.Priorities) {

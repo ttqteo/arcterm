@@ -641,7 +641,8 @@ func learnSource(target string) string {
 
 // chunkDueItems are the open chunks whose due date has come, in initiatives still in play. A chunk leaves
 // the list when it is done, deferred or skipped, or its date moves on; the date is in the key, so a date
-// moved on that comes due again is news again.
+// moved on that comes due again is news again. A chunk saved for later is never listed: it waits in the Brief's
+// Later section, with its due chip once the day has come.
 func chunkDueItems(efforts []*waveobj.Effort, today string) []wshrpc.AttentionItem {
 	if today == "" {
 		return nil
@@ -652,6 +653,9 @@ func chunkDueItems(efforts []*waveobj.Effort, today string) []wshrpc.AttentionIt
 			continue
 		}
 		for _, c := range e.Chunks {
+			if c.Later {
+				continue // a saved item never needs you; its Later row carries the due chip
+			}
 			if c.Due == "" || c.Due > today {
 				continue
 			}

@@ -4,6 +4,7 @@
 // The initiative picker: a filter field over the initiatives of one project, "+ New initiative from this session" and the
 // other projects behind a count. The agent header's "Link to initiative" opens it, and the List's "Link to…" does too
 // (it leaves out the initiative being linked and everything beneath it). A pick is the initiative's oref, or "new".
+// Save for later opens it with `recent` (the newest initiatives first) and, from Chat's menu, at the pointer (`point`).
 
 import { PopoverReveal } from "@/app/element/popoverreveal";
 import { RpcApi } from "@/app/store/wshclientapi";
@@ -67,6 +68,8 @@ function PickerBody({
     excluding,
     newLabel,
     pickVerb,
+    recent,
+    title,
     onPick,
     onClose,
 }: {
@@ -76,6 +79,8 @@ function PickerBody({
     excluding?: readonly string[];
     newLabel: string | null;
     pickVerb: string;
+    recent: boolean;
+    title?: string;
     onPick: (pick: string) => void;
     onClose: () => void;
 }) {
@@ -83,16 +88,22 @@ function PickerBody({
     const [showOthers, setShowOthers] = useState(false);
     const [cursor, setCursor] = useState(0);
     const inputRef = useRef<HTMLInputElement>(null);
-    const rows = useMemo(() => pickerRows(cards ?? [], project, query, excluding), [cards, project, query, excluding]);
+    const rows = useMemo(
+        () => pickerRows(cards ?? [], project, query, excluding, { recent }),
+        [cards, project, query, excluding, recent]
+    );
     const filtering = query.trim() !== "";
-    // the cursor's order is the screen's: the rows, then the two actions, then the other projects once opened
+    // the cursor's order is the screen's: Recent, the project's rows, then the two actions, then the other projects once
+    // opened
     const items: Item[] = [
+        ...rows.recent.map((row): Item => ({ kind: "row", row })),
         ...rows.rows.map((row): Item => ({ kind: "row", row })),
         ...(newLabel != null ? [{ kind: "new" } as Item] : []),
         ...(rows.otherCount > 0 ? [{ kind: "others" } as Item] : []),
         ...(showOthers ? rows.others.map((row): Item => ({ kind: "row", row })) : []),
     ];
     const cur = Math.min(cursor, Math.max(0, items.length - 1));
+    const recentCount = rows.recent.length;
     const cursorEl = useRef<HTMLElement | null>(null);
 
     useEffect(() => {
@@ -157,7 +168,7 @@ function PickerBody({
                     className={cn(ROW_BASE, "h-[34px]", active ? "bg-surface-selected" : "hover:bg-surface-hover")}
                 >
                     <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink-hi">{item.row.title}</span>
-                    {filtering && item.row.project !== project ? (
+                    {(filtering || index < recentCount) && item.row.project !== project ? (
                         <span className="max-w-[80px] flex-none truncate text-[10.5px] text-ink-faint">
                             {item.row.project || "no project"}
                         </span>
@@ -210,10 +221,13 @@ function PickerBody({
     };
 
     const own = rows.rows.length;
+    // the project holds nothing the person can pick: none left in its list, and none of the Recent ones are its own
+    const projectEmpty = own === 0 && !rows.recent.some((r) => r.project === project);
+    const listed = recentCount + own;
     return (
         <div
             role="dialog"
-            aria-label="Link to an initiative"
+            aria-label={title ?? "Link to an initiative"}
             data-initiative-picker
             data-owns-keys
             tabIndex={-1}
@@ -230,8 +244,8 @@ function PickerBody({
                             setQuery(e.target.value);
                             setCursor(0);
                         }}
-                        aria-label="Find an initiative"
-                        placeholder="Find an initiative"
+                        aria-label={title ?? "Find an initiative"}
+                        placeholder={title ?? "Find an initiative"}
                         className="min-w-0 flex-1 border-0 bg-transparent text-[12px] text-ink-hi outline-none placeholder:text-ink-faint"
                     />
                 </label>
@@ -245,19 +259,28 @@ function PickerBody({
                         {error}
                     </div>
                 ) : null}
-                {cards != null && !filtering ? (
+                {cards != null && recentCount > 0 ? (
+                    <div
+                        data-picker-recent
+                        className="px-[8px] py-[4px] text-[10.5px] font-bold uppercase tracking-[.1em] text-ink-mid"
+                    >
+                        Recent
+                    </div>
+                ) : null}
+                {items.slice(0, recentCount).map((it, i) => rowEl(it, i))}
+                {cards != null && !filtering && (own > 0 || projectEmpty) ? (
                     <div className="px-[8px] py-[4px] text-[10.5px] font-bold uppercase tracking-[.1em] text-ink-mid">
                         {project || "No project"}
                     </div>
                 ) : null}
-                {cards != null && own === 0 ? (
+                {cards != null && projectEmpty ? (
                     <div className="px-[8px] py-[6px] text-[11.5px] text-muted">
                         {filtering ? "No initiative matches." : `No initiatives in ${project || "this project"} yet.`}
                     </div>
                 ) : null}
-                {items.slice(0, own).map((it, i) => rowEl(it, i))}
-                {items.length > own ? <div aria-hidden className="mx-[6px] my-[5px] h-px bg-edge-mid" /> : null}
-                {items.slice(own).map((it, i) => rowEl(it, own + i))}
+                {items.slice(recentCount, listed).map((it, i) => rowEl(it, recentCount + i))}
+                {items.length > listed ? <div aria-hidden className="mx-[6px] my-[5px] h-px bg-edge-mid" /> : null}
+                {items.slice(listed).map((it, i) => rowEl(it, listed + i))}
             </div>
             <div className="flex gap-[12px] border-t border-edge-mid px-[12px] py-[8px] text-[10.5px] text-ink-mid">
                 <span className="flex items-center gap-[5px]">
@@ -286,15 +309,21 @@ function PickerBody({
 export function InitiativePicker({
     open,
     anchor,
+    point,
     project,
     excluding,
     newLabel = "+ New initiative from this session",
     pickVerb = "link",
+    recent = false,
+    title,
     onPick,
     onClose,
 }: {
     open: boolean;
+    // the element the picker opens under; null while `point` places it
     anchor: HTMLElement | null;
+    // where the picker opens when nothing is its anchor: a viewport position, the context menu's pointer
+    point?: { x: number; y: number };
     // the agent's project, whose initiatives come first
     project: string;
     // initiatives left out (the one being linked and its descendants, for the List's Link to…)
@@ -302,6 +331,10 @@ export function InitiativePicker({
     // the row that makes a new initiative; null leaves it out
     newLabel?: string | null;
     pickVerb?: string;
+    // draws "Recent" (the initiatives touched last, in every project) over the project's list, until a query is typed
+    recent?: boolean;
+    // the filter's placeholder and the dialog's name (default "Find an initiative"), e.g. "Save for later in…"
+    title?: string;
     onPick: (pick: string) => void;
     onClose: () => void;
 }) {
@@ -319,6 +352,26 @@ export function InitiativePicker({
         middleware: [offset(6), flip({ padding: 8 }), shift({ padding: 8 })],
         whileElementsMounted: open ? autoUpdate : undefined,
     });
+    // a virtual reference at the pointer, as the context menu places itself
+    const pointX = point?.x;
+    const pointY = point?.y;
+    useEffect(() => {
+        if (pointX == null || pointY == null) {
+            return;
+        }
+        refs.setPositionReference({
+            getBoundingClientRect: () => ({
+                width: 0,
+                height: 0,
+                x: pointX,
+                y: pointY,
+                top: pointY,
+                left: pointX,
+                right: pointX,
+                bottom: pointY,
+            }),
+        });
+    }, [pointX, pointY, refs]);
     // Escape is the body's own (it stops the key there); this is the press outside, which the trigger is not
     const { getFloatingProps } = useInteractions([useDismiss(context, { escapeKey: false })]);
     // React events bubble through a portal to what opened it: a click in the picker is not that element's
@@ -337,6 +390,8 @@ export function InitiativePicker({
                         excluding={excluding}
                         newLabel={newLabel}
                         pickVerb={pickVerb}
+                        recent={recent}
+                        title={title}
                         onPick={onPick}
                         onClose={onClose}
                     />

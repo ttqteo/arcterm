@@ -65,9 +65,39 @@ export interface ChatBox {
 
 const boxes = new Map<string, ChatBox>();
 
+// A quote waiting for an agent whose box is not mounted yet (a session just resumed in a new tab), one per agent: the
+// newer replaces the older. It is applied, and forgotten, when that agent's box registers.
+type QuoteMaker = (box: string) => string | null;
+const heldQuotes = new Map<string, QuoteMaker>();
+
+// the box's text with the quote built from it, the box taking the focus; false when there is nothing to add or the box
+// would not take it
+function applyQuote(box: ChatBox, quote: QuoteMaker): boolean {
+    const next = quote(box.text());
+    return next != null && box.replace(next);
+}
+
+// Puts a quote into the agent's chat box: at once when the box is mounted, else when it mounts. `quote` gets the box's
+// text at that moment (withChatQuote adds the passage under it) and answers the new text, or null for nothing to add.
+// True when the box took it now; false when it was held for the box to come, or the box refused it (a wake in flight).
+export function quoteWhenReady(agentId: string, quote: QuoteMaker): boolean {
+    const box = boxes.get(agentId);
+    if (box == null) {
+        heldQuotes.set(agentId, quote);
+        return false;
+    }
+    heldQuotes.delete(agentId);
+    return applyQuote(box, quote);
+}
+
 // returns the unregister; a remount that registered the agent again first is left alone
 export function registerChatBox(agentId: string, box: ChatBox): () => void {
     boxes.set(agentId, box);
+    const held = heldQuotes.get(agentId);
+    if (held != null) {
+        heldQuotes.delete(agentId);
+        applyQuote(box, held);
+    }
     return () => {
         if (boxes.get(agentId) === box) {
             boxes.delete(agentId);

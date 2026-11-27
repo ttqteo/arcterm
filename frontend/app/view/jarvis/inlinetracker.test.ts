@@ -206,6 +206,86 @@ describe("initiativeRows with proposed chunks", () => {
     });
 });
 
+describe("initiativeRows with chunks saved for later", () => {
+    const later = (label: string, status = "pending", due?: string): ChunkRowModel => ({
+        ...chunk(label, status, ""),
+        later: true,
+        due,
+    });
+    // two later chunks stand before the plan's pending chunks, and a third after it
+    const LATER = [later("L1 saved first", "pending", "2026-11-27"), later("L2 saved second", "active")];
+    const withLater = [...LATER, ...CHUNKS, later("L3 saved last", "done")];
+
+    it("holds them out of the plan, the stage groups and the facts count, and draws them as one group after the plan", () => {
+        const rows = initiativeRows({ ...base, chunks: withLater });
+        expect(ids(rows.filter((r) => r.kind !== "later"))).toEqual(ids(initiativeRows(base)));
+        expect(rows.find((r) => r.kind === "facts")).toMatchObject({ count: "4 chunks · 2 done" });
+        expect(rows.filter((r) => r.kind === "stage").map((s) => s.kind === "stage" && s.total)).toEqual([2, 2]);
+        expect(rows.map((r) => r.kind)).toEqual([
+            "facts",
+            "stage",
+            "chunk",
+            "chunk",
+            "stage",
+            "chunk",
+            "chunk",
+            "later",
+        ]);
+    });
+
+    it("lists every later chunk, whatever its status, in chunk order with its notes and due", () => {
+        const rows = initiativeRows({ ...base, chunks: withLater, noteCounts: new Map([["L2 saved second", 3]]) });
+        const group = rows.find((r): r is Extract<DetailRow, { kind: "later" }> => r.kind === "later");
+        expect(group).toMatchObject({ id: OREF + "/later", oref: OREF });
+        expect(group?.rows.map((r) => [r.id, r.row.label, r.row.status, r.notes])).toEqual([
+            [chunkRowId(OREF, "L1 saved first"), "L1 saved first", "pending", 0],
+            [chunkRowId(OREF, "L2 saved second"), "L2 saved second", "active", 3],
+            [chunkRowId(OREF, "L3 saved last"), "L3 saved last", "done", 0],
+        ]);
+        expect(group?.rows[0].row.due).toBe("2026-11-27");
+    });
+
+    it("never marks a later chunk as the one picked up next", () => {
+        const rows = initiativeRows({ ...base, chunks: withLater });
+        const next = rows.filter((r) => r.kind === "chunk" && r.next).map((r) => r.kind === "chunk" && r.row.label);
+        expect(next).toEqual(["S8 item #2 campaign-level narration"]);
+    });
+
+    it("leaves a plan of pending chunks to its own first one when a later chunk stands ahead of it", () => {
+        const rows = initiativeRows({
+            ...base,
+            chunks: [later("L"), chunk("A", "pending", ""), chunk("B", "pending", "")],
+        });
+        expect(rows.filter((r) => r.kind === "chunk").map((r) => r.kind === "chunk" && r.next)).toEqual([true, false]);
+        expect(rows.find((r) => r.kind === "facts")).toMatchObject({ count: "2 chunks · 0 done" });
+    });
+
+    it("makes no stage of a later chunk's stage and keeps a flat plan flat", () => {
+        const staged = { ...later("L"), stage: "Ticket #9" };
+        const rows = initiativeRows({ ...base, chunks: [...FLAT, staged] });
+        expect(rows.some((r) => r.kind === "stage")).toBe(false);
+        expect(rows.filter((r) => r.kind === "chunk")).toHaveLength(3);
+    });
+
+    it("draws the Later group for an initiative whose only chunks are later", () => {
+        const rows = initiativeRows({ ...base, chunks: LATER });
+        expect(rows.map((r) => r.kind)).toEqual(["later"]);
+        expect(rows[0].kind === "later" && rows[0].rows.map((r) => r.row.label)).toEqual([
+            "L1 saved first",
+            "L2 saved second",
+        ]);
+    });
+
+    it("draws the Later group after the proposed group when both exist and nothing else is planned", () => {
+        const rows = initiativeRows({ ...base, chunks: [...LATER, chunk("P", "proposed", "")] });
+        expect(rows.map((r) => r.kind)).toEqual(["proposed", "later"]);
+    });
+
+    it("draws no group when no chunk is later", () => {
+        expect(initiativeRows(base).some((r) => r.kind === "later")).toBe(false);
+    });
+});
+
 describe("chunkDueChip", () => {
     it("reads the day, and turns asking once it has come", () => {
         expect(chunkDueChip("2026-10-20", "pending", "2026-10-19")).toEqual({ text: "due 10-20", come: false });

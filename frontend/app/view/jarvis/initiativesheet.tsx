@@ -65,6 +65,7 @@ import { pickInitiativeProject, workOnInitiative, type WorkOnTarget } from "./in
 import { chunkRowId, initiativeRows, type DetailRow } from "./inlinetracker";
 import { IdeaDetail, InitiativeDetail, type TrackerEdits } from "./inlinetrackerview";
 import { briefInitiativeListAtom, initiativeSheetRequestAtom } from "./jarvisstore";
+import { isLater } from "./laterchunk";
 import { openOrPeekAddress } from "./openref";
 import { runReviewListedAtom } from "./runreviewstore";
 import { STAGE_SCROLLER } from "./stagemeasure";
@@ -82,9 +83,10 @@ const STEP_BTN = cn(
 );
 
 // the plan's progress as the head reads it: proposed chunks are not part of the work yet, skipped ones leave the count
-// (the card's rule, effortmodel.ts buildEffortCard)
+// (the card's rule, effortmodel.ts buildEffortCard), and a chunk saved for later is kept rather than worked, so it is no
+// part of the plan's count or bar
 function progressOf(chunks: ChunkRowModel[]): { done: number; total: number; pct: number; segments: ChunkTone[] } {
-    const counted = chunks.filter((c) => c.status !== "proposed" && c.status !== "skipped");
+    const counted = chunks.filter((c) => !isLater(c) && c.status !== "proposed" && c.status !== "skipped");
     const done = counted.filter((c) => c.status === "done").length;
     return {
         done,
@@ -417,33 +419,22 @@ export function InitiativeChunkList({
     if (effort == null || edits == null) {
         return null;
     }
+    // a row's id names a plan chunk, or one of the Later group's
     const labelOf = (id: string): string | null => {
-        const row = rows.find((r) => r.id === id);
-        return row?.kind === "chunk" ? row.row.label : null;
+        for (const r of rows) {
+            if (r.kind === "chunk" && r.id === id) {
+                return r.row.label;
+            }
+            const held = r.kind === "later" ? r.rows.find((l) => l.id === id) : undefined;
+            if (held != null) {
+                return held.row.label;
+            }
+        }
+        return null;
     };
-    const planned = rows.some((r) => r.kind === "chunk" || r.kind === "stage");
-    if (!planned) {
-        const proposed = rows.find((r): r is Extract<DetailRow, { kind: "proposed" }> => r.kind === "proposed");
-        return (
-            <IdeaDetail
-                jotted={noteStamp(effort.createdts)}
-                edits={edits}
-                proposed={proposed?.rows}
-                onPlan={() =>
-                    fireAndForget(() =>
-                        workOnInitiative(
-                            model,
-                            { oref, title: effort.title, project: effort.project, lastnote: card?.lastnote },
-                            "plan"
-                        )
-                    )
-                }
-            />
-        );
-    }
-    return (
+    const detail = (shown: DetailRow[]) => (
         <InitiativeDetail
-            rows={rows}
+            rows={shown}
             cursor={cursor != null ? chunkRowId(oref, cursor) : undefined}
             edits={edits}
             stale={stale}
@@ -466,6 +457,33 @@ export function InitiativeChunkList({
             onToggleStage={(id, open) => setOverrides({ ...overrides, [id]: open })}
         />
     );
+    const planned = rows.some((r) => r.kind === "chunk" || r.kind === "stage");
+    if (!planned) {
+        const proposed = rows.find((r): r is Extract<DetailRow, { kind: "proposed" }> => r.kind === "proposed");
+        // an initiative that holds only saved-for-later chunks still has no plan (it is an idea): the Later group draws
+        // above the ways to give it one, so the items it was made to keep are the first thing the sheet shows
+        const later = rows.filter((r) => r.kind === "later");
+        return (
+            <>
+                {later.length > 0 ? detail(later) : null}
+                <IdeaDetail
+                    jotted={noteStamp(effort.createdts)}
+                    edits={edits}
+                    proposed={proposed?.rows}
+                    onPlan={() =>
+                        fireAndForget(() =>
+                            workOnInitiative(
+                                model,
+                                { oref, title: effort.title, project: effort.project, lastnote: card?.lastnote },
+                                "plan"
+                            )
+                        )
+                    }
+                />
+            </>
+        );
+    }
+    return detail(rows);
 }
 
 // the plan's rows as the sheet lays them out, the chunks and notes waiting out a delete left out
@@ -493,7 +511,11 @@ function usePlanKeys(oref: string, state: InitiativeEditsState) {
     const [cursor, setCursor] = useAtom(initiativeCursorAtom);
     const setMove = useSetAtom(sheetChunkMoveAtom);
     const chunks = rows.filter((r): r is Extract<DetailRow, { kind: "chunk" }> => r.kind === "chunk");
-    const labels = chunks.map((c) => c.row.label);
+    // the cursor walks the plan, then the Later group's chunks (which are no part of the plan but can be opened)
+    const labels = [
+        ...chunks.map((c) => c.row.label),
+        ...rows.flatMap((r) => (r.kind === "later" ? r.rows.map((l) => l.row.label) : [])),
+    ];
     const at = cursor != null ? labels.indexOf(cursor) : -1;
     // the latest plan for the bindings, which are built once
     const live = useRef({ labels, at, next: chunks.find((c) => c.next)?.row.label ?? null, cursor });

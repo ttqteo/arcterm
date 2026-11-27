@@ -21,6 +21,7 @@
 // model's answers and makes the call, chatpane.tsx wires the two.
 
 import { orderOfWork } from "@/app/view/jarvis/chunkorder";
+import { planChunks } from "@/app/view/jarvis/laterchunk";
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
 import type { HintPart } from "./chatboxstate";
 import { agentChunk } from "./initiativepopovermodel";
@@ -48,6 +49,7 @@ export interface ChipEffort {
     chunks?: {
         label: string;
         status: string;
+        later?: boolean;
         priority?: string;
         workrefs?: { kind: string; oref: string; ts?: number }[];
     }[];
@@ -292,7 +294,8 @@ export function ruleChips(
  *  done:; a workref with no stamp, or no `turnEnded`, is as it always was. Once every chunk the agent held is settled,
  *  the first chunk in the order of work (chunkorder.ts: where the initiative goes on, by priority) that is active or
  *  pending and that no other agent or run holds is offered as a message to go on with, wherever it sits in the plan. A
- *  proposed chunk is nobody's work yet. */
+ *  proposed chunk is nobody's work yet, and a chunk saved for later is kept rather than worked: neither is ticked or
+ *  gone on with, and a later chunk of any level is never the one offered. */
 export function initiativeChips(
     effort: ChipEffort | null | undefined,
     tabId: string,
@@ -300,7 +303,7 @@ export function initiativeChips(
     vi: boolean,
     turnEnded?: number
 ): ChatChip[] {
-    const chunks = (effort?.chunks ?? []).filter((c) => c.status !== "proposed");
+    const chunks = planChunks(effort?.chunks ?? []).filter((c) => c.status !== "proposed");
     if (chunks.length === 0) {
         return [];
     }

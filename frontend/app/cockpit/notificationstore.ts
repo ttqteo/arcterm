@@ -17,6 +17,12 @@ export interface ToastEyebrow {
     runtime?: string;
 }
 
+/** A button on a toast. `at` is where it was pressed (a viewport point), for an action that opens something there. */
+export interface ToastAction {
+    label: string;
+    run: (at?: { x: number; y: number }) => void;
+}
+
 export interface ToastNotification {
     id: number;
     title: string;
@@ -25,7 +31,9 @@ export interface ToastNotification {
     eyebrow?: ToastEyebrow;
     onOpen?: () => void;
     // a button on the toast ("Undo"): runs, and the toast closes
-    action?: { label: string; run: () => void };
+    action?: ToastAction;
+    // a second button beside it ("Open" and "Move to…"): the two then sit in a row under the message
+    alt?: ToastAction;
     // a green check before the title of a plain toast: something was done ("Link copied")
     check?: boolean;
     // how long it stays, TOAST_TTL_MS when unset: something waiting on you is given longer to be read
@@ -65,11 +73,13 @@ export function dismissToast(id: number): void {
     globalStore.set(toastsAtom, (prev) => prev.filter((t) => t.id !== id));
 }
 
-/** Runs a toast's action button and closes the toast; a toast with no action, or one that is gone, just closes. */
-export function runToastAction(id: number): void {
-    const action = globalStore.get(toastsAtom).find((t) => t.id === id)?.action;
+/** Runs a toast's action button (`which`: its first, or the second beside it) and closes the toast; a toast with no such
+ *  action, or one that is gone, just closes. `at` is where the button was pressed, which the action gets. */
+export function runToastAction(id: number, which: "action" | "alt" = "action", at?: { x: number; y: number }): void {
+    const toast = globalStore.get(toastsAtom).find((t) => t.id === id);
+    const action = which === "alt" ? toast?.alt : toast?.action;
     dismissToast(id);
-    action?.run();
+    action?.run(at);
 }
 
 /** Stops a toast's clock while you read it (the pointer is on it). */

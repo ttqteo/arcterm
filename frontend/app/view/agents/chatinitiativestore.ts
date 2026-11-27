@@ -27,7 +27,9 @@ import {
     coerceLines,
     effortOref,
     fitBytes,
+    isLaterDraft,
     messageDraftKey,
+    NEW_TARGET,
     pendingSwitch,
     putBackLines,
     queueLine,
@@ -50,6 +52,8 @@ import {
     type MessageCard,
     type PendingMap,
 } from "./chatinitiative";
+import { savedBody } from "./chatsaveselection";
+import { saveLaterTo, type LaterFrom } from "./savelater";
 
 export const HANDLED_STORAGE_KEY = "chat.initiative.handled";
 export const CARDS_STORAGE_KEY = "chat.initiative.cards";
@@ -267,11 +271,45 @@ async function titleOf(oref: string): Promise<string | undefined> {
     }
 }
 
+// A later list (Builder's call 13): each remaining row is one later chunk whose first note quotes the row under where it was
+// said (savedBody), written in one batch so the add is all or nothing. The target is an initiative's oref, or "new" for a new
+// initiative made as Save as idea makes one, named by the card's heading (from.title). When the add fails after the new
+// initiative was made, the rejection is savelater.ts's LaterSaveError, which carries it: the card then targets that
+// initiative, so its Try again adds the rows there instead of making a second one.
+async function writeLaterList(
+    draft: InitiativeDraft & { later: string[] },
+    from: LaterFrom | undefined
+): Promise<HandledRecord> {
+    if (from == null) {
+        throw new Error("A list left for later needs the agent it came from");
+    }
+    if (draft.effort == null) {
+        throw new Error("Pick an initiative first");
+    }
+    const now = new Date();
+    // with the conversation's id on the chunk's note, the tab's address would only go stale: it is left out, as Add note does
+    const saved = { agentId: from.agentId, name: from.name };
+    const items = draft.later.map((text) => ({
+        label: text,
+        note: savedBody(text, saved, now, from.conversation == null),
+    }));
+    const done = await saveLaterTo(draft.effort === NEW_TARGET ? "new" : effortOref(draft.effort), items, from);
+    return addedRecord(draft, { initiative: done.title, effort: done.oref }, Date.now());
+}
+
 /** Writes the card's draft: a note on a chunk (appendChunkNote), a chunk at the end of the initiative (addChunkOp, its label
- *  clipped), or a new initiative (EffortCreateCommand, as effortcreateform.tsx calls it, with its topic and first chunks and
- *  in `project`). Resolves with the record of what was added. A refusal rejects with wavesrv's message, for the card to show;
- *  nothing is swallowed. */
-export async function writeInitiative(draft: InitiativeDraft, project: string | undefined): Promise<HandledRecord> {
+ *  clipped), a new initiative (EffortCreateCommand, as effortcreateform.tsx calls it, with its topic and first chunks and
+ *  in `project`), or a later list's rows as later chunks (saveLaterTo, which needs `from`: the agent they came from).
+ *  Resolves with the record of what was added. A refusal rejects with wavesrv's message, for the card to show; nothing is
+ *  swallowed. A later list to a new initiative that was made but not filled rejects with a LaterSaveError. */
+export async function writeInitiative(
+    draft: InitiativeDraft,
+    project: string | undefined,
+    from?: LaterFrom
+): Promise<HandledRecord> {
+    if (isLaterDraft(draft)) {
+        return writeLaterList(draft, from);
+    }
     if (draft.kind === "initiative") {
         const title = fitBytes(draft.title, MAX_CREATE_BYTES);
         const parent = draft.parent != null ? effortOref(draft.parent) : "";

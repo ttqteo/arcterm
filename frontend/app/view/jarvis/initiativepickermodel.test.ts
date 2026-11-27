@@ -75,6 +75,72 @@ describe("pickerRows", () => {
     });
 });
 
+describe("pickerRows with recent", () => {
+    const at = (oid: string, updatedts: number, over: Partial<EffortSummary> = {}) =>
+        buildEffortCard(summary(oid, { updatedts, ...over }));
+    const dated = [
+        at("A", 50),
+        at("B", 10),
+        at("C", 40),
+        at("D", 60, { project: "mit-thesis" }),
+        at("E", 20, { project: "vnstock-js" }),
+        at("Idea", 99, { chunks: [] }),
+        at("Old", 98, { status: "archived" }),
+    ];
+
+    it("leaves recent empty unless asked", () => {
+        expect(pickerRows(dated, "arcterm", "").recent).toEqual([]);
+        expect(pickerRows(dated, "arcterm", "", [], {}).recent).toEqual([]);
+        expect(pickerRows(dated, "arcterm", "", [], { recent: false }).rows.map((x) => x.title)).toEqual([
+            "A",
+            "B",
+            "C",
+        ]);
+    });
+
+    it("takes the 3 newest picker-eligible initiatives of every project, newest first, never an idea or an archived one", () => {
+        const r = pickerRows(dated, "arcterm", "", [], { recent: true });
+        expect(r.recent.map((x) => x.title)).toEqual(["D", "A", "C"]);
+        expect(r.recent[0]).toMatchObject({ oref: "effort:D", project: "mit-thesis", progress: "0/1" });
+    });
+
+    it("takes the recent ones out of the project's rows and of the other projects", () => {
+        const r = pickerRows(dated, "arcterm", "", [], { recent: true });
+        expect(r.rows.map((x) => x.title)).toEqual(["B"]);
+        expect(r.others.map((x) => x.title)).toEqual(["E"]);
+        expect(r.otherCount).toBe(1);
+    });
+
+    it("hides the Other projects count when the recent ones were all of them", () => {
+        const two = [at("A", 5), at("D", 9, { project: "mit-thesis" })];
+        const r = pickerRows(two, "arcterm", "", [], { recent: true });
+        expect(r.recent.map((x) => x.title)).toEqual(["D", "A"]);
+        expect(r.rows).toEqual([]);
+        expect(r.others).toEqual([]);
+        expect(r.otherCount).toBe(0);
+    });
+
+    it("hides recent while a query is typed", () => {
+        const r = pickerRows(dated, "arcterm", "a", [], { recent: true });
+        expect(r.recent).toEqual([]);
+        expect(r.rows.map((x) => x.title)).toEqual(["A"]);
+    });
+
+    it("leaves an excluded initiative out of recent too", () => {
+        const r = pickerRows(dated, "arcterm", "", ["effort:D"], { recent: true });
+        expect(r.recent.map((x) => x.title)).toEqual(["A", "C", "E"]);
+        expect(r.rows.map((x) => x.title)).toEqual(["B"]);
+        expect(r.others).toEqual([]);
+    });
+
+    it("keeps the list's order between initiatives updated at the same time", () => {
+        const same = [at("X", 7), at("Y", 7), at("Z", 7), at("W", 7)];
+        const r = pickerRows(same, "arcterm", "", [], { recent: true });
+        expect(r.recent.map((x) => x.title)).toEqual(["X", "Y", "Z"]);
+        expect(r.rows.map((x) => x.title)).toEqual(["W"]);
+    });
+});
+
 describe("descendantOrefs", () => {
     it("is the initiative itself and everything beneath it", () => {
         const tree = [

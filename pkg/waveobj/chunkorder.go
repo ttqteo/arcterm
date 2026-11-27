@@ -92,12 +92,24 @@ func NextChunkIndex(n int, at func(i int) (status, priority string)) int {
 	return -1
 }
 
-// ChunkOrderOfWorkOf is ChunkOrderOfWork over an effort's chunks.
-func ChunkOrderOfWorkOf(chunks []EffortChunk) []int {
-	return ChunkOrderOfWork(len(chunks), func(i int) (string, string) { return chunks[i].Status, chunks[i].Priority })
+// chunkWorkAt reads chunk i for the order of work. A later chunk (EffortChunk.Later) is saved for later, not the
+// initiative's work, so it reads as no status and is in no order: the filter comes before the rank, so a later chunk
+// of any priority is never next. The indices stay positions in chunks.
+func chunkWorkAt(chunks []EffortChunk) func(i int) (string, string) {
+	return func(i int) (string, string) {
+		if chunks[i].Later {
+			return "", ""
+		}
+		return chunks[i].Status, chunks[i].Priority
+	}
 }
 
-// NextChunkIndexOf is NextChunkIndex over an effort's chunks.
+// ChunkOrderOfWorkOf is ChunkOrderOfWork over an effort's chunks, later chunks left out.
+func ChunkOrderOfWorkOf(chunks []EffortChunk) []int {
+	return ChunkOrderOfWork(len(chunks), chunkWorkAt(chunks))
+}
+
+// NextChunkIndexOf is NextChunkIndex over an effort's chunks, later chunks left out.
 func NextChunkIndexOf(chunks []EffortChunk) int {
-	return NextChunkIndex(len(chunks), func(i int) (string, string) { return chunks[i].Status, chunks[i].Priority })
+	return NextChunkIndex(len(chunks), chunkWorkAt(chunks))
 }

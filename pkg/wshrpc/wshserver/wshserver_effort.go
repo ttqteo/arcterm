@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -72,6 +73,7 @@ func (ws *WshServer) EffortCreateCommand(ctx context.Context, data wshrpc.Comman
 			if proposer.Session != "" {
 				c.Notes = append(c.Notes, waveobj.EffortNote{
 					Ts: now, Text: jarvis.ProposedNote, Author: proposer.Who, Session: proposer.Session, Run: proposer.Run,
+					Conversation: proposer.Conversation,
 				})
 			}
 		}
@@ -373,6 +375,9 @@ func noteAuthorFor(ctx context.Context, data wshrpc.CommandEffortMutateData) jar
 // agentAuthorForBlock is the author of what an agent writes from a terminal: the tab of sourceBlock is its session,
 // and the run owning that tab, if any, its run (a dag child's included: the run it belongs to). `wsh effort` writes
 // notes through it, both a mutate batch (noteAuthorFor) and a create (EffortCreateCommand --proposed).
+//
+// Every agent note also names the conversation: the stem of the block's transcript file, which is what a past session is
+// reopened by (SessionActivity.id) and, unlike the tab, survives a resume. A block that reports no transcript yet leaves it "".
 func agentAuthorForBlock(ctx context.Context, sourceBlock string) jarvis.NoteAuthor {
 	by := jarvis.NoteAuthor{Who: "agent"}
 	if oref, err := waveobj.ParseORef(sourceBlock); err == nil && oref.OType == waveobj.OType_Block {
@@ -380,10 +385,25 @@ func agentAuthorForBlock(ctx context.Context, sourceBlock string) jarvis.NoteAut
 			if tab, err := waveobj.ParseORef(block.ParentORef); err == nil && tab.OType == waveobj.OType_Tab {
 				by.Session = "agent:" + tab.OID
 			}
+			by.Conversation = transcriptStem(block.Meta.GetString(waveobj.MetaKey_AgentTranscriptPath, ""))
 		}
 	}
 	if run, _, ok := ownerRunForBlock(ctx, sourceBlock); ok {
 		by.Run = "run:" + run.OID
 	}
 	return by
+}
+
+// transcriptStem is a transcript file's name without its extension, the conversation id (the frontend's
+// sessionIdFromTranscript reads the same name). "" for no path.
+func transcriptStem(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return ""
+	}
+	// both separators, whichever OS wrote the path: a Windows path read on a Mac still ends in its file name
+	if i := strings.LastIndexAny(path, `/\`); i >= 0 {
+		path = path[i+1:]
+	}
+	return strings.TrimSuffix(path, filepath.Ext(path))
 }

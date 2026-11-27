@@ -27,7 +27,10 @@ import {
     foldRowParts,
     hasInitiativeBlock,
     isFreshMessageCard,
+    isLaterDraft,
     kindLabel,
+    laterRowKeys,
+    laterVerb,
     messageDraftKey,
     parseInitiativeBlock,
     pendingSwitch,
@@ -48,8 +51,10 @@ import {
     withEffort,
     withHandled,
     withKind,
+    withLaterTarget,
     withMessageCard,
     withoutKey,
+    withoutLaterItem,
     withoutSwitchLine,
     withSwitchHeld,
     withResultLines,
@@ -1051,5 +1056,345 @@ describe("drafts", () => {
         expect(withoutKey(m, "k1")).toEqual({});
         expect(withoutKey(m, "k2")).toBe(m);
         expect(m.k1.text).toBe("one");
+    });
+});
+
+// a list the agent leaves for later (docs/superpowers/specs/2026-11-27-ask-later-design.md Decision 4, Builder's call 13)
+describe("a later list", () => {
+    const ITEMS = [
+        "push DEV",
+        "delete the backup branch",
+        "check where the parser branch stands",
+        "decide which parser takes the logs",
+    ];
+    const laterBlock: InitiativeBlock = { kind: "chunk", later: true, text: "Left for later", chunks: ITEMS };
+    const laterRaw = JSON.stringify({ kind: "chunk", later: true, text: "Left for later", chunks: ITEMS });
+    // the draft of an agent linked to AGENT
+    const draft = (over: Partial<InitiativeDraft> = {}): InitiativeDraft => ({
+        ...draftFromBlock(laterBlock, ctx),
+        ...over,
+    });
+    const record = (over: Partial<HandledRecord> = {}): HandledRecord => ({
+        outcome: "added",
+        kind: "chunk",
+        effort: AGENT,
+        initiative: "GUI redesign",
+        text: "Left for later",
+        later: 3,
+        at: 1000,
+        ...over,
+    });
+
+    describe("the block", () => {
+        it("reads later: true on a chunk block that lists chunks", () => {
+            expect(parseInitiativeBlock(laterRaw)).toEqual(laterBlock);
+        });
+
+        it("leaves a later block with no list a plain chunk", () => {
+            const block = parseInitiativeBlock(JSON.stringify({ kind: "chunk", later: true, text: "one thing" }))!;
+            expect(block).toEqual({ kind: "chunk", text: "one thing" });
+            expect("later" in block).toBe(false);
+            const blank = parseInitiativeBlock(
+                JSON.stringify({ kind: "chunk", later: true, text: "x", chunks: [" ", 4] })
+            )!;
+            expect("later" in blank).toBe(false);
+        });
+
+        it("reads only the boolean true", () => {
+            for (const later of [false, "true", 1, null]) {
+                const block = parseInitiativeBlock(JSON.stringify({ kind: "chunk", later, text: "x", chunks: ["a"] }))!;
+                expect("later" in block).toBe(false);
+            }
+        });
+
+        it("leaves a note and an initiative as they were", () => {
+            expect(
+                parseInitiativeBlock(JSON.stringify({ kind: "note", later: true, text: "x", chunks: ["a"] }))
+            ).toEqual({ kind: "note", text: "x", chunks: ["a"] });
+            expect(
+                parseInitiativeBlock(JSON.stringify({ kind: "initiative", later: true, text: "x", chunks: ["a"] }))
+            ).toEqual({ kind: "initiative", text: "x", chunks: ["a"] });
+        });
+
+        it("keeps a plain chunk's listed chunks as they were", () => {
+            expect(parseInitiativeBlock(JSON.stringify({ kind: "chunk", text: "x", chunks: ["a"] }))).toEqual({
+                kind: "chunk",
+                text: "x",
+                chunks: ["a"],
+            });
+        });
+
+        it("is keyed apart from the same list written as a plain chunk", () => {
+            const { later: _later, ...plain } = laterBlock;
+            expect(blockKey(laterBlock)).not.toBe(blockKey(plain));
+        });
+
+        it("is keyed the same whatever order the keys came in", () => {
+            const reordered = parseInitiativeBlock(
+                JSON.stringify({ chunks: ITEMS, text: "Left for later", later: true, kind: "chunk" })
+            )!;
+            expect(blockKey(reordered)).toBe(blockKey(laterBlock));
+        });
+
+        it("is keyed apart when the list changes", () => {
+            expect(blockKey({ ...laterBlock, chunks: ITEMS.slice(0, 3) })).not.toBe(blockKey(laterBlock));
+        });
+    });
+
+    describe("the draft", () => {
+        it("carries the items as rows and the heading as its text", () => {
+            const d = draftFromBlock(laterBlock, ctx);
+            expect(d).toMatchObject({ kind: "chunk", text: "Left for later", later: ITEMS });
+            expect(isLaterDraft(d)).toBe(true);
+        });
+
+        it("keeps the rows out of the new-initiative chunk lines", () => {
+            expect(draftFromBlock(laterBlock, ctx).chunks).toBe("");
+        });
+
+        it("copies the block's list, so a removal never reaches the block", () => {
+            const d = draftFromBlock(laterBlock, ctx);
+            expect(d.later).not.toBe(laterBlock.chunks);
+        });
+
+        it("aims at the agent's initiative, and at none for an agent with none", () => {
+            expect(draftFromBlock(laterBlock, ctx).effort).toBe(AGENT);
+            expect(draftFromBlock(laterBlock, { ...ctx, agentEffortId: undefined }).effort).toBeNull();
+        });
+
+        it("aims at the block's own initiative when it names one", () => {
+            const d = draftFromBlock({ ...laterBlock, effort: "aaaa1111" }, ctx);
+            expect(d.effort).toBe(OTHER);
+        });
+
+        it("is no later draft for a plain chunk, a note or a new initiative", () => {
+            expect(isLaterDraft(draftFromBlock({ kind: "chunk", text: "x" }, ctx))).toBe(false);
+            expect(isLaterDraft(draftFromBlock({ kind: "note", text: "x" }, ctx))).toBe(false);
+            expect(isLaterDraft(draftFromBlock({ kind: "initiative", text: "x", chunks: ["a"] }, ctx))).toBe(false);
+            expect("later" in draftFromBlock({ kind: "chunk", text: "x", chunks: ["a"] }, ctx)).toBe(false);
+        });
+
+        it("drops one row by its place and keeps the others in order", () => {
+            expect(withoutLaterItem(draft(), 1).later).toEqual([ITEMS[0], ITEMS[2], ITEMS[3]]);
+            expect(withoutLaterItem(draft(), 0).later).toEqual(ITEMS.slice(1));
+            expect(withoutLaterItem(draft(), 3).later).toEqual(ITEMS.slice(0, 3));
+        });
+
+        it("drops only the row asked for when two read the same", () => {
+            const twins = draft({ later: ["same", "other", "same"] });
+            expect(withoutLaterItem(twins, 2).later).toEqual(["same", "other"]);
+        });
+
+        it("is the same draft for a place no row holds, and for a draft with no rows", () => {
+            const d = draft();
+            expect(withoutLaterItem(d, 4)).toBe(d);
+            expect(withoutLaterItem(d, -1)).toBe(d);
+            const plain = draftFromMessage("x", ctx);
+            expect(withoutLaterItem(plain, 0)).toBe(plain);
+        });
+
+        it("leaves the draft it was given alone", () => {
+            const d = draft();
+            withoutLaterItem(d, 0);
+            expect(d.later).toEqual(ITEMS);
+        });
+
+        it("is aimed at an initiative by its oref, or at a new one", () => {
+            expect(withLaterTarget(draft(), "aaaa1111")).toMatchObject({ effort: OTHER, chunk: null });
+            expect(withLaterTarget(draft(), OTHER).effort).toBe(OTHER);
+            expect(withLaterTarget(draft({ effort: null }), "new").effort).toBe("new");
+        });
+
+        it("keeps its rows when the target changes", () => {
+            expect(withLaterTarget(draft(), "new").later).toEqual(ITEMS);
+        });
+
+        it("keys each row by its text, a repeated one by which of its twins it is", () => {
+            expect(laterRowKeys(["a", "b", "a", "a"])).toEqual(["0:a", "0:b", "1:a", "2:a"]);
+            expect(laterRowKeys([])).toEqual([]);
+        });
+
+        it("keeps a row's key when a row before it is removed", () => {
+            const before = laterRowKeys(ITEMS);
+            const after = laterRowKeys(withoutLaterItem(draft(), 0).later!);
+            expect(after).toEqual(before.slice(1));
+        });
+    });
+
+    describe("Add", () => {
+        it("needs an initiative (or a new one) and a row", () => {
+            expect(canAdd(draft())).toBe(true);
+            expect(canAdd(draft({ effort: "new" }))).toBe(true);
+            expect(canAdd(draft({ effort: null }))).toBe(false);
+            expect(canAdd(draft({ later: [] }))).toBe(false);
+        });
+
+        it("needs no chunk and no title", () => {
+            expect(canAdd(draft({ chunk: null, title: "" }))).toBe(true);
+        });
+
+        it("says what it waits on", () => {
+            expect(addBlocker(draft())).toBeNull();
+            expect(addBlocker(draft({ effort: null }))).toBe("Pick an initiative first");
+            expect(addBlocker(draft({ later: [] }))).toBe("Keep at least one item first");
+        });
+
+        it("is worded by the count", () => {
+            expect(laterVerb(4)).toBe("Add 4 for later");
+            expect(laterVerb(1)).toBe("Add 1 for later");
+            expect(laterVerb(0)).toBe("Add for later");
+        });
+    });
+
+    describe("the card's phases", () => {
+        it("adds straight from waiting, with no editor between", () => {
+            expect(cardPhase("waiting", "add")).toBe("adding");
+            expect(cardPhase(cardPhase("waiting", "add"), "added")).toBe("added");
+            expect(cardPhase(cardPhase("waiting", "add"), "failed")).toBe("failed");
+            expect(cardPhase("failed", "retry")).toBe("adding");
+        });
+
+        it("starts in its compact form, even with rows removed", () => {
+            const initial = draftFromBlock(laterBlock, ctx);
+            expect(startsInEditor("agent", initial, initial)).toBe(false);
+            expect(startsInEditor("agent", withoutLaterItem(initial, 0), initial)).toBe(false);
+        });
+
+        it("waits on the person while it waits, adds and fails", () => {
+            expect(waitingDot("waiting", false)).toBe(true);
+            expect(waitingDot("adding", false)).toBe(false);
+            expect(waitingDot("added", false)).toBe(false);
+        });
+    });
+
+    describe("the stored draft", () => {
+        it("reads a stored later draft back, its rows with it", () => {
+            const d = draft({ later: ["a", "b"] });
+            expect(coerceDraft(JSON.parse(JSON.stringify(d)))).toEqual(d);
+        });
+
+        it("reads a stored draft with no rows as it was", () => {
+            const plain = draftFromMessage("x", ctx);
+            const back = coerceDraft(JSON.parse(JSON.stringify(plain)))!;
+            expect(back).toEqual(plain);
+            expect("later" in back).toBe(false);
+        });
+
+        it("is undefined for rows that are not all strings", () => {
+            expect(coerceDraft({ ...draft(), later: ["a", 3] })).toBeUndefined();
+            expect(coerceDraft({ ...draft(), later: "a" })).toBeUndefined();
+            expect(coerceDraft({ ...draft(), later: null })).toBeUndefined();
+        });
+    });
+
+    describe("what the card keeps", () => {
+        it("builds the record of an added list: its count, no chunk and no place", () => {
+            const rec = addedRecord(draft(), { initiative: "GUI redesign", effort: AGENT }, 5);
+            expect(rec).toEqual({
+                outcome: "added",
+                kind: "chunk",
+                effort: AGENT,
+                initiative: "GUI redesign",
+                text: "Left for later",
+                later: 4,
+                at: 5,
+            });
+        });
+
+        it("counts only the rows that were left", () => {
+            const rec = addedRecord(withoutLaterItem(draft(), 0), { initiative: "GUI redesign", effort: AGENT }, 5);
+            expect(rec.later).toBe(3);
+        });
+
+        it("leaves a plain chunk's record with no count", () => {
+            const rec = addedRecord(
+                draftFromBlock({ kind: "chunk", text: "one" }, ctx),
+                { initiative: "GUI", effort: AGENT, chunkNumber: 3 },
+                5
+            );
+            expect("later" in rec).toBe(false);
+            expect(rec.chunkNumber).toBe(3);
+        });
+
+        it("builds the record of a dismissed list with the rows it had", () => {
+            expect(dismissedRecord(draft(), { initiative: "GUI redesign" }, 6)).toMatchObject({
+                outcome: "dismissed",
+                kind: "chunk",
+                effort: AGENT,
+                initiative: "GUI redesign",
+                later: 4,
+            });
+            expect(dismissedRecord(draft({ later: [] }), {}, 6).later).toBe(0);
+        });
+
+        it("reads a stored record's count back, and drops a record whose count is not a number", () => {
+            expect(coerceHandled(JSON.parse(JSON.stringify(record())))).toEqual(record());
+            expect(coerceHandled({ ...record(), later: "3" })).toBeUndefined();
+        });
+    });
+
+    describe("the folded row", () => {
+        it("words a list that was added, by its count", () => {
+            expect(foldRowLabel(record())).toBe("Saved for later · GUI redesign — 3 items");
+            expect(foldRowLabel(record({ later: 1 }))).toBe("Saved for later · GUI redesign — 1 item");
+        });
+
+        it("gives the three spans the view styles apart", () => {
+            expect(foldRowParts(record())).toEqual({
+                lead: "Saved for later ·",
+                subject: "GUI redesign",
+                tail: "— 3 items",
+            });
+        });
+
+        it("words a dismissed list, with and without a target", () => {
+            expect(foldRowLabel(record({ outcome: "dismissed" }))).toBe("Dismissed · later list for GUI redesign");
+            expect(foldRowLabel(record({ outcome: "dismissed", initiative: "" }))).toBe("Dismissed · later list");
+        });
+
+        it("leaves a plain chunk's row as it was", () => {
+            expect(foldRowLabel(note({ kind: "chunk", chunk: undefined, chunkNumber: 8, text: "x" }))).toBe(
+                "Chunk added · GUI redesign after the AI-chat references › 8 — x"
+            );
+        });
+    });
+
+    describe("the result line", () => {
+        it("says how many chunks were added for later, with the oref", () => {
+            expect(resultLine(record())).toBe("initiative: added 3 chunks for later to GUI redesign (effort:7655bf18)");
+            expect(resultLine(record({ later: 1 }))).toBe(
+                "initiative: added 1 chunk for later to GUI redesign (effort:7655bf18)"
+            );
+        });
+
+        it("names a created initiative's oref, as the agent will act on it", () => {
+            expect(resultLine(record({ effort: "effort:new1", initiative: "Left for later" }))).toBe(
+                "initiative: added 3 chunks for later to Left for later (effort:new1)"
+            );
+        });
+
+        it("says a dismissed list was, with and without a target", () => {
+            expect(resultLine(record({ outcome: "dismissed" }))).toBe(
+                "initiative: dismissed later list for GUI redesign"
+            );
+            expect(resultLine(record({ outcome: "dismissed", initiative: "", effort: null }))).toBe(
+                "initiative: dismissed later list"
+            );
+        });
+
+        it("is one line whatever the title holds", () => {
+            expect(resultLine(record({ initiative: "two\nlines" }))).not.toContain("\n");
+        });
+
+        it("is stripped from the person's bubble as the others are", () => {
+            const line = resultLine(record());
+            expect(stripResultLines(withResultLines([line], "thanks"))).toBe("thanks");
+        });
+
+        it("leaves a plain chunk's line as it was", () => {
+            expect(resultLine(note({ kind: "chunk", chunk: undefined, text: "Bash Tab completion" }))).toBe(
+                'initiative: added chunk "Bash Tab completion" to GUI redesign after the AI-chat references (effort:7655bf18)'
+            );
+        });
     });
 });

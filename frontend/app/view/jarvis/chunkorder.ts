@@ -10,7 +10,11 @@
 //   2. the pending chunks, highest rank first, ties in plan order;
 //   3. the blocked and deferred chunks, highest rank first, ties in plan order (parked work opens only when
 //      nothing is pending, whatever its level).
-// Done, skipped and proposed chunks are not in it. The next chunk is its first entry.
+// Done, skipped and proposed chunks are not in it, and neither is a chunk saved for later (EffortChunk.later): it is not
+// the initiative's work, so the filter comes before the rank and a later chunk of any level is never next. The next
+// chunk is its first entry.
+
+import { isLater } from "./laterchunk";
 
 export type ChunkPriority = "critical" | "high" | "medium" | "low" | "information";
 
@@ -28,11 +32,14 @@ export function chunkRank(priority?: string): number {
 
 // The open chunks in the order of work. It returns the chunks themselves (callers keep their extra fields) and leaves
 // the array it was given alone.
-export function orderOfWork<T extends { status: string; priority?: string }>(chunks: T[]): T[] {
+export function orderOfWork<T extends { status: string; priority?: string; later?: boolean }>(chunks: T[]): T[] {
     const active: T[] = [];
     const pending: { c: T; i: number }[] = [];
     const parked: { c: T; i: number }[] = [];
     chunks.forEach((c, i) => {
+        if (isLater(c)) {
+            return;
+        }
         if (c.status === "active") {
             active.push(c);
         } else if (c.status === "pending") {

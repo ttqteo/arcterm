@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const store = vi.hoisted(() => ({
     setChunkStatus: vi.fn(async () => {}),
+    setChunkLater: vi.fn(async () => {}),
     setChunkPriority: vi.fn(async () => {}),
     moveChunk: vi.fn(async () => {}),
     moveChunkToStage: vi.fn(async () => {}),
@@ -179,6 +180,85 @@ describe("buildTrackerEdits", () => {
         expect(d.onDeleted).toHaveBeenCalled();
         expect(globalStore.get(pendingDeleteKeysAtom).has("effort:effort:e1")).toBe(true);
         globalStore.get(briefToastAtom)?.undo?.();
+    });
+
+    // Chunks saved for later are kept off the plan the sheet draws, so every position, stage run and guard below runs over
+    // the plan alone while the server's list (which holds them) still gives the numbers it counts by.
+    describe("with chunks saved for later", () => {
+        const LATER_EFFORT = {
+            oid: "e1",
+            title: "Revamp Jarvis",
+            status: "active",
+            chunks: [
+                { label: "Saved first", status: "pending", stage: "", later: true },
+                { label: "Spec", status: "done", stage: "Design" },
+                { label: "Saved in Design", status: "pending", stage: "Design", later: true },
+                { label: "Board", status: "active", stage: "Design" },
+                { label: "Cards", status: "pending", stage: "Build" },
+                { label: "Saved parked", status: "pending", stage: "Parked", later: true },
+            ],
+        } as unknown as Effort;
+        const withLater = (over: Partial<EditsDeps> = {}) => deps({ effort: LATER_EFFORT, ...over });
+
+        it("moves a chunk to the place the server counts, a later chunk standing ahead of the plan", () => {
+            const edits = buildTrackerEdits(withLater());
+            // Spec is drawn 1st and moves to the drawn 2nd place (Board), which the server holds 4th
+            edits.onMoveChunk("Spec", "down");
+            expect(store.moveChunk).toHaveBeenCalledWith("effort:e1", expect.any(Array), "Spec", 4);
+            globalStore.get(briefToastAtom)?.undo?.();
+            expect(store.moveChunk).toHaveBeenLastCalledWith("effort:e1", expect.any(Array), "Spec", 2);
+        });
+
+        it("offers no move for a later chunk, which is not in the plan", () => {
+            const edits = buildTrackerEdits(withLater());
+            expect(edits.canMove("Saved first", "up")).toBe(false);
+            expect(edits.canMove("Saved in Design", "down")).toBe(false);
+            edits.onMoveChunk("Saved in Design", "down");
+            expect(store.moveChunk).not.toHaveBeenCalled();
+        });
+
+        it("keeps a later chunk of the same stage out of that stage's run", () => {
+            const edits = buildTrackerEdits(withLater());
+            edits.onRenameStage(0, "Specs");
+            expect(store.setChunkStage).toHaveBeenCalledWith("effort:e1", ["Spec", "Board"], "Specs");
+            // a stage only a later chunk carries is not one to move a plan chunk into
+            expect(edits.stages).toEqual(["Design", "Build"]);
+        });
+
+        it("adds a chunk at the end of its run, counted past the later chunk inside it", () => {
+            const edits = buildTrackerEdits(withLater());
+            edits.onAddChunk("Board v2", "Design", 0);
+            // Design's run ends at Board, the 4th chunk on the server, so the new chunk goes 5th
+            expect(store.addChunkAt).toHaveBeenCalledWith("effort:e1", "Board v2", "Design", 5);
+        });
+
+        it("marks a chunk not later and offers to mark it later again", () => {
+            const edits = buildTrackerEdits(withLater());
+            edits.onSetLater("Saved first", false);
+            expect(store.setChunkLater).toHaveBeenCalledWith("effort:e1", "Saved first", false);
+            const toast = globalStore.get(briefToastAtom);
+            expect(toast?.text).toBe("Moved “Saved first” into the plan");
+            toast?.undo?.();
+            expect(store.setChunkLater).toHaveBeenLastCalledWith("effort:e1", "Saved first", true);
+        });
+
+        it("deletes the only chunk of an initiative when it is later", () => {
+            const only = { ...LATER_EFFORT, chunks: [LATER_EFFORT.chunks![0]] } as Effort;
+            const d = withLater({ effort: only });
+            buildTrackerEdits(d).onDeleteChunk("Saved first");
+            expect(d.failed).toEqual([]);
+            expect(globalStore.get(pendingDeleteKeysAtom).has("chunk:effort:e1:Saved first")).toBe(true);
+            globalStore.get(briefToastAtom)?.undo?.();
+        });
+
+        it("still keeps a plan chunk, the later chunks left behind not counting", () => {
+            const d = withLater({
+                pendingDeletes: new Set(["Spec", "Board"].map((l) => "chunk:effort:e1:" + l)),
+            });
+            buildTrackerEdits(d).onDeleteChunk("Cards");
+            expect(d.failed).toEqual(["An initiative keeps at least one chunk."]);
+            expect(globalStore.get(pendingDeleteKeysAtom).has("chunk:effort:e1:Cards")).toBe(false);
+        });
     });
 
     it("hands rename, details and activity to the view", () => {

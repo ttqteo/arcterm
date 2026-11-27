@@ -10,7 +10,9 @@
 //
 // Pure: no React.
 
-export type EditChunk = { label: string; stage: string };
+import { planChunks } from "./laterchunk";
+
+export type EditChunk = { label: string; stage: string; later?: boolean };
 export type StageRun = { at: number; stage: string; start: number; end: number };
 
 export function stageRuns(chunks: EditChunk[]): StageRun[] {
@@ -63,10 +65,13 @@ export function appendInStageAt(chunks: EditChunk[], at: number): number {
 }
 
 // the server only refuses removing the LAST chunk as seen before the batch, so a batch that removes
-// every chunk would pass it and leave an empty initiative
+// every chunk would pass it and leave an empty initiative. A chunk saved for later goes freely, even alone (the server
+// lets it, so Move to… works from an initiative that holds just the saved item), and does not stand in for the plan:
+// removing plan chunks still leaves at least one plan chunk.
 export function canRemove(chunks: EditChunk[], labels: string[]): boolean {
     const gone = new Set(labels);
-    return chunks.some((c) => !gone.has(c.label));
+    const plan = planChunks(chunks);
+    return !plan.some((c) => gone.has(c.label)) || plan.some((c) => !gone.has(c.label));
 }
 
 // ResolveChunkIndex reads an all-digit ref as a 1-based index, so such a label goes as "=<label>", which the server

@@ -25,6 +25,17 @@ describe("chunk order of work: the cases shared with the Go rule", () => {
     });
 });
 
+describe("chunk order of work: later chunks", () => {
+    it("leaves a later chunk out, whatever its level or status, before it ranks", () => {
+        const a = { label: "a", status: "pending", priority: "low" };
+        const lateCritical = { label: "later critical", status: "pending", priority: "critical", later: true };
+        const lateActive = { label: "later active", status: "active", priority: "critical", later: true };
+        const b = { label: "b", status: "pending", priority: "medium" };
+        expect(orderOfWork([a, lateCritical, lateActive, b])).toEqual([b, a]);
+        expect(orderOfWork([lateCritical, lateActive])).toEqual([]);
+    });
+});
+
 describe("chunk priority scale", () => {
     it("lists the levels highest first, the reverse of the shared lowest-first list", () => {
         expect(CHUNK_PRIORITIES).toEqual([...shared.priorities].reverse());

@@ -78,6 +78,33 @@ func TestBaseFromBackfill(t *testing.T) {
 	}
 }
 
+// the scan and the base backfill pick a plan chunk not yet settled; a chunk saved for later is the person's own item,
+// so it is never picked, whatever its status
+func TestChunkIsScanned(t *testing.T) {
+	cases := []struct {
+		name string
+		c    waveobj.EffortChunk
+		want bool
+	}{
+		{"pending plan chunk", waveobj.EffortChunk{Status: "pending"}, true},
+		{"blocked plan chunk", waveobj.EffortChunk{Status: "blocked"}, true},
+		{"done plan chunk", waveobj.EffortChunk{Status: "done"}, false},
+		{"skipped plan chunk", waveobj.EffortChunk{Status: "skipped"}, false},
+		{"pending later chunk", waveobj.EffortChunk{Status: "pending", Later: true}, false},
+		{"active later chunk", waveobj.EffortChunk{Status: "active", Later: true}, false},
+		{"done later chunk", waveobj.EffortChunk{Status: "done", Later: true}, false},
+	}
+	for _, tc := range cases {
+		if got := ChunkIsScanned(tc.c); got != tc.want {
+			t.Errorf("%s: got %v, want %v", tc.name, got, tc.want)
+		}
+	}
+	// a later chunk is still open: only the scan's own pick leaves it out
+	if !ChunkIsOpen(waveobj.EffortChunk{Status: "pending", Later: true}) {
+		t.Error("ChunkIsOpen must not read Later")
+	}
+}
+
 // history: newest first. c4 renames old.ts away, c3 touches store.ts, c2 deletes gone.ts, c1 (the base) touches store.ts.
 func staleFixture() *StaleHistory {
 	commits := []gitinfo.LandedCommit{

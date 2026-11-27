@@ -257,6 +257,74 @@ func TestEffortChunkAddDueFlag(t *testing.T) {
 	}
 }
 
+func TestEffortChunkLaterRegistered(t *testing.T) {
+	if !hasSub(effortChunkCmd, "later") {
+		t.Fatal("`effort chunk later` subcommand is not registered")
+	}
+	if effortChunkLaterCmd.Flags().Lookup("off") == nil {
+		t.Fatal("`effort chunk later --off` is not registered")
+	}
+	if effortChunkAddCmd.Flags().Lookup("later") == nil {
+		t.Fatal("`effort chunk add --later` is not registered")
+	}
+}
+
+func TestEffortChunkLaterOp(t *testing.T) {
+	if got := chunkLaterOp("Push DEV", false); got.Op != "setChunkLater" || !got.Later || got.Chunk != "Push DEV" {
+		t.Fatalf("later: %+v, want setChunkLater on Push DEV with the mark on", got)
+	}
+	if got := chunkLaterOp("2", true); got.Op != "setChunkLater" || got.Later || got.Chunk != "2" {
+		t.Fatalf("later --off: %+v, want setChunkLater on 2 with the mark off", got)
+	}
+}
+
+func TestEffortChunkLaterAddFlagSetsTheMark(t *testing.T) {
+	now := time.Date(2026, 11, 27, 10, 0, 0, 0, time.Local)
+	f := effortChunkAddCmd.Flags()
+	t.Cleanup(func() {
+		for _, name := range []string{"later", "due"} {
+			fl := f.Lookup(name)
+			_ = f.Set(name, fl.DefValue)
+			fl.Changed = false
+		}
+	})
+	op, err := chunkAddOp(effortChunkAddCmd, []string{"e", "Push DEV"}, now)
+	if err != nil || op.Op != "addChunk" || op.Later || op.Label != "Push DEV" {
+		t.Fatalf("add with no flags: %+v, %v; want a plain addChunk", op, err)
+	}
+	if err := f.Set("later", "true"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Set("due", "+7d"); err != nil {
+		t.Fatal(err)
+	}
+	op, err = chunkAddOp(effortChunkAddCmd, []string{"e", "Push DEV"}, now)
+	if err != nil || op.Op != "addChunk" || !op.Later || op.Due != "2026-12-04" {
+		t.Fatalf("add --later --due +7d: %+v, %v; want a later addChunk due 2026-12-04", op, err)
+	}
+}
+
+// a later chunk prints with its mark, keeps its number (the ref `effort chunk` takes), is no part of done/total and is
+// never in the order of work or marked next, whatever its level
+func TestEffortShowLater(t *testing.T) {
+	e := &waveobj.Effort{Title: "T", Status: "active", Chunks: []waveobj.EffortChunk{
+		{Label: "A", Status: "done"},
+		{Label: "Push DEV", Status: "pending", Later: true, Due: "2026-12-01", Owner: "me", Priority: "critical"}, // the top level, and still not next
+		{Label: "B", Status: "pending"},
+		{Label: "Delete the backup branch", Status: "done", Later: true}, // ticked: still not the initiative's work
+	}}
+	got := formatEffortShow(e)
+	want := "# T (active) — 1/2\n" +
+		"Order of work: 3\n" +
+		"  1. [done] A\n" +
+		"  2. [pending] Push DEV · later (owner: me) (due 2026-12-01) (priority critical)\n" +
+		"  3. [pending] B ← next\n" +
+		"  4. [done] Delete the backup branch · later\n"
+	if got != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
 // show keeps position order and its stage runs; the Order of work line says which open chunk opens when, in numbers,
 // and the next chunk carries the mark. The level prints after owner and due, and before the base.
 func TestFormatEffortShowPrintsOrderOfWorkNextMarkAndLevel(t *testing.T) {
@@ -280,6 +348,16 @@ func TestFormatEffortShowPrintsOrderOfWorkNextMarkAndLevel(t *testing.T) {
 		"  6. [proposed] P (priority critical)\n"
 	if got != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestEffortShowLaterOnlyInitiative(t *testing.T) {
+	e := &waveobj.Effort{Title: "Ideas", Status: "active", Chunks: []waveobj.EffortChunk{
+		{Label: "Decide which parser takes audit: logs", Status: "pending", Later: true, Notes: []waveobj.EffortNote{{Ts: 0, Text: "> take it to a colleague"}}},
+	}}
+	got := formatEffortShow(e)
+	if !strings.HasPrefix(got, "# Ideas (active) — 0/0\n") || !strings.Contains(got, "  1. [pending] Decide which parser takes audit: logs · later\n") {
+		t.Fatalf("got:\n%s", got)
 	}
 }
 

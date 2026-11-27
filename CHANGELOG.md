@@ -34,6 +34,13 @@ and a picture given to a line that is not big.
 
 ### Added
 
+- Save for later: right-click text you selected in Chat and pick Save for later to leave it on an initiative to come
+  back to, not to work on now. An agent linked to an initiative saves into it at once; any other opens a picker with
+  your recent initiatives first, and a toast follows with Open and Move to…. An agent can also offer a list of things to
+  leave for later as a card in its Chat, one row each with a × and an Add. What you saved sits in a Later section on
+  Jarvis right under Waiting on you, grouped by initiative with its age and due day, ticked off when done, and Ask agent
+  on an item takes you to the agent that said it (or reopens its conversation) with the passage quoted in the chat box.
+  Saved items stay out of the initiative's plan, its count and its next step. <!-- big --> <!-- shot: none -->
 - Give a chunk a priority (critical, high, medium, low or information) from the menu on its status word, or with
   `wsh effort chunk priority`. The level shows as a word on the chunk's row, and the chunk that opens next, the one
   the "next" arrow points at, is the open chunk with the highest level, equal levels keeping their plan order. Advancing

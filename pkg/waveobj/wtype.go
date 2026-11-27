@@ -956,6 +956,12 @@ type EffortChunk struct {
 	// Needs you (a re-measure, a decision to revisit). A day, not a time, because that is what such a
 	// decision names. Nothing fires at the date; the attention list sees it on its next read.
 	Due string `json:"due,omitempty"`
+	// Later marks a chunk saved for later: a passage or task kept on Jarvis until someone resolves it, not part of
+	// the initiative's work. A later chunk is left out of the initiative's done/total, is never the next chunk
+	// (advance, Work on, an engine run), and never enters Needs you; the Brief's Later section lists it while its
+	// status is pending, active or blocked. The mark is not a status: ticking the chunk done ends it, and "Not later"
+	// drops it without finishing the chunk.
+	Later bool `json:"later,omitempty"`
 	// Priority is how soon the chunk should open: critical | high | medium | low | information ("" when no one has
 	// set it, which ranks as medium). It decides which open chunk is next (see ChunkOrderOfWork) and changes
 	// nothing about the chunk's position or number. The server refuses any other value.
@@ -988,6 +994,11 @@ type EffortNote struct {
 	// came from, when they resolve. They back "open agent session ↗" and the run report on the card.
 	Session string `json:"session,omitempty"`
 	Run     string `json:"run,omitempty"`
+	// Conversation is the id of the conversation the note came from (the stem of the transcript file, the
+	// SessionActivity.id that reopening a past session takes). Unlike Session it survives the tab: Ask agent on a
+	// later chunk finds the live agent by it, and resumes the session by it once the tab is gone. Empty on notes
+	// written before the field, and on notes with no conversation behind them.
+	Conversation string `json:"conversation,omitempty"`
 }
 
 type EffortEvent struct {

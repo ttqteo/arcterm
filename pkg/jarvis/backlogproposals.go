@@ -35,7 +35,8 @@ const backlogIDLen = 8
 // pending chunk with no workref, written on or after since, whose label names the first 8 id characters of a run that
 // is top-level (not an engine child, not a lead's child run), mode orchestrator and created on or after since. A label
 // names an id when no hex character sits on either side of it, so an id inside a longer hex string is not one. A label
-// that names two such runs takes the newer. A done or archived initiative is left alone, as To review never lists it.
+// that names two such runs takes the newer. A done or archived initiative is left alone, as To review never lists it,
+// and so is a chunk saved for later (EffortChunk.Later), which is the person's own item, not a lead's proposal.
 //
 // A chunk is written when its earliest note was, else when its chunk-added event was; a chunk with neither (seeded at
 // create) is skipped, since nothing says when it was written.
@@ -55,7 +56,8 @@ func PickBacklogProposals(efforts []*waveobj.Effort, runs []*waveobj.Run, since 
 			continue
 		}
 		for _, c := range e.Chunks {
-			if c.Status != "pending" || len(c.WorkRefs) > 0 {
+			// a chunk saved for later is the person's own item, not a lead's proposal, whatever its label names
+			if c.Status != "pending" || c.Later || len(c.WorkRefs) > 0 {
 				continue
 			}
 			if written := backlogWrittenTs(e, c); written <= 0 || written < since {

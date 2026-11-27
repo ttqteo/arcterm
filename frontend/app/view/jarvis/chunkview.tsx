@@ -28,6 +28,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { briefingStateAtom } from "./briefingstore";
 import { briefUndo, chunkKey, noteKey, pendingDeleteKeysAtom } from "./briefundo";
 import { chunkDriftLine } from "./chunkdrift";
+import { chunkSteps } from "./chunksteps";
 import { chunkMove, chunkTrail, trailCounts, type TrailBlock, type TrailLine } from "./chunktrail";
 import { effortFeed, type FeedEntry } from "./effortfeed";
 import { chunkTone, type EffortCardModel } from "./effortmodel";
@@ -64,25 +65,16 @@ const LINK = cn("inline-flex flex-none cursor-pointer items-center gap-1 text-ac
 const QUIET = cn("cursor-pointer text-[10.5px] text-muted", FOCUS);
 
 /**
- * The plan's chunks the chunk view steps through, in the server's order: the proposed ones are not part of the plan
- * yet and a chunk waiting out its delete is gone. The head's `chunk n / total` and j/k read the same list.
+ * The plan's chunks the chunk view steps through, in the server's order (chunksteps.ts): the proposed ones are not part
+ * of the plan yet, a chunk waiting out its delete is gone, and a chunk saved for later has no place in it, nor does it
+ * step. The head's `chunk n / total` and j/k read the same list.
  */
 export function useChunkSteps(oref: string, state: InitiativeEditsState, label: string) {
     const pendingDeletes = useAtomValue(pendingDeleteKeysAtom);
-    const labels = useMemo(
-        () =>
-            state.planChunks
-                .filter((c) => c.status !== "proposed" && !pendingDeletes.has(chunkKey(oref, c.label)))
-                .map((c) => c.label),
-        [state.planChunks, pendingDeletes, oref]
+    return useMemo(
+        () => chunkSteps(state.planChunks, label, (l) => pendingDeletes.has(chunkKey(oref, l))),
+        [state.planChunks, label, pendingDeletes, oref]
     );
-    const at = labels.indexOf(label);
-    const to = (delta: 1 | -1): string | null => {
-        // a proposed chunk is outside the list: stepping from it lands on the plan's first or last chunk
-        const i = at < 0 ? (delta > 0 ? 0 : labels.length - 1) : at + delta;
-        return i >= 0 && i < labels.length && i !== at ? labels[i] : null;
-    };
-    return { n: at + 1, total: labels.length, prev: to(-1), next: to(1) };
 }
 
 // the initiative's detail kept fresh while a chunk is open: an agent's note moves the briefing's updatedts
@@ -166,29 +158,34 @@ export function ChunkViewHead({
                 <span className="truncate">{title}</span>
             </button>
             <span className="flex-1" />
-            <span data-jarvis-chunk-position className="flex-none text-[11px] tabular-nums text-ink-mid">
-                {steps.n > 0 ? `chunk ${steps.n} / ${steps.total}` : "proposed"}
-            </span>
-            <button
-                type="button"
-                aria-label="Previous chunk (k)"
-                title="Previous chunk (k)"
-                disabled={steps.prev == null}
-                onClick={() => steps.prev != null && openSheetChunk(steps.prev)}
-                className={ICON_BTN}
-            >
-                <ChevronUp size={14} aria-hidden />
-            </button>
-            <button
-                type="button"
-                aria-label="Next chunk (j)"
-                title="Next chunk (j)"
-                disabled={steps.next == null}
-                onClick={() => steps.next != null && openSheetChunk(steps.next)}
-                className={ICON_BTN}
-            >
-                <ChevronDown size={14} aria-hidden />
-            </button>
+            {/* a chunk saved for later has no place in the plan: no position and nothing to step to */}
+            {steps.later ? null : (
+                <>
+                    <span data-jarvis-chunk-position className="flex-none text-[11px] tabular-nums text-ink-mid">
+                        {steps.n > 0 ? `chunk ${steps.n} / ${steps.total}` : "proposed"}
+                    </span>
+                    <button
+                        type="button"
+                        aria-label="Previous chunk (k)"
+                        title="Previous chunk (k)"
+                        disabled={steps.prev == null}
+                        onClick={() => steps.prev != null && openSheetChunk(steps.prev)}
+                        className={ICON_BTN}
+                    >
+                        <ChevronUp size={14} aria-hidden />
+                    </button>
+                    <button
+                        type="button"
+                        aria-label="Next chunk (j)"
+                        title="Next chunk (j)"
+                        disabled={steps.next == null}
+                        onClick={() => steps.next != null && openSheetChunk(steps.next)}
+                        className={ICON_BTN}
+                    >
+                        <ChevronDown size={14} aria-hidden />
+                    </button>
+                </>
+            )}
             {work != null ? (
                 <button
                     type="button"

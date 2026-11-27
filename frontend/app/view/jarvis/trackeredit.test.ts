@@ -75,6 +75,31 @@ describe("canRemove", () => {
     it("counts duplicates once", () => {
         expect(canRemove([c("a"), c("b")], ["a", "a"])).toBe(true);
     });
+
+    // a chunk saved for later is not the initiative's work: it goes freely, even alone, and does not stand in for the
+    // plan chunk the initiative must keep
+    describe("with chunks saved for later", () => {
+        const later = (label: string) => ({ label, stage: "", later: true });
+
+        it("lets the only chunk of an initiative go when it is later", () => {
+            expect(canRemove([later("L")], ["L"])).toBe(true);
+            expect(canRemove([later("L1"), later("L2")], ["L1", "L2"])).toBe(true);
+        });
+
+        it("lets a later chunk go from a plan, and every later chunk at once", () => {
+            const mixed = [later("L1"), c("a"), later("L2"), c("b")];
+            expect(canRemove(mixed, ["L1"])).toBe(true);
+            expect(canRemove(mixed, ["L1", "L2"])).toBe(true);
+        });
+
+        it("still refuses a removal that would leave no plan chunk, a later one left behind or not", () => {
+            const mixed = [later("L"), c("a"), c("b")];
+            expect(canRemove(mixed, ["a", "b"])).toBe(false);
+            expect(canRemove(mixed, ["a", "b", "L"])).toBe(false);
+            expect(canRemove([c("a"), later("L")], ["a"])).toBe(false);
+            expect(canRemove(mixed, ["a"])).toBe(true);
+        });
+    });
 });
 
 describe("chunkRef", () => {

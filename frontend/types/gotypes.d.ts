@@ -4190,6 +4190,7 @@ declare global {
         stage?: string;
         owner?: string;
         due?: string;
+        later?: boolean;
         priority?: string;
         basecommit?: string;
         workrefs?: ChunkWorkRef[];
@@ -4242,6 +4243,17 @@ declare global {
         session?: string;
     };
 
+    // wshrpc.EffortLaterItem
+    type EffortLaterItem = {
+        label: string;
+        status: string;
+        due?: string;
+        since: number;
+        note?: string;
+        session?: string;
+        conversation?: string;
+    };
+
     // waveobj.EffortNote
     type EffortNote = {
         ts: number;
@@ -4250,6 +4262,7 @@ declare global {
         author?: string;
         session?: string;
         run?: string;
+        conversation?: string;
     };
 
     // wshrpc.EffortOp
@@ -4271,6 +4284,9 @@ declare global {
         notets?: number;
         kind?: string;
         oref?: string;
+        later?: boolean;
+        session?: string;
+        conversation?: string;
         base?: string;
     };
 
@@ -4312,6 +4328,7 @@ declare global {
         updatedts: number;
         pinnedts?: number;
         lastnote?: EffortLastNote;
+        later?: EffortLaterItem[];
     };
 
     // wshrpc.EndedItem

@@ -24,6 +24,45 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
 
 ## 2026-11-27
 
+- [ ] (arcterm) **Save for later: the What's new picture.** Take it with `node scripts/whatsnew-shot.mjs save-later
+  --selector [data-jarvis-brief-region="later-chunks"]` (the Brief with a few later items on screen), then swap the
+  CHANGELOG line's `<!-- shot: none -->` for the comment it prints, in one commit (spec "Builder's calls" 17). Until
+  then `whatsnew.test.ts` is happy with `none`.
+- [ ] (arcterm) **Later section: Ask agent on an agent that has exited.** On Jarvis, Ask agent on an item whose agent
+  has exited, and whose conversation is in History, resumes the conversation in a new tab (asleep for a harness that can
+  sleep) and its chat box holds the quote once it mounts. The button dims while the resume is in flight. It launches a
+  real session, so no scenario covers it (`later-section` step 5 only checks an ended agent with nowhere to go;
+  `askagentlater.test.ts` and `chatinsert.test.ts` cover the logic). On a live item (`later-section` step 4 checks the end state) watch the Agent
+  surface come forward with the quote in the box and the caret under it.
+- [ ] (arcterm) **Later section: the tick and Undo.** Tick a Later row on Jarvis: its check mark shows on hover, the row
+  leaves on the spring, the group folds with its last row, and the Undo toast brings the row back where it was. Tick
+  the last item of all: the section folds away and the Initiatives section under it does not jump 20px at the end (the
+  fold's `marginTop` runs -20 → 0 against the column's `gap-5`). Save the first item again (Chat → Save for later): the
+  section opens. (`laterchunksregion.tsx`; `later-section` step 3 checks the end state.)
+- [ ] (arcterm) **The Later group on an initiative's page.** Open an initiative holding later items: the Later group
+  opens when the first item is saved with the sheet open and folds when the last is moved back. "Not later" on a row: it
+  folds out of the group while it opens in the plan, no height stays stuck, and Undo puts it back; pressed twice fast,
+  or Undo mid-fold, it ends in one place. The "Not later" menu on a row low in the group does not clip at the sheet's
+  bottom. `j`/`k` step into the group and scroll the row into view. With reduced motion on, the group and rows show and
+  fold at once. (`inlinetrackerview.tsx` Later group; `later-sheet` checks the end state.)
+- [ ] (arcterm) **Save for later: the picker opens at the pointer.** In the Chat of an agent linked to no initiative,
+  select text, right-click → Save for later: the picker opens at the right-click point with Recent first (it flips up
+  near the bottom of the window and shifts in from the right edge), "Recent" goes the moment you type a letter and the
+  rows below jump up, and a pick, Escape or a press outside closes it. A quick double-click, or a double Enter, on a
+  row saves one chunk, not two. (`initiativepicker.tsx` `point`, `chatquotemenu.tsx`; `save-later` steps 3 and 5 assert
+  the placement.)
+- [ ] (arcterm) **Save for later: the toast and its Move to….** After a save, the toast comes and goes on its spring
+  with two actions; at a 320px window with a 60-character initiative title, the Open / Move to… row sits under the
+  message and does not overflow. Move to…: the toast closes and the picker opens above the button's place (bottom
+  right), picking another initiative moves the chunk (its note, due and mark with it) and a second toast says so.
+  (`notificationtoasts.tsx`; `save-later` checks the end state.)
+- [ ] (arcterm) **The agent's later card: ×, Add and the target.** When an agent offers a list to leave for later: the ×
+  on a row folds it away on the spring and the rows below slide up; Add shows the spinner, then the card folds into its
+  "Saved for later · … — N items" row with Open ↗; the target button opens the picker under it, Recent first, and the
+  chip becomes the picked initiative; a list longer than about eight rows scrolls inside the card with the ×'s focus
+  ring unclipped at the row's edge. Not exercised even by the scenario: Dismiss, a failed Add ("Try again"), an exited
+  agent's static card, and a new initiative as the target. (`chatinitiativecard.tsx`; `later-card` checks the end
+  state.)
 - [ ] (arcterm) **The Priority menu on a chunk low in a long plan** (`inlinetrackerview.tsx`, run af2b7967 t-4). The
   Priority section adds about 230px to the status menu, and Final measured its bottom at 960px in an 864px window. On a
   Jarvis initiative card with a long plan, open the status word of the last chunk: the whole menu, Priority to Rename,

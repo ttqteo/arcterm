@@ -85,6 +85,38 @@ describe("notificationstore", () => {
         expect(globalStore.get(toastsAtom).map((t) => t.title)).toEqual(["b"]);
     });
 
+    it("runs the second action beside the first, with where it was pressed, and closes the toast", () => {
+        const open = vi.fn();
+        const move = vi.fn();
+        pushToast({
+            title: "Saved for later",
+            message: "",
+            level: "info",
+            action: { label: "Open", run: open },
+            alt: { label: "Move to…", run: move },
+        });
+        const id = globalStore.get(toastsAtom)[0].id;
+        runToastAction(id, "alt", { x: 40, y: 60 });
+        expect(move).toHaveBeenCalledWith({ x: 40, y: 60 });
+        expect(open).not.toHaveBeenCalled();
+        expect(globalStore.get(toastsAtom)).toHaveLength(0);
+    });
+
+    it("runs the first action by default and leaves the second alone", () => {
+        const open = vi.fn();
+        const move = vi.fn();
+        pushToast({
+            title: "Saved for later",
+            message: "",
+            level: "info",
+            action: { label: "Open", run: open },
+            alt: { label: "Move to…", run: move },
+        });
+        runToastAction(globalStore.get(toastsAtom)[0].id);
+        expect(open).toHaveBeenCalledTimes(1);
+        expect(move).not.toHaveBeenCalled();
+    });
+
     it("closes a toast that has no action, or is gone, without running anything", () => {
         pushToast({ title: "plain", message: "", level: "info" });
         const id = globalStore.get(toastsAtom)[0].id;

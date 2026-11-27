@@ -1,4 +1,5 @@
 import { orderOfWork } from "./chunkorder";
+import { planChunks } from "./laterchunk";
 
 export type ChunkTone = "done" | "active" | "blocked" | "deferred" | "skipped" | "pending";
 
@@ -173,11 +174,13 @@ export function stageOptions(rows: { stage: string }[]): string[] {
 
 // The chunk an initiative picks up next: the first of its order of work (chunkorder.ts), which is the active chunk, else
 // the highest-ranked pending chunk, else, with nothing pending, the highest-ranked blocked or deferred one, equal ranks
-// in plan order. A chunk with no priority ranks as medium; a proposed, done or skipped chunk is never next. It is the rule
-// `advance` and the backend's summary apply (pkg/waveobj/chunkorder.go), so every surface that names "next" names the
-// same chunk.
-export function nextChunk<T extends { status: string; priority?: string }>(chunks: T[]): T | undefined {
-    return orderOfWork(chunks)[0];
+// in plan order. A chunk with no priority ranks as medium; a proposed, done or skipped chunk is never next, and neither is
+// a chunk saved for later, whatever its level (the later ones are filtered out before the rank). It is the rule `advance`
+// and the backend's summary apply (pkg/waveobj/chunkorder.go), so every surface that names "next" names the same chunk.
+export function nextChunk<T extends { status: string; priority?: string; later?: boolean }>(
+    chunks: T[]
+): T | undefined {
+    return orderOfWork(planChunks(chunks))[0];
 }
 
 // the bar's order: settled work first, then what is moving, then what is waiting
@@ -210,8 +213,9 @@ export type EffortFacts = {
 // The sheet's header block: the facts, the progress, the chunk picked up next, and the children still in
 // play. Parent and children come off the briefing's summaries because that is the one list holding every effort.
 export function effortFacts(effort: Effort, all: EffortSummary[]): EffortFacts {
-    // a proposed chunk is a suggestion, not yet work: every count here is over the rest, as the summary's is
-    const chunks = (effort.chunks ?? []).filter((c) => c.status !== "proposed");
+    // a proposed chunk is a suggestion, not yet work, and a chunk saved for later is kept rather than worked: every count
+    // here is over the rest, as the summary's is
+    const chunks = planChunks((effort.chunks ?? []).filter((c) => c.status !== "proposed"));
     const meta: [string, string][] = [["project", effort.project ?? "none"]];
     if (effort.ticket != null && effort.ticket !== "") {
         meta.push(["ticket", effort.ticket]);

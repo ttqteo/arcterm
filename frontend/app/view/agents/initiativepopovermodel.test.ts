@@ -8,6 +8,7 @@ import {
     CHUNK_RENAME,
     chunkMenuItems,
     latestNote,
+    linkChunk,
     nextChunks,
     popoverProgress,
     popoverRows,
@@ -19,6 +20,7 @@ import {
 type Extra = {
     workrefs?: { kind: string; oref: string; ts: number }[];
     notes?: { ts: number; text: string }[];
+    later?: boolean;
     priority?: string;
 };
 const chunk = (label: string, status: string, extra: Extra = {}) => ({ label, status, ...extra });
@@ -251,6 +253,88 @@ describe("popoverRows and stepRow", () => {
         expect(stepRow(3, 2, 1)).toBe(2);
         expect(stepRow(3, 0, -1)).toBe(0);
         expect(stepRow(0, 0, 1)).toBe(0);
+    });
+});
+
+// A chunk saved for later is kept on Jarvis, not worked. These plans put one AHEAD of the plan's chunks, where a rule
+// reading the list in order would reach it first.
+describe("chunks saved for later", () => {
+    const mine = { workrefs: [{ kind: "agent", oref: "agent:t1", ts: 1 }] };
+    const later = (label: string, status = "pending", extra: Extra = {}) =>
+        chunk(label, status, { ...extra, later: true });
+    const withLater = {
+        chunks: [later("L1"), later("L2", "active"), chunk("A", "done"), chunk("B", "pending"), chunk("C", "pending")],
+    };
+
+    it("is never the chunk an agent is on, whatever its workrefs", () => {
+        const e = { chunks: [later("L", "active", mine), chunk("B", "pending", mine)] };
+        expect(agentChunk(e, "t1")?.label).toBe("B");
+        expect(agentChunk({ chunks: [later("L", "active", mine)] }, "t1")).toBeNull();
+    });
+
+    it("is never one of the next chunks, from the top or after a chunk", () => {
+        expect(nextChunks(withLater, null)).toEqual(["B", "C"]);
+        expect(nextChunks(withLater, "A")).toEqual(["B", "C"]);
+        expect(nextChunks({ chunks: [later("L1"), later("L2")] }, null)).toEqual([]);
+    });
+
+    it("is never in the popover's rows", () => {
+        expect(popoverRows(withLater, "t1")).toEqual([
+            { kind: "next", label: "B" },
+            { kind: "next", label: "C" },
+        ]);
+    });
+
+    it("is not counted in the bar, the done count or the chip", () => {
+        expect(popoverProgress(withLater)).toEqual({ segments: ["done", "pending", "pending"], done: 1, total: 3 });
+        expect(chipCount(withLater)).toBe("1/3");
+        expect(chipCount({ chunks: [later("L1"), later("L2", "done")] })).toBeNull();
+    });
+
+    it("does not make the initiative blocked, nor keep a settled plan from being done", () => {
+        expect(
+            popoverStatus({ status: "active", chunks: [later("L", "blocked"), chunk("A", "pending")] }, "idle").text
+        ).toBe("agent open");
+        expect(
+            popoverStatus({ status: "active", chunks: [later("L", "pending"), chunk("A", "done")] }, "idle").text
+        ).toBe("done");
+        // only later chunks: there is no plan to be done with
+        expect(popoverStatus({ status: "active", chunks: [later("L", "done")] }, "idle").text).toBe("agent open");
+    });
+});
+
+describe("linkChunk", () => {
+    const later = (label: string, status: string) => chunk(label, status, { later: true });
+
+    it("is the active chunk, else the first pending one", () => {
+        expect(linkChunk([chunk("A", "done"), chunk("B", "pending"), chunk("C", "active")])?.label).toBe("C");
+        expect(linkChunk([chunk("A", "done"), chunk("B", "pending"), chunk("C", "pending")])?.label).toBe("B");
+    });
+
+    it("never picks a later chunk ahead of the plan, whatever its status", () => {
+        expect(linkChunk([later("L1", "pending"), chunk("B", "pending")])?.label).toBe("B");
+        expect(linkChunk([later("L1", "active"), chunk("B", "pending"), chunk("C", "active")])?.label).toBe("C");
+        expect(linkChunk([later("L1", "active"), chunk("B", "pending")])?.label).toBe("B");
+    });
+
+    it("is the highest-ranked pending chunk of the plan, never a later one of a higher level", () => {
+        const low = chunk("B", "pending", { priority: "low" });
+        const high = chunk("C", "pending", { priority: "high" });
+        expect(linkChunk([chunk("A", "done"), low, high])?.label).toBe("C");
+        const lateCritical = chunk("L1", "pending", { later: true, priority: "critical" });
+        expect(linkChunk([lateCritical, low, high])?.label).toBe("C");
+        // an active chunk keeps the slot whatever the pending ones rank
+        expect(linkChunk([low, chunk("D", "active", { priority: "information" }), high])?.label).toBe("D");
+    });
+
+    it("is nothing when the plan has no chunk to pick, a later one left or not", () => {
+        expect(linkChunk([later("L1", "pending"), later("L2", "active")])).toBeUndefined();
+        expect(linkChunk([later("L1", "pending"), chunk("A", "done"), chunk("S", "skipped")])).toBeUndefined();
+        expect(linkChunk([])).toBeUndefined();
+    });
+
+    it("leaves a proposed chunk, a deferred one and a blocked one alone", () => {
+        expect(linkChunk([chunk("P", "proposed"), chunk("D", "deferred"), chunk("X", "blocked")])).toBeUndefined();
     });
 });
 

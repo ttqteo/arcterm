@@ -98,6 +98,25 @@ func TestFetchWorkStateWindowsShippedTimelineAndDelta(t *testing.T) {
 	}
 }
 
+// `wsh jarvis status` counts the initiatives' work: a later chunk is not part of it (a proposed one is not either)
+func TestFetchCountsSkipLater(t *testing.T) {
+	efforts := []*waveobj.Effort{
+		{Title: "live", Status: "active", Chunks: []waveobj.EffortChunk{
+			{Label: "a", Status: "done"},
+			{Label: "b", Status: "pending"},
+			{Label: "saved", Status: "pending", Later: true},
+			{Label: "saved done", Status: "done", Later: true},
+			{Label: "suggested", Status: "proposed"},
+		}},
+		{Title: "only later", Status: "active", Chunks: []waveobj.EffortChunk{{Label: "saved", Status: "done", Later: true}}},
+		{Title: "dead", Status: "archived", Chunks: []waveobj.EffortChunk{{Label: "x", Status: "done"}}},
+	}
+	got := effortsStatusOf(efforts)
+	if want := (wshrpc.CaptureEffortsStatus{Active: 2, ChunksTotal: 2, ChunksDone: 1}); got != want {
+		t.Fatalf("efforts status = %+v, want %+v", got, want)
+	}
+}
+
 func TestFetchWorkStateMarksRunsUnhealthyOnChannelReadFailure(t *testing.T) {
 	ctx := context.Background()
 	seedStore(t, ctx)

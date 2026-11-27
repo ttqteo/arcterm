@@ -290,13 +290,26 @@ func Delta(sinceMs int64, runs []*waveobj.Run, sessions []agentsessions.SessionI
 	return evs
 }
 
+// LaterNoteMaxRunes caps the first note an EffortLaterItem carries: the passage Ask agent quotes, in every ledger snapshot.
+const LaterNoteMaxRunes = 1000
+
 // EffortSummaryOf projects one effort into its ledger shape (no trails; the detail RPC serves those).
+//
+// A later chunk (EffortChunk.Later) is not the initiative's work, so it is in none of Chunks, Done, Total or ActiveChunk
+// and its notes are no LastNote candidates: every reader of the summary follows that without learning of the mark, and
+// an initiative whose only chunks are later keeps an idea's shape. The open ones are in Later instead.
 func EffortSummaryOf(e *waveobj.Effort) wshrpc.EffortSummary {
 	s := wshrpc.EffortSummary{
 		ORef: "effort:" + e.OID, Title: e.Title, Project: e.Project, Ticket: e.Ticket,
 		Status: e.Status, ParentOID: e.ParentOID, UpdatedTs: e.UpdatedTs, PinnedTs: e.PinnedTs,
 	}
 	for _, c := range e.Chunks {
+		if c.Later {
+			if item, ok := laterItemOf(e, c); ok {
+				s.Later = append(s.Later, item)
+			}
+			continue
+		}
 		cs := wshrpc.EffortChunkSummary{
 			Label: c.Label, Status: c.Status, Stage: c.Stage, Owner: c.Owner, Priority: c.Priority, WorkRefs: c.WorkRefs,
 		}
@@ -313,7 +326,8 @@ func EffortSummaryOf(e *waveobj.Effort) wshrpc.EffortSummary {
 		}
 	}
 	// the chunk the order of work names first: the active chunk, else the highest-ranked pending one, else the
-	// highest-ranked blocked or deferred one (the same rule advance opens by)
+	// highest-ranked blocked or deferred one (the same rule advance opens by). s.Chunks holds no later chunk, so none
+	// can be picked.
 	if next := waveobj.NextChunkIndex(len(s.Chunks), func(i int) (string, string) {
 		return s.Chunks[i].Status, s.Chunks[i].Priority
 	}); next >= 0 {
@@ -321,6 +335,39 @@ func EffortSummaryOf(e *waveobj.Effort) wshrpc.EffortSummary {
 	}
 	s.LastNote = lastNoteOf(e)
 	return s
+}
+
+// laterItemOf is a later chunk as the Later section draws it, and whether it is still open there: a chunk that is
+// pending, active or blocked. Done, skipped and deferred leave the section, as does a proposed chunk, which is a
+// suggestion not yet accepted. Since is the chunk's first note, else its (latest) chunk-added event, else its
+// UpdatedTs; Note, Session and Conversation come from the first note.
+func laterItemOf(e *waveobj.Effort, c waveobj.EffortChunk) (wshrpc.EffortLaterItem, bool) {
+	if c.Status != "pending" && c.Status != "active" && c.Status != "blocked" {
+		return wshrpc.EffortLaterItem{}, false
+	}
+	item := wshrpc.EffortLaterItem{Label: c.Label, Status: c.Status, Due: c.Due}
+	var since int64
+	if len(c.Notes) > 0 {
+		first := c.Notes[0]
+		since = first.Ts
+		item.Note = first.Text
+		if r := []rune(item.Note); len(r) > LaterNoteMaxRunes {
+			item.Note = string(r[:LaterNoteMaxRunes])
+		}
+		item.Session, item.Conversation = first.Session, first.Conversation
+	}
+	if since <= 0 {
+		for _, ev := range e.Events {
+			if ev.Kind == "chunk-added" && ev.Label == c.Label && ev.Ts > since {
+				since = ev.Ts
+			}
+		}
+	}
+	if since <= 0 {
+		since = c.UpdatedTs
+	}
+	item.Since = since
+	return item, true
 }
 
 // LastNoteMaxChars caps the newest note a summary carries. Agent notes run to several paragraphs, and every
@@ -340,6 +387,9 @@ func lastNoteOf(e *waveobj.Effort) *wshrpc.EffortLastNote {
 	}
 	consider(e.Notes, "")
 	for _, c := range e.Chunks {
+		if c.Later {
+			continue // a saved passage is not where the initiative was left
+		}
 		consider(c.Notes, c.Label)
 	}
 	if newest == nil {

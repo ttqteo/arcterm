@@ -122,7 +122,7 @@ type CommandEffortDeleteData struct {
 // EffortOp is one typed mutation. Op selects the behavior; the remaining fields are the op's
 // arguments (validation picks which are required per op).
 type EffortOp struct {
-	Op        string `json:"op"`                  // rename | setProject | setTicket | setStatus | unarchive | link | addChunk | removeChunk | renameChunk | recheckChunk | moveChunk | setChunkStatus | setChunkStage | setChunkDue | setChunkPriority | appendNote | editNote | removeNote | setOwner | advance | reopen
+	Op        string `json:"op"`                  // rename | setProject | setTicket | setStatus | unarchive | link | addChunk | removeChunk | renameChunk | recheckChunk | moveChunk | setChunkStatus | setChunkStage | setChunkDue | setChunkLater | setChunkPriority | appendNote | editNote | removeNote | setOwner | advance | reopen
 	Title     string `json:"title,omitempty"`     // rename
 	Project   string `json:"project,omitempty"`   // setProject ("" clears)
 	Ticket    string `json:"ticket,omitempty"`    // setTicket ("" clears)
@@ -135,10 +135,18 @@ type EffortOp struct {
 	Stage     string `json:"stage,omitempty"`     // addChunk / setChunkStage ("" clears)
 	Due       string `json:"due,omitempty"`       // addChunk / setChunkDue: a local date, YYYY-MM-DD ("" clears)
 	Priority  string `json:"priority,omitempty"`  // addChunk / setChunkPriority: critical | high | medium | low | information ("" clears)
-	Note      string `json:"note,omitempty"`      // appendNote text; also honored by setChunkStatus/advance/reopen as extra text; editNote new text
+	Note      string `json:"note,omitempty"`      // appendNote text; also honored by setChunkStatus/advance/reopen as extra text, and by addChunk as the chunk's first note; editNote new text
 	NoteTs    int64  `json:"notets,omitempty"`    // editNote/removeNote: the note's ts, a stale guard beside At
 	Kind      string `json:"kind,omitempty"`      // attachWork: "run" | "agent"
 	ORef      string `json:"oref,omitempty"`      // attachWork/detachWork: "run:<oid>" | "agent:<tabid>"
+	// Later is the chunk's later mark (EffortChunk.Later): addChunk makes the chunk later, setChunkLater sets the mark
+	// to this value (false drops it, as "" clears a due). Later chunks are not the initiative's work: see EffortChunk.Later.
+	Later bool `json:"later,omitempty"`
+	// Session and Conversation are the agent session ("agent:<tabid>") and the conversation id that addChunk's first
+	// note (Note) records. Honored only when the batch's author is "you", the cockpit saving a passage from a Chat; from
+	// a terminal the server derives both from the calling block (NoteAuthor), so a caller's values are ignored.
+	Session      string `json:"session,omitempty"`
+	Conversation string `json:"conversation,omitempty"`
 	// Base is the project's HEAD that addChunk, renameChunk and recheckChunk stamp on the chunk (BaseCommit).
 	// The server fills it from the initiative's project; a caller's value is overwritten.
 	Base string `json:"base,omitempty"`
@@ -233,6 +241,25 @@ type EffortSummary struct {
 	UpdatedTs   int64                `json:"updatedts"`
 	PinnedTs    int64                `json:"pinnedts,omitempty"` // when it was pinned to the Brief's cards; 0 = not pinned
 	LastNote    *EffortLastNote      `json:"lastnote,omitempty"` // the newest note on the effort or any chunk
+	// Later lists the chunks saved for later that are still open (status pending, active or blocked), in chunk order.
+	// A later chunk is in no other field here: not in Chunks, Done, Total or ActiveChunk, and its notes are no LastNote
+	// candidates, so the summary's readers follow "later is not the initiative's work" without learning of the mark.
+	Later []EffortLaterItem `json:"later,omitempty"`
+}
+
+// EffortLaterItem is one open later chunk as the Brief's Later section draws it, without its note trail.
+type EffortLaterItem struct {
+	Label  string `json:"label"`
+	Status string `json:"status"` // pending | active | blocked
+	Due    string `json:"due,omitempty"`
+	// Since is when the item was saved, unix ms: the first note's ts, else the chunk-added event's, else the chunk's UpdatedTs.
+	Since int64 `json:"since"`
+	// Note is the first note's text, cut to 1,000 runes: the passage Ask agent quotes.
+	Note string `json:"note,omitempty"`
+	// Session and Conversation are the first note's agent session ("agent:<tabid>") and conversation id: Ask agent looks
+	// for the live agent by the conversation, then by the tab, and resumes by the conversation only when neither is live.
+	Session      string `json:"session,omitempty"`
+	Conversation string `json:"conversation,omitempty"`
 }
 
 // EffortLastNote is where an initiative was left: its newest note, cut to its first line so the ledger does

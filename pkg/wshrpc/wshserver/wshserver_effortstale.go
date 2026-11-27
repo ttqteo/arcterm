@@ -117,7 +117,7 @@ func staleGroups(ctx context.Context, oid string) ([]*staleGroup, error) {
 		}
 		oldest := int64(0)
 		for _, c := range e.Chunks {
-			if w := jarvis.ChunkWrittenTs(e, c); jarvis.ChunkIsOpen(c) && w > 0 && (oldest == 0 || w < oldest) {
+			if w := jarvis.ChunkWrittenTs(e, c); jarvis.ChunkIsScanned(c) && w > 0 && (oldest == 0 || w < oldest) {
 				oldest = w
 			}
 		}
@@ -138,7 +138,8 @@ func staleGroups(ctx context.Context, oid string) ([]*staleGroup, error) {
 	return groups, nil
 }
 
-// scanStale measures every open chunk of the initiatives staleGroups picks; it returns only the flagged ones.
+// scanStale measures every open plan chunk of the initiatives staleGroups picks (a chunk saved for later is left out);
+// it returns only the flagged ones.
 func scanStale(ctx context.Context, oid string) ([]wshrpc.EffortStaleEntry, error) {
 	groups, err := staleGroups(ctx, oid)
 	if err != nil {
@@ -154,7 +155,7 @@ func scanStale(ctx context.Context, oid string) ([]wshrpc.EffortStaleEntry, erro
 		for _, e := range g.efforts {
 			entry := wshrpc.EffortStaleEntry{EffortOID: e.OID, Title: e.Title, Project: e.Project, Chunks: []wshrpc.EffortChunkStale{}}
 			for i, c := range e.Chunks {
-				if !jarvis.ChunkIsOpen(c) {
+				if !jarvis.ChunkIsScanned(c) {
 					continue
 				}
 				res, ok := h.AssessChunk(c, jarvis.ChunkWrittenTs(e, c))
@@ -172,9 +173,10 @@ func scanStale(ctx context.Context, oid string) ([]wshrpc.EffortStaleEntry, erro
 	return out, nil
 }
 
-// backfillBases stamps the commit HEAD was at when each open chunk with no BaseCommit was written (ChunkWrittenTs). The stamp
-// goes through the keep-UpdatedTs update, with no note: it records when the chunk was written, it is not new work. A
-// base an earlier backfill dated by UpdatedTs (jarvis.BaseFromBackfill) is re-derived the same way and corrected.
+// backfillBases stamps the commit HEAD was at when each open plan chunk with no BaseCommit was written
+// (ChunkWrittenTs); a chunk saved for later is left alone. The stamp goes through the keep-UpdatedTs update, with no
+// note: it records when the chunk was written, it is not new work. A base an earlier backfill dated by UpdatedTs
+// (jarvis.BaseFromBackfill) is re-derived the same way and corrected.
 func backfillBases(ctx context.Context, oid string) (int, int, error) {
 	groups, err := staleGroups(ctx, oid)
 	if err != nil {
@@ -188,7 +190,7 @@ func backfillBases(ctx context.Context, oid string) (int, int, error) {
 			was := map[string]string{} // the base each re-derived chunk held, so a recheck meanwhile is never undone
 			for _, c := range e.Chunks {
 				written := jarvis.ChunkWrittenTs(e, c)
-				if !jarvis.ChunkIsOpen(c) || written <= 0 {
+				if !jarvis.ChunkIsScanned(c) || written <= 0 {
 					continue
 				}
 				if c.BaseCommit != "" {

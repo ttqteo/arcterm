@@ -92,6 +92,10 @@ import briefActScenarios from "./scenarios-brief-act.mjs";
 import chatBrainstormReviewScenarios from "./scenarios-chat-brainstorm-review.mjs";
 import chatRedesignScenarios from "./scenarios-chat-redesign.mjs";
 import chatCodeBoxScenarios from "./scenarios-chat-code-box.mjs";
+import saveLaterScenarios from "./scenarios-save-later.mjs";
+import laterCardScenarios from "./scenarios-later-card.mjs";
+import laterSectionScenarios from "./scenarios-later-section.mjs";
+import laterSheetScenarios from "./scenarios-later-sheet.mjs";
 import chatVerdictHandoffScenarios from "./scenarios-chat-verdict-handoff.mjs";
 import chatCouncilScenarios from "./scenarios-chat-council.mjs";
 import chatSuggestCardScenarios from "./scenarios-chat-suggest-card.mjs";
@@ -16242,6 +16246,36 @@ const inlineEsc = async (h) => {
     await briefNap(400);
 };
 
+// Polls `expr` every 50 ms: the ms it took to turn true, or -1 when it has not within `ms`. Steps 7 and 9 wait on a row
+// leaving and a sheet closing, which are springs (RevealItem's exit, ModalShell's springSheet exit: about half a second to
+// settle, motiontokens.ts MOTION.spring), so a fixed nap of 250 or 400 ms read the DOM while both were still in it.
+const inlineUntil = async (h, expr, ms = 3000) => {
+    const start = Date.now();
+    while (Date.now() - start < ms) {
+        if (await h.ev(expr).catch(() => false)) {
+            return Date.now() - start;
+        }
+        await briefNap(50);
+    }
+    return -1;
+};
+
+// What is open on the page, and what holds the keyboard: step 9 reads it before each Escape, so a sheet that does not
+// close names what took the key. `focus` carries the focused element's tag and its data-, role and aria-label attributes.
+const INLINE_OPEN = `(() => {
+    const a = document.activeElement;
+    const attrs = a ? Object.fromEntries([...a.attributes].filter((n) => n.name.startsWith('data-') || n.name === 'role' || n.name === 'aria-label').map((n) => [n.name, n.value.slice(0, 60)])) : null;
+    return {
+        sheet: !!document.querySelector('[data-jarvis-brief-sheet]'),
+        trackerMenu: !!document.querySelector('[data-jarvis-tracker-menu]'),
+        contextMenu: !!document.querySelector('[data-context-menu]'),
+        renameInput: !!document.querySelector('[data-jarvis-rename-input]'),
+        toast: !!document.querySelector('[data-jarvis-brief-toast]'),
+        dialogs: document.querySelectorAll('[role="dialog"]').length,
+        focus: a ? { tag: a.tagName.toLowerCase(), attrs, inSheet: !!a.closest('[data-jarvis-brief-sheet]'), inPortal: !!a.closest('[data-floating-ui-portal]') } : null,
+    };
+})()`;
+
 const briefInlineTracker = {
     name: "brief-inline-tracker",
     surface: "jarvis",
@@ -16348,23 +16382,37 @@ const briefInlineTracker = {
         await h.ev(`${SHEET}?.querySelector('[data-jarvis-rename-input]')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
         await briefNap(200);
 
-        // 7. delete hides the row at once, and Undo brings it back without a write
+        // 7. delete hides the row, and Undo brings it back without a write
+        // The row folds away on RevealItem's exit spring and leaves the DOM when it settles, about half a second after the
+        // press, so each part is waited on rather than read after a fixed nap, and the detail names the part that failed:
+        // the menu on Ship, its Delete chunk button, the row gone, the Undo toast, the row back.
         const sel = `${SHEET}?.querySelector('[data-jarvis-tracker-chunk="Ship"]')`;
+        // a row's menu is drawn beside its chunk div, in the row's own wrapper
+        const shipMenu = `(${sel})?.parentElement?.querySelector('[data-jarvis-tracker-menu]')`;
         await h.ev(`(${sel})?.querySelector('[data-jarvis-chunk-status]')?.click()`);
-        await briefNap(250);
-        await h.ev(`[...document.querySelectorAll('[data-jarvis-tracker-menu] button')].find((b) => b.textContent.trim() === 'Delete chunk')?.click()`);
-        await briefNap(250);
-        const gone = await h.ev(`!(${sel}) && !!document.querySelector('[data-jarvis-toast-undo]')`);
+        const menuMs = await inlineUntil(h, `!!(${shipMenu})`, 2000);
+        const deleteFound = await h.ev(`(() => {
+            const b = [...((${shipMenu})?.querySelectorAll('button') ?? [])].find((x) => x.textContent.trim() === 'Delete chunk');
+            b?.click();
+            return !!b;
+        })()`);
+        const hiddenMs = await inlineUntil(h, `!(${sel})`, 3000);
+        const undoShown = await h.ev(`!!document.querySelector('[data-jarvis-toast-undo]')`);
+        const toastText = await h.ev(`document.querySelector('[data-jarvis-brief-toast] span')?.textContent ?? null`);
+        // the sheet's own error line: "An initiative keeps at least one chunk." when the delete was refused
+        const mutateError = await h.ev(`${SHEET}?.querySelector('[data-jarvis-initiative-sheet-body="plan"] p.text-error')?.textContent ?? null`);
+        // Undo whatever happened above, so the delete never reaches the server
         await h.ev(`document.querySelector('[data-jarvis-toast-undo]')?.click()`);
-        await briefNap(400);
-        const back = await h.ev(`!!(${sel})`);
+        const backMs = await inlineUntil(h, `!!(${sel})`, 3000);
         steps.push({
             step: "7. delete hides the chunk behind an Undo toast, and Undo restores it",
-            ok: gone === true && back === true,
-            detail: JSON.stringify({ gone, back }),
+            ok: menuMs >= 0 && deleteFound === true && hiddenMs >= 0 && undoShown === true && backMs >= 0,
+            detail: JSON.stringify({ menuMs, deleteFound, hiddenMs, undoShown, toastText, mutateError, backMs }),
         });
 
         // 8. the initiative's own edits are the head's ⋯ menu: Rename, Edit details, Pause, Archive, Delete
+        // (a context menu opens where the press was, and this synthetic click carries no pointer position: clientX and
+        // clientY are 0, so the shot below has the menu at the window's top-left corner. That is the click's, not the app's.)
         await h.ev(`${SHEET}?.querySelector('[data-jarvis-sheet-menu]')?.click()`);
         await briefNap(300);
         const items = await h.ev(`[...document.querySelectorAll('[data-menu-item]')].map((r) => r.dataset.menuItem)`);
@@ -16374,10 +16422,18 @@ const briefInlineTracker = {
             ok: ["Rename", "Edit details…", "Archive", "Delete"].every((i) => items.includes(i)),
             detail: JSON.stringify(items),
         });
-        await inlineEsc(h);
 
         // 9. Escape closes the sheet, and the page draws no plan rows
+        // Two presses: the first closes step 8's ⋯ menu (a floating-ui portal, whose Escape ModalShell leaves to it), the
+        // second the sheet. What is open and what holds focus is read before each press, so a sheet that stays open names what
+        // took the key, and the sheet is waited on, its exit being the spring noted at inlineUntil (ModalShell takes the
+        // panel out of the DOM when it has settled, about 480 ms after the press).
+        const before = await h.ev(INLINE_OPEN);
         await inlineEsc(h);
+        const menuGoneMs = await inlineUntil(h, `!document.querySelector('[data-context-menu]')`, 2000);
+        const between = await h.ev(INLINE_OPEN);
+        await inlineEsc(h);
+        const sheetGoneMs = await inlineUntil(h, `!document.querySelector('[data-jarvis-brief-sheet]')`, 3000);
         const closed = await h.ev(`(() => ({
             sheet: !!document.querySelector('[data-jarvis-brief-sheet]'),
             chunks: document.querySelectorAll('[data-jarvis-tracker-chunk]').length,
@@ -16386,7 +16442,7 @@ const briefInlineTracker = {
         steps.push({
             step: "9. Escape closes the sheet and stays on the Brief, with no plan rows on the page",
             ok: closed.sheet === false && closed.chunks === 0 && closed.brief === true,
-            detail: JSON.stringify(closed),
+            detail: JSON.stringify({ before, menuGoneMs, between, sheetGoneMs, closed }),
         });
         return steps;
     },
@@ -50461,6 +50517,10 @@ const chatQuote = {
             const menu10 = await h.ev(
                 `[...document.querySelectorAll("[data-context-menu] [data-menu-item]")].map((el) => el.getAttribute("data-menu-item"))`
             );
+            // this agent is linked to no initiative: Save for later names none (save-later steps 1 and 5 hold the rest)
+            const later10 = await h.ev(
+                `(() => { const el = document.querySelector("[data-context-menu] [data-save-later]"); return el ? { found: true, sublabel: el.querySelector(".ml-auto")?.textContent ?? null } : { found: false }; })()`
+            );
             await polishNap(300);
             await h.shot("cdp-shots/chat-quote-10-save-menu.png");
             const pressed10 = up10 && (await pressButton(`document.querySelector("[data-context-menu] [data-chat-save-idea]")`));
@@ -50492,10 +50552,12 @@ const chatQuote = {
             const wantBody = (text) =>
                 new RegExp(`^From agent "${CQ_NAME}" \\(agent:${A}\\), \\d{4}-\\d{2}-\\d{2}\\n\\n> ${text}$`);
             rec(
-                "10. Save as idea (after Reply and Copy) makes an idea named by the passage, in the agent's project, no chunks, whose one note is yours: where it was said, then the passage quoted; a toast says so with Open",
+                "10. the menu reads Reply, Copy, Save as idea, Save for later (no initiative named: the agent is linked to none), Add note; Save as idea makes an idea named by the passage, in the agent's project, no chunks, whose one note is yours: where it was said, then the passage quoted; a toast says so with Open",
                 sel10 &&
                     up10 &&
-                    JSON.stringify(menu10) === JSON.stringify(["Reply", "Copy", "Save as idea", "Add note"]) &&
+                    JSON.stringify(menu10) === JSON.stringify(["Reply", "Copy", "Save as idea", "Save for later", "Add note"]) &&
+                    later10?.found === true &&
+                    later10?.sublabel == null &&
                     pressed10 &&
                     toast10 &&
                     open10 &&
@@ -50504,7 +50566,7 @@ const chatQuote = {
                     idea10?.notes === 1 &&
                     idea10?.author === "you" &&
                     wantBody(CQ_PASSAGE).test(idea10?.text ?? ""),
-                { sel10, up10, menu10, pressed10, toast10, open10, idea10 }
+                { sel10, up10, menu10, later10, pressed10, toast10, open10, idea10 }
             );
 
             // 11. Add note makes a note with the same title, its project and conversation in its frontmatter (the body
@@ -76813,6 +76875,8 @@ export const SCENARIOS = [
     // redesign's, which the rail scenario's tabs, reload and saved-grid keys come from
     ...chunkPriorityScenarios({ ...CR_KIT, ...JARVIS_KIT }),
     ...jarvisLaterScenarios(JARVIS_KIT),
+    ...laterSheetScenarios(JARVIS_KIT),
+    ...laterSectionScenarios(JARVIS_KIT),
     ...sessionIdeasBriefScenarios(JARVIS_KIT),
     ...sessionIdeasPetScenarios(JARVIS_KIT),
     ...libraryScenarios(LIBRARY_KIT),
@@ -76833,6 +76897,7 @@ export const SCENARIOS = [
     chatAsleepAttachJump,
     chatFork,
     chatQuote,
+    ...saveLaterScenarios(CR_KIT),
     chatFocusRead,
     chatBubbleFold,
     agentTreePinnedFolder,
@@ -76850,6 +76915,7 @@ export const SCENARIOS = [
     ...chatVerdictHandoffScenarios(CBR_KIT),
     ...chatCouncilScenarios(CR_KIT),
     ...chatSuggestCardScenarios(CR_KIT),
+    ...laterCardScenarios(CR_KIT),
     ...agentAccountScenarios(CR_KIT),
     ...gitAccountsScenarios(CR_KIT),
     ...chatJudgeScenarios(CR_KIT),

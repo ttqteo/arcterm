@@ -25,6 +25,7 @@ export type ChunkRowModel = {
     trail: EffortNote[];
     owner?: string;
     due?: string; // YYYY-MM-DD, `wsh effort chunk due`
+    later?: boolean; // saved for later (`wsh effort chunk later`): kept on Jarvis, not part of the initiative's plan
     priority?: string; // critical | high | medium | low | information; unset ranks as medium (chunkorder.ts)
     workrefs: ChunkWorkRef[];
 };
@@ -42,6 +43,7 @@ export function effortChunkRows(effort: Effort): ChunkRowModel[] {
             trail,
             owner: c.owner,
             due: c.due,
+            later: c.later,
             priority: c.priority,
             workrefs: c.workrefs ?? [],
         };
@@ -111,6 +113,11 @@ export async function advanceChunk(oref: string, note?: string): Promise<void> {
 }
 export async function setChunkStatus(oref: string, chunk: string, status: string, note?: string): Promise<void> {
     await mutateEffort(oref, [{ op: "setChunkStatus", chunk, status, note }]);
+}
+// Turn a chunk's later mark on or off (EffortOp setChunkLater). `chunk` is a ref as chunkRef gives it; with the mark off the
+// chunk joins the plan where it stands in the chunk order.
+export async function setChunkLater(oref: string, chunk: string, on: boolean): Promise<void> {
+    await mutateEffort(oref, [{ op: "setChunkLater", chunk, later: on }]);
 }
 // Set a chunk's priority (a level of chunkorder.ts's CHUNK_PRIORITIES; "" clears it). `chunk` is a chunk ref, as
 // the other helpers take. The server refuses any other level and writes the trail note.

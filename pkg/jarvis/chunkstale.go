@@ -89,9 +89,16 @@ func HubFile(p string) bool {
 	return hubFiles[path.Base(p)]
 }
 
-// ChunkIsOpen is a chunk the scan measures: not settled as done or skipped.
+// ChunkIsOpen is a chunk not settled as done or skipped.
 func ChunkIsOpen(c waveobj.EffortChunk) bool {
 	return c.Status != "done" && c.Status != "skipped"
+}
+
+// ChunkIsScanned is a chunk the stale scan measures and the base backfill stamps: open, and not saved for later. A
+// saved passage is the person's own item, not work written against the code, so a file its text names says nothing
+// about it and a base stamped on it would stand for nothing (the save-for-later spec, Builder's call 4).
+func ChunkIsScanned(c waveobj.EffortChunk) bool {
+	return ChunkIsOpen(c) && !c.Later
 }
 
 // ChunkBasesSinceMs is when chunks began to keep a BaseCommit (commit 781a25a06): add, rename and recheck stamp the

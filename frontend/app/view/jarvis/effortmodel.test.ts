@@ -430,6 +430,46 @@ describe("effortFacts", () => {
         expect(f).toMatchObject({ done: 0, counted: 0, segments: [], next: null, idle: "No chunks yet." });
     });
 
+    // a chunk saved for later is not the initiative's work: it sits before the plan here on purpose, so a rule that
+    // reads the list in order would pick it up first
+    describe("with chunks saved for later", () => {
+        const later = (label: string, status: string) => ({ ...chunk(label, status), later: true });
+
+        it("never names a later chunk as next, whatever its status or place", () => {
+            const pending = effortFacts(
+                effort({ chunks: [later("L", "pending"), chunk("A", "done"), chunk("B", "pending")] }),
+                []
+            );
+            expect(pending.next).toEqual({ label: "B", stage: "", tone: "pending" });
+            const active = effortFacts(effort({ chunks: [later("L", "active"), chunk("B", "pending")] }), []);
+            expect(active.next?.label).toBe("B");
+        });
+
+        it("counts neither its done, its total nor its bar", () => {
+            const f = effortFacts(
+                effort({
+                    chunks: [later("L1", "pending"), later("L2", "done"), chunk("A", "done"), chunk("B", "pending")],
+                }),
+                []
+            );
+            expect([f.done, f.counted, f.skipped]).toEqual([1, 2, 0]);
+            expect(f.segments).toEqual([
+                { tone: "done", n: 1 },
+                { tone: "pending", n: 1 },
+            ]);
+        });
+
+        it("says there is no open chunk when the plan is settled and only a later one is left", () => {
+            const f = effortFacts(effort({ chunks: [later("L", "pending"), chunk("A", "done")] }), []);
+            expect(f).toMatchObject({ done: 1, counted: 1, next: null, idle: "No open chunk." });
+        });
+
+        it("says there are no chunks yet when every chunk is later", () => {
+            const f = effortFacts(effort({ chunks: [later("L1", "pending"), later("L2", "active")] }), []);
+            expect(f).toMatchObject({ done: 0, counted: 0, segments: [], next: null, idle: "No chunks yet." });
+        });
+    });
+
     it("says when there is nothing left to pick up", () => {
         expect(effortFacts(effort({}), [])).toMatchObject({ next: null, idle: "No chunks yet." });
         expect(effortFacts(effort({ chunks: [chunk("A", "done"), chunk("B", "skipped")] }), [])).toMatchObject({
