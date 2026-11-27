@@ -10,6 +10,8 @@
 // There are no rounds here: nothing counts them. The rows are pairmodel.ts's timelineRows; the words are pairpanemodel.ts's
 // (the pause's, pairpause.ts's). It stands in the place of the focused agent's own view, under that agent's header, whose
 // Pair button toggles it (agentsurface.tsx).
+// The judges' and your messages pin to the top as they scroll away, as your prompts do in Chat (pinnedpromptbar.tsx), and
+// the band's counter lists them to jump to: the worker's are left out, its own Chat lists the prompts it was sent.
 
 import { springReveal } from "@/app/element/motiontokens";
 import { usePartMotion } from "@/app/element/springbatch";
@@ -37,10 +39,12 @@ import { CouncilText } from "./councilchat";
 import { useNow } from "./narrationtimeline";
 import { composerTarget, liveName, timelineRows, withDraft, type PairRow } from "./pairmodel";
 import { JUDGE_AGAIN_DRAFT } from "./pairopen";
-import { judgeStatus, messageClock, pairControls, quoteLine } from "./pairpanemodel";
+import { judgeStatus, messageClock, pairControls, pairPromptItems, quoteLine } from "./pairpanemodel";
 import { composerPlaceholder, newestPauseId, pauseActions } from "./pairpause";
 import { PairPauseCard, type PauseLive } from "./pairpausecard";
 import { markPairSeen, pairDraftAtom, pairScrollToAtom, resumePair, usePairView } from "./pairstore";
+import { PROMPT_JUMP_EVENT } from "./pinnedprompt";
+import { PinnedPromptBar, usePinnedPrompt } from "./pinnedpromptbar";
 import { useChipAnswer } from "./raildecidedpane";
 
 const ROOT = "flex min-h-0 min-w-0 flex-1 flex-col bg-background text-[14px] text-primary";
@@ -97,9 +101,16 @@ export function PairConversation({
     const workerName = liveName(view.worker, roster);
     const rows = useMemo(() => timelineRows(view, workerName), [view, workerName]);
     const byId = useMemo(() => new Map(rows.map((r) => [r.id, r])), [rows]);
+    // the judges' and your messages, which carry data-user-prompt in the same order (PairMessage's `pinned`)
+    const promptItems = useMemo(() => pairPromptItems(rows), [rows]);
+    const pinnedIds = useMemo(() => new Set(promptItems.map((p) => p.id)), [promptItems]);
+    const promptTexts = useMemo(() => promptItems.map((p) => p.text), [promptItems]);
+    const promptTags = useMemo(() => promptItems.map((p) => p.tag), [promptItems]);
     const reduced = useReducedMotion();
     const scroller = useRef<HTMLDivElement>(null);
     const content = useRef<HTMLDivElement>(null);
+    // at the end of the conversation the band hides, as Chat's does: the newest message gets the room
+    const pinned = usePinnedPrompt(content, true);
     const input = useRef<HTMLTextAreaElement>(null);
     const stick = useRef(true);
     const [flash, setFlash] = useState<string | null>(null);
@@ -142,7 +153,15 @@ export function PairConversation({
         follow();
         const ro = new ResizeObserver(follow);
         ro.observe(inner);
-        return () => ro.disconnect();
+        // a jump from the band starts a smooth scroll at the end: let go first, or a message arriving would snap it back
+        const letGo = () => {
+            stick.current = false;
+        };
+        inner.addEventListener(PROMPT_JUMP_EVENT, letGo);
+        return () => {
+            ro.disconnect();
+            inner.removeEventListener(PROMPT_JUMP_EVENT, letGo);
+        };
     }, []);
 
     useEffect(() => {
@@ -278,6 +297,18 @@ export function PairConversation({
                 {/* the column Chat reads in (chatconversation.tsx, 760px), so switching from Chat to Pair keeps the
                     text where the eye was instead of spreading it over a wide centre */}
                 <div ref={content} data-pair-column className="mx-auto flex w-full max-w-[760px] flex-col gap-3">
+                    {/* a zero-height sticky row in a gap-3 column: -mb-3 cancels the gap it would add */}
+                    <PinnedPromptBar
+                        rootRef={content}
+                        index={pinned}
+                        text={promptTexts[pinned]}
+                        prompts={promptTexts}
+                        tags={promptTags}
+                        menuTitle="Judge & you"
+                        itemWord="message"
+                        bg="bg-background"
+                        className="-mb-3"
+                    />
                     {rows.length === 0 ? (
                         <div data-pair-empty className="py-6 text-center text-[13px] text-muted">
                             No messages yet.
@@ -299,6 +330,7 @@ export function PairConversation({
                                 quotedWho={row.quoteId != null ? (byId.get(row.quoteId)?.who ?? "") : ""}
                                 enters={!openedWith.has(row.id)}
                                 flashing={flash === row.id}
+                                pinned={pinnedIds.has(row.id)}
                                 heldNow={heldNow}
                                 canReply={controls.reply}
                                 canRunNow={controls.runNow}
@@ -438,6 +470,8 @@ type MessageProps = {
     // it arrived after the conversation opened: it grows in on springReveal instead of being drawn in place
     enters: boolean;
     flashing: boolean;
+    // a judge's or your message: the pinned band and its list hold it (data-user-prompt)
+    pinned: boolean;
     heldNow: ReadonlyMap<string, "pending" | "through">;
     // pairControls: the read-only view has neither Reply on a message nor Run now on a held command
     canReply: boolean;
@@ -459,6 +493,7 @@ function PairMessage({
     quotedWho,
     enters,
     flashing,
+    pinned,
     heldNow,
     canReply,
     canRunNow,
@@ -485,6 +520,7 @@ function PairMessage({
         <motion.div
             data-pair-msg={row.id}
             data-side={row.side}
+            data-user-prompt={pinned ? "" : undefined}
             {...arrive}
             className={cn("flex overflow-hidden", row.side === "right" ? "justify-end" : "justify-start")}
         >

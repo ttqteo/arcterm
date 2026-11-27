@@ -47,6 +47,8 @@ and a picture given to a line that is not big.
   attached gives the agent the board's shapes, so it links the ones it talks about; quotes, dates and short bold
   phrases or table cells that match a shape's text point too, underlined dotted. `wsh board shapes board:<id>` lists
   a board's shapes.
+- A pair's conversation pins the judge's or your last message to the top once it scrolls away, as Chat does with your
+  prompts, and the counter on it lists only the judges' messages and yours, each tagged Judge or You, to jump to.
 
 ### Changed
 

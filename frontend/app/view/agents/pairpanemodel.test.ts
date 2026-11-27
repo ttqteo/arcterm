@@ -2,7 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { judgeStatus, messageClock, pairControls, quoteLine, readFootLine, shortSpan } from "./pairpanemodel";
+import type { PairRow } from "./pairmodel";
+import {
+    judgeStatus,
+    messageClock,
+    pairControls,
+    pairPromptItems,
+    quoteLine,
+    readFootLine,
+    shortSpan,
+} from "./pairpanemodel";
 
 const side = (extra: Partial<PairSide> = {}): PairSide => ({
     tab: "4c6ba858-0d7e",
@@ -133,5 +142,45 @@ describe("quoteLine", () => {
     });
     it("is empty for text with nothing in it", () => {
         expect(quoteLine("  \n \n")).toBe("");
+    });
+});
+
+describe("pairPromptItems", () => {
+    const row = (
+        id: string,
+        side: PairRow["side"],
+        who: string,
+        text: string,
+        extra: Partial<PairRow> = {}
+    ): PairRow => ({
+        id,
+        side,
+        ts: 0,
+        who,
+        judge: null,
+        toLabel: "",
+        text,
+        quote: null,
+        quoteId: null,
+        held: [],
+        pause: null,
+        ...extra,
+    });
+
+    it("holds the judges' and your messages in order, never the worker's or a system line", () => {
+        const items = pairPromptItems([
+            row("1", "left", "thesis-bench", "pushed fix 1"),
+            row("2", "wide", "You", "check fix 1 first"),
+            row("3", "system", "", "Paired"),
+            row("4", "right", "Judge", "variance still dominates\nmore"),
+        ]);
+        expect(items).toEqual([
+            { id: "2", text: "check fix 1 first", tag: "You" },
+            { id: "4", text: "variance still dominates", tag: "Judge" },
+        ]);
+    });
+
+    it("names a judge by its short id while the pair has several", () => {
+        expect(pairPromptItems([row("1", "right", "Judge", "ok", { judge: "c3f1" })])[0].tag).toBe("Judge c3f1");
     });
 });
