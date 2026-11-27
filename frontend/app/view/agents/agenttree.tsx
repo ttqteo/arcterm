@@ -16,8 +16,10 @@ import {
     cardVariants,
     composerReveal,
     computeEntrances,
+    foldX,
     initialEntranceState,
 } from "@/app/element/motiontokens";
+import { usePartMotion } from "@/app/element/springbatch";
 import { globalStore } from "@/app/store/jotaiStore";
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import * as WOS from "@/app/store/wos";
@@ -84,6 +86,7 @@ import { DRAFT_TITLE, draftAgentIdsAtom } from "./draftmarks";
 import { LandedClose } from "./landedclose";
 import { fallAsleepLabel, fallingAsleepOf } from "./fallasleepstore";
 import { beginAgentDrag, endAgentDrag } from "./agentdragstore";
+import { useAccountBadge } from "./agentaccountstore";
 import { shortTabId } from "./agentrowmodel";
 import type { AgentsViewModel } from "./agents";
 import {
@@ -1351,6 +1354,9 @@ function ParentRow({
     const fields = useAtomValue(rowFieldsAtom);
     const shownBranch = fields.branch ? notableBranch(branch) : undefined;
     const shownModel = fields.model ? agent.model : undefined;
+    // the Claude account it runs on, only while the open agents run on more than one (agentaccountbadge.ts)
+    const account = useAccountBadge(agent.id);
+    const accountPart = usePartMotion(foldX);
     // what its processes hold now (agentram.ts); an asleep agent has none, whatever a reading still names
     const ownRam = useAtomValue(agentRamAtom(agent.sleeping != null ? undefined : agent.blockId));
     // a lead's row stands for its run, so it shows what the whole run holds: the lead, its workers, reviewers and
@@ -1747,7 +1753,29 @@ function ParentRow({
                             />
                         ) : (
                             <>
-                                {shownModel ? <span className="min-w-0 truncate">{shownModel}</span> : null}
+                                {/* the account folds in and out with its dot, and gives up its width before the model does */}
+                                <AnimatePresence initial={false}>
+                                    {account ? (
+                                        <motion.span
+                                            key="account"
+                                            {...accountPart}
+                                            className="flex min-w-0 shrink-[10] items-center gap-[5px] overflow-hidden"
+                                        >
+                                            <span data-row-account className="min-w-0 truncate" title={account.title}>
+                                                {account.text}
+                                            </span>
+                                            {shownModel || shownBranch ? (
+                                                <span aria-hidden className="flex-none text-ink-faint">
+                                                    ·
+                                                </span>
+                                            ) : null}
+                                        </motion.span>
+                                    ) : null}
+                                </AnimatePresence>
+                                {/* beside an account it keeps its width: the account is the one cut */}
+                                {shownModel ? (
+                                    <span className={account ? "flex-none" : "min-w-0 truncate"}>{shownModel}</span>
+                                ) : null}
                                 {shownModel && shownBranch ? (
                                     <span aria-hidden className="flex-none text-ink-faint">
                                         ·

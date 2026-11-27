@@ -32,6 +32,12 @@ and a picture given to a line that is not big.
 
 ## Unreleased
 
+### Added
+
+- When your open Claude agents run on more than one Claude account, each one names its account: left of the model
+  under the chat box, and before the model under its row in the sidebar. With every agent on one account nothing
+  changes.
+
 ### Fixed
 
 - A run on Codex or agy with no model picked shows its harness where it read "default": the plan review's stage line,

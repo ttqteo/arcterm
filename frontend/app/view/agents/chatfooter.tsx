@@ -25,6 +25,7 @@ import { cn, fireAndForget, stringToBase64 } from "@/util/util";
 import { Check, ChevronRight } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState, type FocusEvent, type KeyboardEvent, type ReactNode } from "react";
+import { useAccountBadge } from "./agentaccountstore";
 import { contextLevel, contextNote, contextTokens } from "./agentrailmodel";
 import { submitToAgent } from "./agentsubmit";
 import type { AgentVM } from "./agentsviewmodel";
@@ -742,9 +743,26 @@ export function ChatFooter({ agent }: { agent: AgentVM }) {
     };
     const pct = agent.usage?.contextpct;
     const hasModel = agent.model != null && agent.model !== "";
+    // the Claude account it runs on, left of the model, only while the open agents run on more than one
+    const account = useAccountBadge(agent.id);
+    const accountPart = usePartMotion(foldX);
     return (
         // the line's free width, its parts at the right; the asleep words (chatcomposer.tsx) take its left
         <div data-chat-footer className="flex min-w-0 flex-1 items-center justify-end gap-3.5">
+            {/* it folds as the other parts do, but shrinks first: in a narrow box the account is the one cut */}
+            <AnimatePresence initial={false}>
+                {account ? (
+                    <motion.span key="account" {...accountPart} className="flex min-w-0 shrink-[1000] overflow-hidden">
+                        <span
+                            data-chat-account
+                            title={account.title}
+                            className="flex h-[22px] min-w-0 max-w-[220px] items-center text-[12.5px] text-muted"
+                        >
+                            <span className="truncate">{account.text}</span>
+                        </span>
+                    </motion.span>
+                ) : null}
+            </AnimatePresence>
             {/* the model chip and the label trade places in one grid cell, so the crossfade stays in place */}
             <div className="grid flex-none items-center">
                 <AnimatePresence initial={false}>

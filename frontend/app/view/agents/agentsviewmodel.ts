@@ -177,6 +177,7 @@ export interface AgentVM {
     committed?: boolean; // idle: its last turn ended on a git commit, so the cockpit offers to close it (donesuggest.ts)
     edited?: boolean; // idle: its last turn changed files no later commit took, so the cockpit offers to ship it (shipmodel.ts)
     loginEmail?: string; // a Default claude agent: the /login account its process started on (block meta agent:loginemail)
+    accountPick?: string; // a claude agent's launch pick (block meta agent:claudeaccount): an account id, or "login" for Default
     running?: boolean; // a plain terminal: its shell is running a command, not waiting at its prompt
     // Asleep (block meta agent:sleeping): its process is gone to free RAM, its row, output and conversation stay. The
     // state stays idle; wakeFailed is why the last wake did not come back (the agent stays asleep while it is set).
@@ -632,6 +633,7 @@ export interface LiveAgentInput {
     committed?: boolean; // the status event's committed: an idle turn that ended on a git commit
     edited?: boolean; // the status event's edited: an idle turn that left file changes no commit took
     loginEmail?: string; // the block's agent:loginemail, lowercased; "" when it has none
+    accountPick?: string; // the block's agent:claudeaccount; absent when its launch picked none
     sleeping?: AgentVM["sleeping"]; // the block's agent:sleeping keys (sleepingOf), absent when it is awake
 }
 
@@ -663,6 +665,9 @@ export function agentVMFromInput(input: LiveAgentInput, now: number): AgentVM {
     };
     if (input.loginEmail) {
         vm.loginEmail = input.loginEmail;
+    }
+    if (input.accountPick) {
+        vm.accountPick = input.accountPick;
     }
     if (input.sleeping) {
         vm.sleeping = input.sleeping;

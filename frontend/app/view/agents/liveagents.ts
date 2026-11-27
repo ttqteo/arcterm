@@ -32,7 +32,7 @@ import { rosterStatus, sleepingOf } from "./agentsleep";
 import { fetchPreviousInfo } from "./previousinfo";
 import { registeredProjectFor } from "./projectlabel";
 import { projectsAtom } from "./projectsstore";
-import { blockLoginEmail } from "./ratelimitstore";
+import { blockAccountPick, blockLoginEmail } from "./ratelimitstore";
 import { isLayoutLoaded, isRosterSeeded, latchWhenTrue } from "./rosterseed";
 import { resolveAgentIdentity } from "./transcriptregistry";
 
@@ -95,6 +95,7 @@ export const liveAgentBaseAtom: Atom<AgentVM[]> = atom((get) => {
                 committed: status.committed,
                 edited: status.edited,
                 loginEmail: blockLoginEmail(block),
+                accountPick: blockAccountPick(block),
                 sleeping: sleepingOf(block?.meta),
             },
             now
