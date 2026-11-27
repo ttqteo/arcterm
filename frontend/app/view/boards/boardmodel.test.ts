@@ -430,7 +430,12 @@ describe("applyAnswer drawings", () => {
             rect("b", 400, 0, 100, 40, { frameId: "d2" }),
             frameEl("d2", 380, -20, 140, 80, 2, "Second"),
         ]);
-        const { scene: next, shapeIds } = applyAnswer(scene, edit({ remove: ["a", "d1"], title: "First, gone" }), [], NOW);
+        const { scene: next, shapeIds } = applyAnswer(
+            scene,
+            edit({ remove: ["a", "d1"], title: "First, gone" }),
+            [],
+            NOW
+        );
         expect(byId(next, "a").isDeleted).toBe(true);
         expect(byId(next, "d1").isDeleted).toBe(true);
         expect(framesOf(next).map((f) => f.id)).toEqual(["d2"]);
