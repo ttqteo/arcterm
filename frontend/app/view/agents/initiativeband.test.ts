@@ -14,8 +14,9 @@ const chunk = (label: string, status: string, workrefs?: Ref[]) => ({
     ...(workrefs ? { workrefs } : {}),
 });
 
-// board A: a done chunk the agent held, its own, two pending to follow, one held by another tab, and chunks that are
-// in the plan but not in the window (a pending one before its own, one past the next two, a proposed one)
+// board A: a pending chunk before the agent's own (the first of the order of work, so it is next), a done chunk the
+// agent held, its own, two pending to follow, one held by another tab, and chunks that are in the plan but not in the
+// window (one past the next two, a proposed one)
 const board = {
     oid: "7655bf18",
     chunks: [
@@ -52,26 +53,92 @@ describe("canWorkOn", () => {
 });
 
 describe("bandRows", () => {
-    it("lists done, mine, next, next, other in plan order, and not a pending chunk before the agent's own", () => {
+    it("lists the rows in plan order, with the next two chunks as the order of work names them", () => {
         const { window } = bandRows(board, "t1");
+        // Intro comes first in the plan and is first among the equal pending chunks, so it is next though it is before the
+        // agent's own chunk
         expect(window.map((r) => [r.label, r.kind])).toEqual([
+            ["Intro", "next"],
             ["Decide", "done"],
             ["Build", "mine"],
             ["Scenario", "next"],
-            ["Polish", "next"],
             ["Review", "other"],
         ]);
-        expect(window.map((r) => r.n)).toEqual([2, 3, 4, 5, 7]);
-        expect(window.some((r) => r.label === "Intro")).toBe(false);
+        expect(window.map((r) => r.n)).toEqual([1, 2, 3, 4, 7]);
+        expect(window.some((r) => r.label === "Polish")).toBe(false);
+    });
+
+    it("lists the next rows in the order of work, a row keeping the number of its place in the plan", () => {
+        // the agent is on chunk 1; chunk 2 is low, 3 unset, 4 critical: the next two are 4, then 3 (never 2)
+        const effort = {
+            chunks: [
+                chunk("Build", "active", [me(20)]),
+                { ...chunk("Low", "pending"), priority: "low" },
+                chunk("Plain", "pending"),
+                { ...chunk("Hot", "pending"), priority: "critical" },
+            ],
+        };
+        const { window, all } = bandRows(effort, "t1");
+        expect(window.map((r) => [r.label, r.kind, r.n])).toEqual([
+            ["Build", "mine", 1],
+            ["Hot", "next", 4],
+            ["Plain", "next", 3],
+        ]);
+        // the full list is in plan order whatever the levels are
+        expect(all.map((r) => [r.label, r.kind])).toEqual([
+            ["Build", "mine"],
+            ["Low", "plan"],
+            ["Plain", "next"],
+            ["Hot", "next"],
+        ]);
+    });
+
+    it("moves only the next rows: the done, mine and other rows keep their places in the plan", () => {
+        const effort = {
+            chunks: [
+                chunk("Intro", "pending"),
+                chunk("Decide", "done", [me(10)]),
+                chunk("Build", "active", [me(20)]),
+                chunk("Review", "active", [other()]),
+                { ...chunk("Docs", "pending"), priority: "critical" },
+            ],
+        };
+        // Docs (critical) and Intro (unset) are next, Docs first: they swap the two next places, and no other row moves
+        expect(bandRows(effort, "t1").window.map((r) => [r.label, r.kind])).toEqual([
+            ["Docs", "next"],
+            ["Decide", "done"],
+            ["Build", "mine"],
+            ["Review", "other"],
+            ["Intro", "next"],
+        ]);
+    });
+
+    it("picks the next two by priority, leaving out a lower-ranked pending chunk", () => {
+        const effort = {
+            chunks: [
+                { ...chunk("Scenario", "pending"), priority: "low" },
+                chunk("Build", "active", [me(20)]),
+                chunk("Polish", "pending"),
+                { ...chunk("Docs", "pending"), priority: "high" },
+                chunk("Ship", "pending"),
+            ],
+        };
+        const { window } = bandRows(effort, "t1");
+        // Docs (high), then Polish (unset, the first of the equal ones); Ship (unset) and Scenario (low) are not next
+        expect(window.map((r) => [r.label, r.kind])).toEqual([
+            ["Build", "mine"],
+            ["Docs", "next"],
+            ["Polish", "next"],
+        ]);
     });
 
     it("offers Work on this only on a chunk nobody holds that is not settled", () => {
         const { window } = bandRows(board, "t1");
         expect(window.map((r) => [r.label, r.workOn])).toEqual([
+            ["Intro", true],
             ["Decide", false],
             ["Build", false],
             ["Scenario", true],
-            ["Polish", true],
             ["Review", false],
         ]);
     });
@@ -80,11 +147,11 @@ describe("bandRows", () => {
         const { all, total } = bandRows(board, "t1");
         expect(total).toBe(7);
         expect(all.map((r) => [r.label, r.kind, r.workOn])).toEqual([
-            ["Intro", "plan", true],
+            ["Intro", "next", true],
             ["Decide", "done", false],
             ["Build", "mine", false],
             ["Scenario", "next", true],
-            ["Polish", "next", true],
+            ["Polish", "plan", true],
             ["Docs", "plan", true],
             ["Review", "other", false],
         ]);
@@ -176,7 +243,7 @@ describe("holderTag", () => {
 describe("firstWorkOn", () => {
     it("is the index of the first row that offers Work on this, or -1", () => {
         const { window } = bandRows(board, "t1");
-        expect(firstWorkOn(window)).toBe(2);
+        expect(firstWorkOn(window)).toBe(0);
         expect(firstWorkOn(window.filter((r) => !r.workOn))).toBe(-1);
         expect(firstWorkOn([])).toBe(-1);
     });

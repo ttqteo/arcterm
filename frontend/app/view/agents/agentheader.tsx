@@ -19,6 +19,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import * as WOS from "@/app/store/wos";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { nextChunk } from "@/app/view/jarvis/effortmodel";
 import { attachAgent, createIdea, effortDetailAtom, loadEffortDetail } from "@/app/view/jarvis/effortstore";
 import { InitiativePicker } from "@/app/view/jarvis/initiativepicker";
 import { openOrPeek, openTarget } from "@/app/view/jarvis/openref";
@@ -306,7 +307,8 @@ function LinkToInitiative({ agent, project, width }: { agent: AgentVM; project: 
                 }
                 await loadEffortDetail(oref, Number.MAX_SAFE_INTEGER);
                 const chunks = globalStore.get(effortDetailAtom).get(oref)?.chunks ?? [];
-                const chunk = chunks.find((c) => c.status === "active") ?? chunks.find((c) => c.status === "pending");
+                // the chunk the initiative goes on with: the active one, else the highest-ranked pending one
+                const chunk = nextChunk(chunks);
                 if (chunk != null) {
                     await attachAgent(oref, chunkRef(planEditChunks(chunks), chunk.label), agent.id);
                 }

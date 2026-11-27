@@ -20,6 +20,7 @@
 // it draws the chips that fit whole (fitChips), however many. Pure: chatsuggeststore.ts holds the
 // model's answers and makes the call, chatpane.tsx wires the two.
 
+import { orderOfWork } from "@/app/view/jarvis/chunkorder";
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
 import type { HintPart } from "./chatboxstate";
 import { agentChunk } from "./initiativepopovermodel";
@@ -44,7 +45,12 @@ export interface ChatChip {
 
 /** The part of an initiative the initiative rule reads. A workref's `ts` is when it was attached (ms). */
 export interface ChipEffort {
-    chunks?: { label: string; status: string; workrefs?: { kind: string; oref: string; ts?: number }[] }[];
+    chunks?: {
+        label: string;
+        status: string;
+        priority?: string;
+        workrefs?: { kind: string; oref: string; ts?: number }[];
+    }[];
 }
 
 /** What a chip is drawn with: its kind's icon, a reply that asks for a build ("build đi", "build it") the hammer, and
@@ -284,8 +290,9 @@ export function ruleChips(
  *  the person's call. The chip belongs to the turn: given `turnEnded` (when the agent went idle, ms), a chunk the agent
  *  was attached to after that (a switch, or Mark done carrying it forward) was not that turn's work, so it offers no
  *  done:; a workref with no stamp, or no `turnEnded`, is as it always was. Once every chunk the agent held is settled,
- *  the next one after them that no other agent holds is offered as a message to go on with. A proposed chunk is nobody's
- *  work yet. */
+ *  the first chunk in the order of work (chunkorder.ts: where the initiative goes on, by priority) that is active or
+ *  pending and that no other agent or run holds is offered as a message to go on with, wherever it sits in the plan. A
+ *  proposed chunk is nobody's work yet. */
 export function initiativeChips(
     effort: ChipEffort | null | undefined,
     tabId: string,
@@ -306,14 +313,14 @@ export function initiativeChips(
             ? [{ text: (vi ? "xong: " : "done: ") + on.label, kind: "done", source: "rule", chunk: on.label }]
             : [];
     }
-    const mine = chunks.filter((c) => (c.workrefs ?? []).some((w) => w.oref === ref));
-    if (mine.length === 0) {
+    if (!chunks.some((c) => (c.workrefs ?? []).some((w) => w.oref === ref))) {
         return [];
     }
-    const after = chunks.indexOf(mine[mine.length - 1]) + 1;
     // another agent or a run is on it
     const othersHold = (c: (typeof chunks)[number]) => (c.workrefs ?? []).some((w) => w.oref !== ref);
-    const next = chunks.slice(after).find((c) => (c.status === "active" || c.status === "pending") && !othersHold(c));
+    // The first chunk of the order of work that is open for this agent. Every chunk this agent held is settled here (it
+    // holds no live one: `on` is null), and the order of work leaves settled chunks out, so none of them comes back.
+    const next = orderOfWork(chunks).find((c) => (c.status === "active" || c.status === "pending") && !othersHold(c));
     return next == null
         ? []
         : [
