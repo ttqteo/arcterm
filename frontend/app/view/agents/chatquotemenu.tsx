@@ -42,7 +42,7 @@ import {
     selectionTitle,
     type SavedFrom,
 } from "./chatsaveselection";
-import { moveLaterChunk, saveLaterTo } from "./savelater";
+import { LaterSaveError, moveLaterChunk, saveLaterTo } from "./savelater";
 
 const BTN = 22;
 // the longest initiative title a toast spells out
@@ -155,7 +155,8 @@ interface LaterMove {
 }
 
 // the passage as a later chunk of `target` (an initiative's oref, or "new" for one made from this session), toasted with
-// Open and Move to…. "new" makes the initiative first, so a failure after it leaves that one behind, empty, in Ideas.
+// Open and Move to…. "new" makes the initiative first, so a failure after it leaves that one behind, empty, in Ideas:
+// the failure toast names it.
 async function saveLater(text: string, save: SaveTarget, target: string, openMove: (m: LaterMove) => void) {
     try {
         const saved = await saveLaterTo(target, [laterItem(text, save.from, save.session, new Date())], {
@@ -193,8 +194,10 @@ async function saveLater(text: string, save: SaveTarget, target: string, openMov
     } catch (e) {
         failed(
             "save it for later",
-            target === "new" && e instanceof Error
-                ? new Error(`${e.message} The new initiative may be left in Ideas, empty.`)
+            e instanceof LaterSaveError
+                ? new Error(
+                      `${e.message} The new initiative “${passageFirstLine(e.created.title, TOAST_TITLE_MAX)}” was made and is in Ideas, empty.`
+                  )
                 : e
         );
     }

@@ -12,7 +12,7 @@ vi.mock("@/app/view/jarvis/briefingstore", () => ({ stateRpcTimeoutMs: 1000 }));
 vi.mock("@/app/view/jarvis/effortstore", () => store);
 
 import { MAX_CHUNK_LABEL } from "./chatinitiative";
-import { laterBatch, moveLaterChunk, moveOps, saveLaterTo } from "./savelater";
+import { LaterSaveError, laterBatch, moveLaterChunk, moveOps, saveLaterTo } from "./savelater";
 
 const FROM = { agentId: "tab1", name: "Fixer", project: "arcterm", conversation: "conv-1" };
 const note = (text: string) => `From agent "Fixer" (agent:tab1), 2026-11-27\n\n> ${text}`;
@@ -331,6 +331,63 @@ describe("saveLaterTo a new initiative", () => {
         store.mutateEffortOps.mockRejectedValueOnce(new Error("boom"));
         await expect(saveLaterTo("new", [{ label: "a", note: "n" }], FROM)).rejects.toThrow("boom");
         expect(store.createIdea).toHaveBeenCalledTimes(1);
+    });
+
+    it("carries the made initiative on the error when the add fails after the create", async () => {
+        store.mutateEffortOps.mockRejectedValueOnce(new Error("boom"));
+        const err = await saveLaterTo("new", [{ label: "a", note: "n" }], { ...FROM, title: "Left for later" }).then(
+            () => null,
+            (e: unknown) => e
+        );
+        expect(err).toBeInstanceOf(LaterSaveError);
+        const made = err as LaterSaveError;
+        expect(made.message).toBe("boom");
+        expect(made.created).toEqual({ oref: "effort:fresh", title: "Left for later" });
+    });
+
+    it("a retry at the oref the error carries adds there and makes no second initiative", async () => {
+        const items = [
+            { label: "push DEV", note: "n1" },
+            { label: "drop it", note: "n2" },
+        ];
+        store.mutateEffortOps.mockRejectedValueOnce(new Error("boom"));
+        const err = (await saveLaterTo("new", items, { ...FROM, title: "Left for later" }).then(
+            () => null,
+            (e: unknown) => e
+        )) as LaterSaveError;
+        expect(store.createIdea).toHaveBeenCalledTimes(1);
+
+        serve([effortOf("fresh", "Left for later", [])]);
+        const out = await saveLaterTo(err.created.oref, items, { ...FROM, title: "Left for later" });
+        expect(store.createIdea).toHaveBeenCalledTimes(1);
+        expect(store.mutateEffortOps).toHaveBeenCalledTimes(2);
+        const [oref, ops] = store.mutateEffortOps.mock.calls[1];
+        expect(oref).toBe("effort:fresh");
+        expect(ops.map((o: EffortOp) => o.label)).toEqual(["push DEV", "drop it"]);
+        expect(out).toEqual({ oref: "effort:fresh", title: "Left for later", labels: ["push DEV", "drop it"] });
+    });
+
+    it("lets a failed create reach the caller as it is: no initiative was made", async () => {
+        store.createIdea.mockReset();
+        store.createIdea.mockRejectedValueOnce(new Error("EC-TITLE: no title"));
+        const err = await saveLaterTo("new", [{ label: "a", note: "n" }], FROM).then(
+            () => null,
+            (e: unknown) => e
+        );
+        expect(err).toBeInstanceOf(Error);
+        expect(err).not.toBeInstanceOf(LaterSaveError);
+        expect(store.mutateEffortOps).not.toHaveBeenCalled();
+    });
+
+    it("leaves a failed add to an existing initiative as it is: nothing was made", async () => {
+        serve([effortOf("e1", "Parser work", [])]);
+        store.mutateEffortOps.mockRejectedValueOnce(new Error("EC-LOCKED"));
+        const err = await saveLaterTo("effort:e1", [{ label: "a", note: "n" }], FROM).then(
+            () => null,
+            (e: unknown) => e
+        );
+        expect(err).toBeInstanceOf(Error);
+        expect(err).not.toBeInstanceOf(LaterSaveError);
     });
 });
 

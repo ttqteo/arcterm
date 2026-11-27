@@ -4,7 +4,8 @@
 // Saving into an initiative for later: Chat's Save for later (one selected passage) and the agent's later card (a list)
 // write their items as later chunks (EffortChunk.later), and the toast's Move to… moves one to another initiative. The
 // batches are built by pure helpers (laterBatch, moveOps); the two actions read the initiative they write to, so a
-// label is made unique against what it holds now. Errors are not caught here: the caller toasts them.
+// label is made unique against what it holds now. Errors are not caught here: the caller toasts them. A "new" save that
+// fails after its initiative was made throws a LaterSaveError carrying that initiative, so no caller makes a second.
 
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
@@ -121,10 +122,24 @@ function ideaNote(items: readonly LaterItem[], from: LaterFrom): string {
     return savedBody(list, { agentId: from.agentId, name: from.name }, new Date());
 }
 
+/** The error a "new" save throws when the initiative was made but the chunks were not added: its message is the add's
+ *  own, and `created` names the empty initiative left in Ideas, so a caller can say so and a retry adds the chunks there
+ *  (saveLaterTo with `created.oref`) instead of making a second one. */
+export class LaterSaveError extends Error {
+    readonly created: { oref: string; title: string };
+
+    constructor(cause: unknown, created: { oref: string; title: string }) {
+        super(messageOf(cause));
+        this.name = "LaterSaveError";
+        this.created = created;
+    }
+}
+
 /** Saves `items` as later chunks of `target`, one batch, so the add is all or nothing. `target` is an initiative's oref,
  *  or "new" for a new initiative made as Save as idea makes one (the agent's project, the passage and its session as the
  *  first note), named by `from.title` or the first label, which then holds the chunks. Returns the initiative and the
- *  labels the chunks took. A failure reaches the caller; a "new" one may leave the empty initiative behind, in Ideas. */
+ *  labels the chunks took. A failure reaches the caller; one after a "new" initiative was made is a LaterSaveError that
+ *  carries it (empty, in Ideas). */
 export async function saveLaterTo(
     target: string,
     items: readonly LaterItem[],
@@ -151,7 +166,15 @@ export async function saveLaterTo(
         held = (effort.chunks ?? []).map((c) => c.label);
     }
     const ops = laterBatch(held, items, from);
-    await mutateEffortOps(oref, ops);
+    try {
+        await mutateEffortOps(oref, ops);
+    } catch (e) {
+        // only a "new" save made something the caller does not know of: any other add fails as it came
+        if (target === "new") {
+            throw new LaterSaveError(e, { oref, title });
+        }
+        throw e;
+    }
     return { oref, title, labels: ops.map((op) => op.label ?? "") };
 }
 

@@ -273,7 +273,9 @@ async function titleOf(oref: string): Promise<string | undefined> {
 
 // A later list (Builder's call 13): each remaining row is one later chunk whose first note quotes the row under where it was
 // said (savedBody), written in one batch so the add is all or nothing. The target is an initiative's oref, or "new" for a new
-// initiative made as Save as idea makes one, named by the card's heading (from.title).
+// initiative made as Save as idea makes one, named by the card's heading (from.title). When the add fails after the new
+// initiative was made, the rejection is savelater.ts's LaterSaveError, which carries it: the card then targets that
+// initiative, so its Try again adds the rows there instead of making a second one.
 async function writeLaterList(
     draft: InitiativeDraft & { later: string[] },
     from: LaterFrom | undefined
@@ -299,7 +301,7 @@ async function writeLaterList(
  *  clipped), a new initiative (EffortCreateCommand, as effortcreateform.tsx calls it, with its topic and first chunks and
  *  in `project`), or a later list's rows as later chunks (saveLaterTo, which needs `from`: the agent they came from).
  *  Resolves with the record of what was added. A refusal rejects with wavesrv's message, for the card to show; nothing is
- *  swallowed. */
+ *  swallowed. A later list to a new initiative that was made but not filled rejects with a LaterSaveError. */
 export async function writeInitiative(
     draft: InitiativeDraft,
     project: string | undefined,

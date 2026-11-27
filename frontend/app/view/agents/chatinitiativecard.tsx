@@ -107,7 +107,7 @@ import {
 import { CodeBlock } from "./codeblock";
 import { agentChunk } from "./initiativepopovermodel";
 import { sessionIdFromTranscript } from "./launch";
-import type { LaterFrom } from "./savelater";
+import { LaterSaveError, type LaterFrom } from "./savelater";
 
 // ---- the host: what a card reads off its agent ----
 
@@ -1072,16 +1072,22 @@ function LaterCard({ host, cardKey, initial, onAdded, onDismiss }: LaterCardProp
                 stepCard(cardKey, base, "added");
                 onAdded(rec);
             },
-            (e) =>
+            (e) => {
+                // a new initiative is made before its chunks are added: a failure after that leaves it, empty, in Ideas.
+                // The card then targets it, so Try again adds the rows there and does not make a second one
+                const made = e instanceof LaterSaveError ? e.created : undefined;
+                if (made != null) {
+                    update(withLaterTarget(draft, made.oref));
+                }
                 stepCard(
                     cardKey,
                     base,
                     "failed",
-                    // a new initiative is made before its chunks are added: a failure after that leaves it, empty, in Ideas
-                    toNew
-                        ? `${errorText(e)} (If the new initiative was made, it is in Ideas now: pick it as the target to add the rows there.)`
+                    made != null
+                        ? `${errorText(e)} “${made.title}” was made, so Try again adds the rows to it.`
                         : errorText(e)
-                )
+                );
+            }
         );
     };
     const dismiss = () => {
