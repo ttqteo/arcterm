@@ -524,7 +524,30 @@ func (d *Drawer) answer(ctx context.Context, b Board, talk wshrpc.BoardTalk, tur
 	if ctx.Err() != nil {
 		return Answer{}, ctx.Err()
 	}
-	answer, err := ParseAnswer(out.Text, scene, turn.DrawingId, turn.Kind == KindRequest)
+	answer, err := checkAnswer(out.Text, scene, turn)
+	if err == nil {
+		return answer, nil
+	}
+	// One more go in the same session: the drawer reads why Arc refused its answer (13 words in a label, a reply that
+	// is not one JSON object) and answers the same turn again. A second refusal fails the turn with its own reason; a
+	// second run that fails leaves the first refusal as the reason.
+	fix := Call{SessionId: call.SessionId, Resume: true, Prompt: fixPrompt(err.Error())}
+	again, runErr := d.d.Run(ctx, b.ProjectPath, fix)
+	if ctx.Err() != nil {
+		return Answer{}, ctx.Err()
+	}
+	if runErr != nil {
+		log.Printf("boarddrawer: board %s: the second go after a refused answer failed: %v", b.BoardId, runErr)
+		return Answer{}, err
+	}
+	d.recordRun(b, call.SessionId, again.ContextTokens, agent)
+	return checkAnswer(again.Text, scene, turn)
+}
+
+// checkAnswer is a reply read as the turn's answer: parsed against the scene, and routed (a turn that must be drawn
+// may not come back as a question). Every error it returns is the reply's fault, so the drawer may be asked again.
+func checkAnswer(reply string, scene Scene, turn wshrpc.BoardTurn) (Answer, error) {
+	answer, err := ParseAnswer(reply, scene, turn.DrawingId, turn.Kind == KindRequest)
 	if err != nil {
 		return Answer{}, err
 	}

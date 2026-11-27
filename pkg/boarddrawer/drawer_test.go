@@ -371,6 +371,84 @@ func TestAskUnusableAnswerFails(t *testing.T) {
 	}
 }
 
+// A refused answer is asked again once, in the same session, with why it was refused; the fixed answer is drawn.
+func TestRefusedAnswerIsAskedAgainOnce(t *testing.T) {
+	answers := []string{"Here is the drawing you asked for.", drawAnswer}
+	f := newFake(func(_ context.Context, c Call) (string, error) {
+		if c.Resume {
+			return answers[1], nil
+		}
+		return answers[0], nil
+	})
+	f.ctxTokens = 4321
+	d := New(f.deps())
+	turn, err := d.Ask(board, requests("Draw the store.", "The store keeps talks in sidecars."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	land(t, f, d, board, turn.ID, "n1", "n2")
+	talk := settled(t, f, d)
+	calls := f.callList()
+	if len(calls) != 2 || calls[0].Resume || !calls[1].Resume || calls[1].SessionId != calls[0].SessionId {
+		t.Fatalf("want the first run, then one resume of its session: %+v", calls)
+	}
+	for _, want := range []string{"## Your answer was refused", "the reply is not one JSON object", "JSON object alone"} {
+		if !strings.Contains(calls[1].Prompt, want) {
+			t.Errorf("the second prompt lacks %q:\n%s", want, calls[1].Prompt)
+		}
+	}
+	if got := talk.Turns[0]; got.State != StateAnswered || got.Title != "wavesrv, opened up" {
+		t.Errorf("the fixed answer must be drawn: %+v", got)
+	}
+	if talk.ContextTokens != 4321 {
+		t.Errorf("the second run's context is recorded, got %d", talk.ContextTokens)
+	}
+}
+
+// A second refusal fails the turn with its own reason; there is no third go.
+func TestRefusedTwiceFails(t *testing.T) {
+	answers := []string{"not json", `{"title":"t","update":[{"id":"nope","x":1}]}`}
+	f := newFake(func(_ context.Context, c Call) (string, error) {
+		if c.Resume {
+			return answers[1], nil
+		}
+		return answers[0], nil
+	})
+	d := New(f.deps())
+	if _, err := d.Ask(board, asks("q")); err != nil {
+		t.Fatal(err)
+	}
+	talk := settled(t, f, d)
+	if n := len(f.callList()); n != 2 {
+		t.Errorf("want exactly two runs, got %d", n)
+	}
+	got := talk.Turns[0]
+	if got.State != StateFailed || !strings.HasPrefix(got.Reason, unusableHead) || strings.Contains(got.Reason, "one JSON object") {
+		t.Errorf("the turn fails with the second refusal's reason: %+v", got)
+	}
+	if f.deliveredCount() != 0 {
+		t.Errorf("a refused answer delivers nothing")
+	}
+}
+
+// A second run that fails (the session is gone, the model errs) fails the turn with the first refusal.
+func TestRefusedThenRunFailsKeepsFirstReason(t *testing.T) {
+	f := newFake(func(_ context.Context, c Call) (string, error) {
+		if c.Resume {
+			return "", errors.New("claude exited 1")
+		}
+		return "not json", nil
+	})
+	d := New(f.deps())
+	if _, err := d.Ask(board, asks("q")); err != nil {
+		t.Fatal(err)
+	}
+	talk := settled(t, f, d)
+	if got := talk.Turns[0]; got.State != StateFailed || !strings.Contains(got.Reason, "one JSON object") {
+		t.Errorf("the turn fails with the first refusal: %+v", got)
+	}
+}
+
 func TestAskBrokenFileFirstTurnKeepsNoSession(t *testing.T) {
 	f := newFake(reply(drawAnswer))
 	f.files["b1"] = `{"elements":[`

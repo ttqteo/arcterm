@@ -73,6 +73,13 @@ func aboutSection(f firstInput, t turnInput) string {
 	return fmt.Sprintf("A briefing the agent sent, and the project's code:\n\n<briefing>\n%s\n</briefing>\n", f.Briefing)
 }
 
+// fixPrompt asks the drawer, in the same session, to answer the turn it just answered again: Arc refused that answer
+// for reason, and nothing was drawn.
+func fixPrompt(reason string) string {
+	return "## Your answer was refused\n\nArc could not use your last answer, so nothing was drawn: " + reason +
+		".\n\nAnswer the same turn again, fixing that and keeping to every rule above. Reply with the JSON object alone.\n"
+}
+
 // turnPrompt is a turn's own section: the board as it is now, the selection, and the question or the agent's request.
 func turnPrompt(t turnInput) string {
 	var b strings.Builder

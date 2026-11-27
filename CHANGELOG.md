@@ -58,6 +58,8 @@ and a picture given to a line that is not big.
 - An agent can now fix a drawing on a board in place, or delete one, instead of drawing a corrected copy beside it:
   ask it to fix "Part 1" and the drawer edits that drawing.
 - A board's Tidy button is gone.
+- When a board's drawer answers in a way Arc can't use (a label over 12 words, a reply that is not one JSON object),
+  it is told why and asked once more, so fewer drawings end in "Couldn't draw" and need the agent to ask again.
 - Copy image on a diagram in Chat (its toolbar and the enlarged viewer) shows a camera, as Copy screenshot does
   elsewhere, so it no longer looks like copying the text.
 - The part stepper in a board's header (‹ 3/13 ›) stays in one place beside the header's buttons: stepping through
