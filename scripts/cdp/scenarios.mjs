@@ -50436,7 +50436,7 @@ const chatQuote = {
             const pressed10 = up10 && (await pressButton(`document.querySelector("[data-context-menu] [data-chat-save-idea]")`));
             const toast10 = await polishWaitFor(h, toastHas("Saved as idea"), 5000);
             const open10 = await h.ev(
-                `[...document.querySelectorAll("[data-notification-toast]")].some((t) => (t.textContent || "").includes("Saved as idea") && [...t.querySelectorAll("button")].some((b) => b.textContent.trim() === "Open"))`
+                `[...document.querySelectorAll("[data-notification-toast]")].some((t) => (t.textContent || "").includes("Saved as idea") && t.parentElement?.querySelector("[data-notification-action]")?.textContent.trim() === "Open")`
             );
             await polishNap(300);
             await h.shot("cdp-shots/chat-quote-10-idea-toast.png");
@@ -50498,8 +50498,8 @@ const chatQuote = {
             const opened11 = await h.ev(`(() => {
                 const b = [...document.querySelectorAll("[data-notification-toast]")]
                     .filter((t) => (t.textContent || "").includes("Added to Notes"))
-                    .flatMap((t) => [...t.querySelectorAll("button")])
-                    .find((b) => b.textContent.trim() === "Open");
+                    .map((t) => t.parentElement?.querySelector("[data-notification-action]"))
+                    .find((b) => b?.textContent.trim() === "Open");
                 if (!b) return false;
                 b.click();
                 return true;
