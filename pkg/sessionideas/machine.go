@@ -62,14 +62,22 @@ type originLine struct {
 	Type       string `json:"type"`
 	IsMeta     bool   `json:"isMeta"`
 	Entrypoint string `json:"entrypoint"`
+	Cwd        string `json:"cwd"`
 	Message    struct {
 		Content json.RawMessage `json:"content"`
 	} `json:"message"`
 }
 
-// readOrigin reads a transcript's head for its first entrypoint and its first prompt of a person's. It stops once it
-// has both, once the entrypoint alone marks a machine session, or at the bounds.
-func readOrigin(r io.Reader) (entrypoint, firstPrompt string, err error) {
+// origin is what a transcript's head says: the first entrypoint its records carry, its first prompt of a person's, and
+// the first cwd (the folder the session was started in, which names its project).
+type origin struct {
+	entrypoint, firstPrompt, cwd string
+}
+
+// readOrigin reads a transcript's head for its origin. It stops once it has all three, once the entrypoint alone marks
+// a machine session, or at the bounds.
+func readOrigin(r io.Reader) (origin, error) {
+	var o origin
 	br := bufio.NewReader(r)
 	read := 0
 	for n := 0; n < originMaxLines && read < originMaxBytes; n++ {
@@ -78,25 +86,28 @@ func readOrigin(r io.Reader) (entrypoint, firstPrompt string, err error) {
 		if len(line) <= originMaxParse && len(bytes.TrimSpace(line)) > 0 {
 			var rec originLine
 			if json.Unmarshal(line, &rec) == nil {
-				if entrypoint == "" {
-					entrypoint = rec.Entrypoint
+				if o.entrypoint == "" {
+					o.entrypoint = rec.Entrypoint
 				}
-				if firstPrompt == "" && rec.Type == "user" && !rec.IsMeta {
-					firstPrompt = promptText(rec.Message.Content)
+				if o.cwd == "" {
+					o.cwd = rec.Cwd
+				}
+				if o.firstPrompt == "" && rec.Type == "user" && !rec.IsMeta {
+					o.firstPrompt = promptText(rec.Message.Content)
 				}
 			}
 		}
-		if (entrypoint != "" && firstPrompt != "") || machineEntrypoint(entrypoint) {
-			return entrypoint, firstPrompt, nil
+		if (o.entrypoint != "" && o.firstPrompt != "" && o.cwd != "") || machineEntrypoint(o.entrypoint) {
+			return o, nil
 		}
 		if rerr != nil {
 			if errors.Is(rerr, io.EOF) {
-				return entrypoint, firstPrompt, nil
+				return o, nil
 			}
-			return entrypoint, firstPrompt, rerr
+			return o, rerr
 		}
 	}
-	return entrypoint, firstPrompt, nil
+	return o, nil
 }
 
 // promptText is a user record's text when a person could have typed it: a plain string, or the text blocks of a list,
@@ -134,48 +145,58 @@ type originEntry struct {
 	size    int64
 	mtimeMs int64
 	machine bool
+	cwd     string
 }
 
-// origins caches IsMachine per transcript, so the session list (read on every Brief refresh) and Storage's count (one
-// ask per session) read a transcript's head once until the file changes.
+// origins caches what a transcript's head says, so the session list (read on every Brief refresh) and Storage's count
+// (one ask per session) read a transcript's head once until the file changes.
 var origins = struct {
 	sync.Mutex
 	m map[string]originEntry
 }{m: map[string]originEntry{}}
 
-// IsMachineTranscript is IsMachine for the transcript at path, as it stands at size and mtimeMs. A transcript that
+// transcriptOrigin is what the head of the transcript at path says, as it stands at size and mtimeMs. A transcript that
 // cannot be read is a person's: one left out by mistake would never be offered, one kept by mistake costs one call.
-func IsMachineTranscript(path string, size, mtimeMs int64) bool {
+func transcriptOrigin(path string, size, mtimeMs int64) originEntry {
 	origins.Lock()
 	e, ok := origins.m[path]
 	origins.Unlock()
 	if ok && e.size == size && e.mtimeMs == mtimeMs {
-		return e.machine
+		return e
 	}
-	machine := false
+	e = originEntry{size: size, mtimeMs: mtimeMs}
 	if f, err := os.Open(path); err != nil {
 		log.Printf("sessionideas: reading the head of %s: %v; counted as a person's session", path, err)
 	} else {
-		ep, first, rerr := readOrigin(f)
+		o, rerr := readOrigin(f)
 		f.Close()
 		if rerr != nil {
 			log.Printf("sessionideas: reading the head of %s: %v; judged on what was read", path, rerr)
 		}
-		machine = IsMachine(ep, first)
+		e.machine, e.cwd = IsMachine(o.entrypoint, o.firstPrompt), o.cwd
 	}
 	origins.Lock()
-	origins.m[path] = originEntry{size: size, mtimeMs: mtimeMs, machine: machine}
+	origins.m[path] = e
 	origins.Unlock()
-	return machine
+	return e
 }
 
-// PersonSessions is the candidates without the machine sessions. An archived candidate is kept as it is: the scan and
-// the list leave it out on their own, and its head is never read.
+// IsMachineTranscript is IsMachine for the transcript at path, as it stands at size and mtimeMs.
+func IsMachineTranscript(path string, size, mtimeMs int64) bool {
+	return transcriptOrigin(path, size, mtimeMs).machine
+}
+
+// PersonSessions is the candidates without the machine sessions, each with the cwd its head names. An archived
+// candidate is kept as it is: the scan and the list leave it out on their own, and its head is never read.
 func PersonSessions(cands []agentsessions.DigestSession) []agentsessions.DigestSession {
 	out := make([]agentsessions.DigestSession, 0, len(cands))
 	for _, c := range cands {
-		if !c.Archived && IsMachineTranscript(c.Path, c.Size, c.Mtime.UnixMilli()) {
-			continue
+		if !c.Archived {
+			e := transcriptOrigin(c.Path, c.Size, c.Mtime.UnixMilli())
+			if e.machine {
+				continue
+			}
+			c.Cwd = e.cwd
 		}
 		out = append(out, c)
 	}

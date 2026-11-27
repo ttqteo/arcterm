@@ -4,6 +4,7 @@
 package sessionideas
 
 import (
+	"path/filepath"
 	"sort"
 	"time"
 
@@ -54,6 +55,7 @@ func Sessions(d wshrpc.SessionIdeasData, candidates []agentsessions.DigestSessio
 		}
 		row := wshrpc.SessionIdeasSession{
 			SessionID:      c.Stem,
+			ProjectDir:     ProjectDir(c.Path),
 			TranscriptPath: c.Path,
 			Size:           c.Size,
 			LastWriteTs:    c.Mtime.UnixMilli(),
@@ -65,6 +67,9 @@ func Sessions(d wshrpc.SessionIdeasData, candidates []agentsessions.DigestSessio
 		}
 		if c.Session != nil {
 			row.SessionID, row.Title, row.Project = firstNonEmpty(c.Session.ID, row.SessionID), firstNonEmpty(c.Session.Task, row.Title), firstNonEmpty(c.Session.ProjectName, row.Project)
+		}
+		if row.Project == "" && c.Cwd != "" {
+			row.Project = filepath.Base(c.Cwd) // an unscanned session is named by the folder it was started in
 		}
 		if marked && markMatches(m, c) {
 			if m.Outcome == wshrpc.SessionIdeaOutcome_Skipped {

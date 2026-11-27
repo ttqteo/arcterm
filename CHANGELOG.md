@@ -43,6 +43,9 @@ and a picture given to a line that is not big.
 
 ### Changed
 
+- Ideas from your sessions can scan one project first: the offer card on Jarvis's Brief has a project menu (most
+  sessions first), and its estimate and button follow the pick. Until you scan all projects, arcterm keeps reading only
+  the projects you scanned, and the region says which.
 - The To review sheet on Jarvis reads more calmly: Later and Drop show only on the row under the pointer or the `j`/`k`
   cursor, each proposal's opening phrase is in bold, and a run's heading no longer trails its plan's file path.
 

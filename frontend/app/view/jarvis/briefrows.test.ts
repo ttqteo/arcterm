@@ -18,6 +18,8 @@ import {
     lineOpenTarget,
     linkedUnder,
     nestInitiatives,
+    offerProjects,
+    offerShown,
     plainSummary,
     projectCounts,
     projectName,
@@ -31,6 +33,7 @@ import {
     scanOffer,
     scanProgress,
     scanStopLine,
+    scopeNames,
     sessionIdeasPhase,
     sessionLine,
     SESSIONS_SINCE_ID,
@@ -1380,6 +1383,7 @@ describe("From your sessions", () => {
         sessionid: "s1",
         title: "A session",
         project: "arcterm",
+        projectdir: "",
         transcriptpath: "",
         size: 1,
         lastwritets: NOW - 20 * DAY,
@@ -1469,6 +1473,71 @@ describe("From your sessions", () => {
         });
         expect(scanOffer(data({ sessions: [sessions[0]] })).text).toBe("haiku · about 10k tokens for 1 session");
         expect(scanOffer(data()).text).toBe("haiku · no quiet sessions to read yet");
+    });
+
+    describe("a scan of one project", () => {
+        const T = "C:\\claude\\d--mit-thesis";
+        const A = "C:\\claude\\d--arcterm";
+        const W1 = "C:\\claude\\d--a-web";
+        const W2 = "C:\\claude\\d--b-web";
+        const s = (id: string, projectdir: string, project: string, outcome = "not-scanned") =>
+            session({ sessionid: id, projectdir, project, outcome });
+        const sessions = [
+            s("t1", T, "mit-thesis"),
+            s("t2", T, "mit-thesis"),
+            s("t3", T, "mit-thesis", "nothing"),
+            s("a1", A, "arcterm"),
+            s("a2", A, "arcterm"),
+            s("a3", A, "arcterm"),
+            s("w1", W1, "web"),
+            s("w2", W2, "", "not-scanned"),
+            s("w3", W2, "web", "waiting"),
+        ];
+
+        it("lists each project with sessions to read, most first, telling two of one name apart", () => {
+            expect(offerProjects(data({ sessions }))).toEqual([
+                { dir: A, label: "arcterm", sessions: 3 },
+                { dir: T, label: "mit-thesis", sessions: 2 },
+                { dir: W1, label: "web (d--a-web)", sessions: 1 },
+                { dir: W2, label: "web (d--b-web)", sessions: 1 },
+            ]);
+        });
+
+        it("leaves out the projects already scanned one by one", () => {
+            expect(offerProjects(data({ sessions, scanprojects: [T.toUpperCase()] })).map((p) => p.label)).toEqual([
+                "arcterm",
+                "web (d--a-web)",
+                "web (d--b-web)",
+            ]);
+        });
+
+        it("estimates the picked project alone, or every project", () => {
+            expect(scanOffer(data({ sessions }), T).text).toBe("haiku · about 20k tokens for 2 sessions");
+            expect(scanOffer(data({ sessions }), null).sessions).toBe(7);
+        });
+
+        it("keeps the offer until every project is scanned, while some project still waits", () => {
+            expect(offerShown(null)).toBe(false);
+            expect(offerShown(data())).toBe(true);
+            expect(offerShown(data({ sessions, scanprojects: [T], scan: scan({ endedts: NOW }) }))).toBe(true);
+            expect(offerShown(data({ sessions: [sessions[0]], scanprojects: [T], scan: scan({ endedts: NOW }) }))).toBe(
+                false
+            );
+            expect(offerShown(data({ sessions, firstscandone: true }))).toBe(false);
+        });
+
+        it("says in the region's header which projects the schedule covers until all are", () => {
+            const scoped = data({
+                sessions,
+                scanprojects: [T],
+                lastscants: day(10, 27),
+                scan: scan({ endedts: day(10, 27) }),
+            });
+            expect(scopeNames(scoped)).toEqual(["mit-thesis"]);
+            expect(sessionScanMeta(scoped)).toBe("scanned Nov 27 · mit-thesis only");
+            expect(scopeNames(data({ sessions, scanprojects: [T], firstscandone: true }))).toEqual([]);
+            expect(scopeNames(data({ scanprojects: ["C:\\claude\\d--gone"] }))).toEqual(["d--gone"]);
+        });
     });
 
     it("names where an idea would go, where it came from and what Keep did", () => {

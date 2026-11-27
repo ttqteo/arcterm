@@ -94,9 +94,12 @@ type SessionIdeasScan struct {
 // SessionIdeasSession is one row of the Sessions scanned fold. Sessions with a skipped mark, and archived ones, are
 // left out of the list and the counts. The first-scan offer's "M sessions" is the number of not-scanned rows.
 type SessionIdeasSession struct {
-	SessionID      string `json:"sessionid"`
-	Title          string `json:"title"`
-	Project        string `json:"project"`
+	SessionID string `json:"sessionid"`
+	Title     string `json:"title"`
+	Project   string `json:"project"`
+	// ProjectDir is the Claude Code folder the transcript sits in, one per project folder a session was started in: the
+	// key a scan of one project (CommandSessionIdeasScanData.Project) and the schedule's scope (ScanProjects) go by.
+	ProjectDir     string `json:"projectdir"`
 	TranscriptPath string `json:"transcriptpath"`
 	Size           int64  `json:"size"`
 	LastWriteTs    int64  `json:"lastwritets"`
@@ -119,7 +122,11 @@ type SessionIdeasData struct {
 	SeenTs        int64                 `json:"seents"`
 	SnoozedUntil  int64                 `json:"snoozeduntil"`
 	FirstScanDone bool                  `json:"firstscandone"`
-	Scan          *SessionIdeasScan     `json:"scan,omitempty"`
+	// ScanProjects is the projects (ProjectDir) the person scanned one at a time before they scanned every project: the
+	// schedule reads only their sessions until FirstScanDone, so it spends no tokens on a project they have not seen
+	// estimated.
+	ScanProjects []string          `json:"scanprojects,omitempty"`
+	Scan         *SessionIdeasScan `json:"scan,omitempty"`
 }
 
 type CommandSessionIdeasResolveData struct {
@@ -132,11 +139,16 @@ type CommandSessionIdeasMarkData struct {
 	Op string `json:"op"` // seen | snooze
 }
 
-// CommandSessionIdeasScanData starts a scan, or stops the one that runs. Empty Paths is every quiet session not yet
-// scanned (no mark, or a mark whose size or mtime changed).
+// CommandSessionIdeasScanData starts a scan, or stops the one that runs. Paths names the sessions to read. Project (a
+// ProjectDir) reads that project's quiet sessions not yet scanned (no mark, or a mark whose size or mtime changed) and
+// adds it to the schedule's scope; All reads every project's and turns the schedule on for all of them. With none of
+// the three, a scan reads the scope: every project once the person has scanned them all (or before any scan), else
+// the projects in ScanProjects.
 type CommandSessionIdeasScanData struct {
-	Stop  bool     `json:"stop,omitempty"`
-	Paths []string `json:"paths,omitempty"`
+	Stop    bool     `json:"stop,omitempty"`
+	Paths   []string `json:"paths,omitempty"`
+	Project string   `json:"project,omitempty"`
+	All     bool     `json:"all,omitempty"`
 }
 
 // CommandSessionIdeasSeedData is the dev app's fixture door (refused outside dev mode; the CDP scenarios use it). Data

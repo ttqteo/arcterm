@@ -70,8 +70,9 @@ func safeSessionIdeasTick(ctx context.Context) {
 }
 
 // sessionIdeasTick is one pass of the schedule. It does nothing while a scan runs, in fixture mode, and until the person
-// has pressed Scan my sessions once (nothing scans before that, a forced scan included: it spends tokens they have not
-// seen estimated). Then it reads the transcripts and the marks and the setting afresh, records the next due day, and:
+// has scanned once (nothing scans before that, a forced scan included: it spends tokens they have not seen estimated).
+// After a scan of one project it reads only the projects scanned that way (sessionideas.InScope), until a scan of every
+// project. Then it reads the transcripts and the marks and the setting afresh, records the next due day, and:
 //   - scans the sessions 7 days or fewer from deletion at once, whatever the gate says (their transcripts go otherwise);
 //   - else scans the sessions whose scan came due when DUM-E's gate says Start, which is a leftover 5-hour window with no
 //     live run (DUM-E's own included) and no memory pressure.
@@ -87,11 +88,13 @@ func sessionIdeasTick(ctx context.Context) {
 		log.Printf("sessionideas: schedule: reading the store: %v", err)
 		return
 	}
-	if !d.FirstScanDone {
+	if !d.FirstScanDone && len(d.ScanProjects) == 0 {
 		return
 	}
 	now := dumeNow()
 	cands, days := sessionIdeasOnDisk()
+	// until the person scans every project, the schedule reads only the projects they scanned one by one
+	cands = sessionideas.InScope(d, cands)
 	if next := sessionideas.NextDueTs(cands, d.Marks, now, days); next != d.NextScanTs {
 		if err := store.Update(func(d *wshrpc.SessionIdeasData) error {
 			d.NextScanTs = next

@@ -46,6 +46,14 @@ looks (the Jarvis Brief, Sprout, a brainstorm on its topic), not in a store of i
   print-mode entrypoint (`sdk-*`) or the engine's (`bench`), or whose first prompt opens with the builder check's or the
   brainstorm judge's prompt (both run as `cli`), is left out of the scan, the session list, the offer's estimate and
   Storage's unscanned count (`pkg/sessionideas/machine.go`).
+- **A scan can read one project first** (added 2026-11-27). The offer card carries a project menu when two or more
+  projects have sessions to read (most sessions first, with each one's count; the estimate and the button, "Scan
+  mit-thesis", follow the pick). A project is the Claude Code folder a transcript sits in; its name is the folder the
+  session was started in (the `cwd` of the transcript's head, read with the machine check). A scan of one project does
+  not turn the schedule on for every project: it adds the project to `ScanProjects`, and until a scan of all (`all`)
+  the schedule, Scan now and Retry read only those projects, the region's header says `mit-thesis only`, and the offer
+  stays for the rest (`pkg/sessionideas/scope.go`). A scan of named paths (Storage's Scan them first, the schedule's due
+  scans) changes neither.
 - **One haiku call per session**, through `pkg/consult` with no tools. Its prompt carries, for the session's project:
   the open initiatives and their chunk labels, the existing ideas, spec and plan names, and `docs/deferred.md` headings.
   It answers with JSON: for each idea floated and not decided, a one-line English gist, the initiative it belongs to (or

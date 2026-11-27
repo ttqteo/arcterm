@@ -21,7 +21,7 @@
 
 import { MOTION, springReveal } from "@/app/element/motiontokens";
 import { usePartMotion } from "@/app/element/springbatch";
-import { contextMenuAtom, ContextMenuModel } from "@/app/store/contextmenu";
+import { ContextMenuModel } from "@/app/store/contextmenu";
 import { getSettingsKeyAtom } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import { buildJarvisBindings } from "@/app/store/keybindings/bindings";
@@ -58,7 +58,6 @@ import {
     Archive,
     ArchiveRestore,
     ArrowUpRight,
-    ChevronDown,
     Copy,
     Link2,
     Maximize2,
@@ -201,6 +200,7 @@ import {
     togglePin,
     unarchiveEffort,
 } from "./effortstore";
+import { FilterMenu, type FilterSpec } from "./filtermenu";
 import { ForLaterRegion } from "./forlaterregion";
 import { freshKeys } from "./freshrows";
 import { InitiativeCards } from "./initiativecards";
@@ -300,18 +300,6 @@ function OnlyButton({ label, only, onOnly }: { label: string; only: boolean; onO
 const EMPTY_ACT =
     "flex h-[26px] flex-none cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[7px] border border-edge-mid bg-surface-raised px-2.5 text-[11.5px] font-semibold text-ink-hi hover:border-edge-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
 
-// A region's filter: which project the initiatives list shows. The first option is always all.
-type FilterSpec<T> = {
-    label: string;
-    // what the menu's face calls the choice: "project"
-    noun: string;
-    // the data attribute a CDP scenario finds the filter by
-    tag: string;
-    options: { value: T; label: string; count?: number }[];
-    value: T;
-    onChange: (v: T) => void;
-};
-
 // A few choices sit as a line of chips, where they never squeeze the heading; past FILTER_LINE_MAX they become one
 // menu, which a long project list cannot wrap.
 function filterNode<T>(spec: FilterSpec<T>): ReactNode {
@@ -344,45 +332,6 @@ function FilterLine<T>({ label, tag, options, value, onChange }: FilterSpec<T>) 
                 </button>
             ))}
         </div>
-    );
-}
-
-function FilterMenu<T>({ label, noun, tag, options, value, onChange }: FilterSpec<T>) {
-    // the one context menu may be a row's, so open means it holds this filter's items
-    const shown = useRef<ContextMenuItem[] | null>(null);
-    const open = useAtomValue(contextMenuAtom)?.items === shown.current && shown.current != null;
-    const picked = options.find((o) => o.value === value) ?? options[0];
-    // opened at the face rather than the pointer, so Enter on the face drops it in the same place
-    const show = (e: React.MouseEvent<HTMLButtonElement>) => {
-        const r = e.currentTarget.getBoundingClientRect();
-        shown.current = [
-            { type: "header", label },
-            ...options.map(
-                (o): ContextMenuItem => ({
-                    type: "radio",
-                    label: o.label,
-                    checked: o.value === value,
-                    sublabel: o.count != null ? String(o.count) : undefined,
-                    click: () => onChange(o.value),
-                })
-            ),
-        ];
-        globalStore.set(contextMenuAtom, { x: r.left, y: r.bottom, items: shown.current });
-    };
-    return (
-        <button
-            type="button"
-            aria-haspopup="menu"
-            aria-expanded={open}
-            aria-label={label}
-            {...{ [tag]: "" }}
-            onClick={show}
-            className="flex flex-none cursor-pointer items-center gap-1.5 rounded-[5px] border border-edge-strong px-[7px] py-px text-[10.5px] text-ink-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-        >
-            <span className="text-muted">{noun}</span>
-            {picked.label}
-            <ChevronDown size={10} aria-hidden className="text-muted" />
-        </button>
     );
 }
 

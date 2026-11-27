@@ -140,10 +140,19 @@ export function snooze(): Promise<boolean> {
     return act("put the ideas off for a week", () => RpcApi.SessionIdeasMarkCommand(TabRpcClient, { op: "snooze" }));
 }
 
-/** Starts a scan: of `paths` when given (Retry, Scan them first), else of every quiet session not yet scanned. */
+/** Starts a scan: of `paths` when given (Scan them first), else of the quiet sessions not yet scanned in the scope
+ *  (Scan now, Retry): every project's, or only the projects scanned one by one until all of them are. */
 export function scanNow(paths?: string[]): Promise<boolean> {
     return act("start the scan", () =>
         RpcApi.SessionIdeasScanCommand(TabRpcClient, paths != null && paths.length > 0 ? { paths } : {})
+    );
+}
+
+/** The offer's scan: of one project's quiet sessions not yet scanned (`dir`, its Claude Code folder), which the
+ *  schedule then covers too, or with null of every project's, which turns the schedule on for all of them. */
+export function scanOffered(dir: string | null): Promise<boolean> {
+    return act("start the scan", () =>
+        RpcApi.SessionIdeasScanCommand(TabRpcClient, dir != null ? { project: dir } : { all: true })
     );
 }
 

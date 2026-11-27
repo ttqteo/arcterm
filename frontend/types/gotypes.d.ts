@@ -3032,6 +3032,8 @@ declare global {
     type CommandSessionIdeasScanData = {
         stop?: boolean;
         paths?: string[];
+        project?: string;
+        all?: boolean;
     };
 
     // wshrpc.CommandSessionIdeasSeedData
@@ -5848,6 +5850,7 @@ declare global {
         seents: number;
         snoozeduntil: number;
         firstscandone: boolean;
+        scanprojects?: string[];
         scan?: SessionIdeasScan;
     };
 
@@ -5869,6 +5872,7 @@ declare global {
         sessionid: string;
         title: string;
         project: string;
+        projectdir: string;
         transcriptpath: string;
         size: number;
         lastwritets: number;

@@ -178,6 +178,27 @@ func TestSessionIdeasLoopForcedScansAtOnceWhateverTheGateSays(t *testing.T) {
 	}
 }
 
+// After a scan of one project the schedule runs for that project only: a session of another project near deletion is
+// left alone, since its scan was never estimated for the person.
+func TestSessionIdeasLoopAfterAProjectScanReadsThatProjectOnly(t *testing.T) {
+	w := newIdeasLoopWorld(t)
+	thesis := agentsessions.DigestSession{Path: "/claude/thesis/t.jsonl", Stem: "t", Size: 100, Mtime: w.now.Add(-89 * 24 * time.Hour)}
+	other := agentsessions.DigestSession{Path: "/claude/arc/a.jsonl", Stem: "a", Size: 100, Mtime: w.now.Add(-88 * 24 * time.Hour)}
+	w.cands = append(w.cands, thesis, other)
+	if err := w.store.Update(func(d *wshrpc.SessionIdeasData) error {
+		d.ScanProjects = []string{"/claude/thesis"}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	w.tick()
+	want := []sessionideas.ScanOpts{{Forced: true, Paths: []string{thesis.Path}}}
+	if !reflect.DeepEqual(w.scans, want) {
+		t.Fatalf("a scoped schedule forces only its projects' sessions: got %+v, want %+v", w.scans, want)
+	}
+}
+
 func TestSessionIdeasLoopDueWaitsForTheGate(t *testing.T) {
 	live := func(mod func(*waveobj.Run)) []*waveobj.Run {
 		r := &waveobj.Run{ID: "r1", Status: jarvis.RunStatus_Executing}

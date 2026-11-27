@@ -22,6 +22,7 @@ type DigestSession struct {
 	Archived bool         // the transcript sits in the folder arcterm moved its runs' and temp folders' sessions to
 	Session  *SessionInfo // as search shows it; nil from ClaudeDigestCandidates, and for a transcript that carries no session
 	Turns    []Turn       // the prompts and replies Query.Match reads; nil from ClaudeDigestCandidates
+	Cwd      string       // the first cwd its records carry; set by sessionideas.PersonSessions, which reads the head
 }
 
 // ClaudeDigestCandidates lists the claude transcripts of the last windowDays (all of them when windowDays is 0 or
