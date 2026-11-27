@@ -1,5 +1,5 @@
 // chunk-priority and chunk-priority-rail: a level on each chunk of an initiative that decides which chunk opens next
-// (docs/superpowers/specs/2026-11-27-chunk-priority-design.md, plan docs/superpowers/plans/2026-11-27-chunk-priority.md).
+// (docs/superpowers/specs/2026-11-27-chunk-priority-design.md).
 // The board is .superpowers/design/chunk-priority/project/A-word-chip.dc.html (gitignored, so a checkout without it reads the
 // spec's "Badge on the row"). kit is scenarios.mjs's { ...CR_KIT, ...JARVIS_KIT }.
 //

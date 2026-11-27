@@ -24,6 +24,11 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
 
 ## 2026-11-27
 
+- [ ] (arcterm) **The Priority menu on a chunk low in a long plan** (`inlinetrackerview.tsx`, run af2b7967 t-4). The
+  Priority section adds about 230px to the status menu, and Final measured its bottom at 960px in an 864px window. On a
+  Jarvis initiative card with a long plan, open the status word of the last chunk: the whole menu, Priority to Rename,
+  can be reached (it scrolls into view inside the plan, or opens upward) and nothing is cut off under the window edge.
+
 - [ ] (arcterm) **Allow and Deny on an agent's sidebar row** (`permissionrow.tsx`, branch of the sidebar-permission-row
   run). Vitest and typecheck only; the end state is `task verify:ui -- sidebar-permission-row`, never run here (a run
   agent runs no CDP). With a real Claude agent outside a run, have it run a Bash command that asks permission: its row's
