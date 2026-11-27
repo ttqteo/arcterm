@@ -23,7 +23,13 @@ export type PickerRows = {
     // the other projects' initiatives, behind "Other projects · N"; empty while a query is typed
     others: PickerRow[];
     otherCount: number;
+    // the initiatives touched last, across every project, drawn above `rows` (which then leaves them out); empty unless
+    // asked for with `opts.recent`, and while a query is typed
+    recent: PickerRow[];
 };
+
+// how many initiatives "Recent" holds
+export const RECENT_PICKER_ROWS = 3;
 
 // blocked first: it is the one state that waits on someone, as on the Brief's row
 function pickerStatus(card: EffortCardModel): { status: string; tone: PickerTone } {
@@ -58,12 +64,15 @@ function pickerRow(card: EffortCardModel): PickerRow {
 
 // The initiatives a link can go to: not archived, not an idea (it has no plan to attach an agent to), and not one of
 // `excluding` (the initiative being linked and everything beneath it, which would make a cycle). `project` is the
-// agent's; a card with no project belongs to the project "".
+// agent's; a card with no project belongs to the project "". With `opts.recent` and no query, the RECENT_PICKER_ROWS
+// with the newest `updatedts` (the list's order between equal ones) come out of the project's rows and the other
+// projects' into `recent`: Save for later's picker puts where the person has just been first.
 export function pickerRows(
     cards: EffortCardModel[],
     project: string,
     query: string,
-    excluding: readonly string[] = []
+    excluding: readonly string[] = [],
+    opts: { recent?: boolean } = {}
 ): PickerRows {
     const skip = new Set(excluding);
     const live = cards.filter((c) => c.status !== "archived" && !isIdea(c) && !skip.has(c.oref));
@@ -75,10 +84,16 @@ export function pickerRows(
             rows: [...hits.filter(own), ...hits.filter((c) => !own(c))].map(pickerRow),
             others: [],
             otherCount: 0,
+            recent: [],
         };
     }
-    const others = live.filter((c) => !own(c)).map(pickerRow);
-    return { rows: live.filter(own).map(pickerRow), others, otherCount: others.length };
+    // Array.prototype.sort is stable, so equal timestamps keep the list's order
+    const newest =
+        opts.recent === true ? [...live].sort((a, b) => b.updatedts - a.updatedts).slice(0, RECENT_PICKER_ROWS) : [];
+    const taken = new Set(newest.map((c) => c.oref));
+    const rest = live.filter((c) => !taken.has(c.oref));
+    const others = rest.filter((c) => !own(c)).map(pickerRow);
+    return { rows: rest.filter(own).map(pickerRow), others, otherCount: others.length, recent: newest.map(pickerRow) };
 }
 
 // An initiative and everything beneath it, by `parentoid` (a bare oid; an oref is "effort:" + oid). A cycle already in
