@@ -102,6 +102,7 @@ import {
     sentences,
     settleSent,
     shownFile,
+    slotOptionFor,
     spikeUrl,
     stopsJudge,
     suggestedShape,
@@ -123,6 +124,7 @@ import {
     type SentLine,
 } from "./brainstormmodel";
 import type { CanvasBoard } from "./canvasmodel";
+import type { ProtoReport } from "./protomodel";
 
 const part = (id: string, state: PartState, over: Partial<BrainstormPart> = {}): BrainstormPart => ({
     id,
@@ -986,6 +988,22 @@ describe("question options", () => {
     it("keep a history entry's why", () => {
         const r = parseBrainstorm(raw({ history: [{ kind: "question", n: 1, q: "q", why: "w", a: "a", into: [] }] }));
         expect(r.ok && r.file.history[0].why).toBe("w");
+    });
+
+    it("parse the slot the question is about, a non-empty string, and leave the key out for anything else", () => {
+        const slotOf = (slot: unknown) => {
+            const r = parseBrainstorm(raw({ question: { n: 2, text: "Which list?", part: "a", options: opts, slot } }));
+            return r.ok ? r.file.question : null;
+        };
+        expect(slotOf("list")?.slot).toBe("list");
+        // an empty slot, or a slot that is not a string, names nothing: the question reads as the per-board path does
+        for (const bad of ["", 3, null, true, ["list"], { id: "list" }]) {
+            const q = slotOf(bad);
+            expect(q).not.toBeNull();
+            expect("slot" in q!).toBe(false);
+        }
+        const r = parseBrainstorm(raw({ question: { n: 2, text: "Which list?", part: "a", options: opts } }));
+        expect(r.ok && r.file.question != null && "slot" in r.file.question).toBe(false);
     });
 
     it("a file without them reads as before", () => {
@@ -3212,6 +3230,101 @@ describe("the rail's board heads", () => {
         expect(boardPick(asked(2), railBoardHeads(asked(2), "layout", BOARDS)[0], true)).toBeNull();
         expect(boardPick(asked(null), { option: 0 }, true)).toBeNull();
         expect(boardPick(asked(3), { option: 5 }, true)).toBeNull();
+    });
+
+    describe("boardPick on a question's slot", () => {
+        const MAIN = "Main.dc.html";
+        // the agent's pick is the third option
+        const slotted = (slot?: string, optionCount = 3): BrainstormFile =>
+            file({
+                canvas: "topic",
+                parts: [part("layout", "asked", { boards: [MAIN] })],
+                question: {
+                    n: 2,
+                    text: "Which list?",
+                    part: "layout",
+                    options: opts(optionCount).map((o, i) => (i === 2 ? { ...o, pick: true } : o)),
+                    ...(slot != null ? { slot } : {}),
+                },
+            });
+        // what a board reports of its slots: the letters it has and the one it shows
+        const reported = (id: string, picked: string, letters = ["A", "B", "C"]): ProtoReport => ({
+            screen: "Home",
+            slots: [{ id, label: id, letters, picked, rect: { x: 0, y: 0, w: 10, h: 10 } }],
+        });
+        const head = { option: null };
+
+        it("offers the option whose letter the chip shows, and follows the chip", () => {
+            const f = slotted("list");
+            expect(boardPick(f, head, true, reported("list", "A"))).toEqual({
+                option: 0,
+                letter: "A",
+                label: "Option 0 label",
+                leaning: null,
+            });
+            expect(boardPick(f, head, true, reported("list", "B"))).toMatchObject({ option: 1, letter: "B" });
+            expect(boardPick(f, head, true, reported("list", "C"))).toEqual({
+                option: 2,
+                letter: "C",
+                label: "Option 2 label",
+                leaning: "Agent’s pick",
+            });
+        });
+
+        it("reads the letter the board shows, not the one it was asked for: a letter the slot lacks shows the first", () => {
+            expect(boardPick(slotted("list"), head, true, reported("list", "C", ["A", "B"]))).toMatchObject({
+                option: 0,
+                letter: "A",
+            });
+        });
+
+        it("takes the slot's place over the board's own option when the slot is in the report", () => {
+            expect(boardPick(slotted("list"), { option: 0 }, true, reported("list", "C"))).toMatchObject({ option: 2 });
+        });
+
+        it("offers nothing for a letter past the options, or while the question is not on screen", () => {
+            const f = slotted("list", 2);
+            expect(boardPick(f, head, true, reported("list", "C"))).toBeNull();
+            expect(boardPick(f, { option: 0 }, true, reported("list", "C"))).toBeNull();
+            expect(boardPick(slotted("list"), head, false, reported("list", "B"))).toBeNull();
+        });
+
+        it("offers nothing new for a slot the question does not name: the per-board path as before", () => {
+            // the question names no slot
+            expect(boardPick(slotted(), head, true, reported("list", "B"))).toBeNull();
+            expect(boardPick(slotted(), { option: 1 }, true, reported("list", "C"))).toMatchObject({ option: 1 });
+            // it names `list`, the board reports another slot, or none, or no report yet
+            expect(boardPick(slotted("list"), head, true, reported("other", "B"))).toBeNull();
+            expect(boardPick(slotted("list"), { option: 1 }, true, reported("other", "C"))).toMatchObject({
+                option: 1,
+            });
+            expect(boardPick(slotted("list"), head, true, { screen: null, slots: [] })).toBeNull();
+            expect(boardPick(slotted("list"), head, true, null)).toBeNull();
+            expect(boardPick(slotted("list"), head, true)).toBeNull();
+        });
+
+        it("leaves the per-board path as it was when no report is given", () => {
+            const f = asked(3);
+            const heads = railBoardHeads(f, "layout", BOARDS);
+            expect(boardPick(f, heads[1], true)).toMatchObject({ option: 1, letter: "B" });
+            expect(boardPick(f, heads[1], true, null)).toEqual(boardPick(f, heads[1], true));
+            expect(boardPick(f, heads[1], true, reported("list", "C"))).toMatchObject({ option: 1 });
+        });
+
+        it("maps a chip letter to its option only on the question's own slot", () => {
+            const q = slotted("list").question;
+            expect(slotOptionFor(q, "list", "A")).toBe(0);
+            expect(slotOptionFor(q, "list", "C")).toBe(2);
+            // a slot the question does not name maps to no option, whatever the letter
+            expect(slotOptionFor(q, "other", "A")).toBeNull();
+            // option i is letter i: a letter past the options, a lowercase or a longer one is none
+            expect(slotOptionFor(q, "list", "D")).toBeNull();
+            expect(slotOptionFor(q, "list", "a")).toBeNull();
+            expect(slotOptionFor(q, "list", "AB")).toBeNull();
+            expect(slotOptionFor(q, "list", "")).toBeNull();
+            expect(slotOptionFor(slotted().question, "list", "A")).toBeNull();
+            expect(slotOptionFor(null, "list", "A")).toBeNull();
+        });
     });
 
     it("heads an unlinked board with its title from canvas.json", () => {

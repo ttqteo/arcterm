@@ -36337,7 +36337,8 @@ const canvasTabsScenario = {
             layerUp && layerBox != null && marked && markState.chip === "1" && markState.marks === 1 && markState.note && markState.send && markState.sendEnabled,
             JSON.stringify({ layerUp, layerBox, marked, ...markState })
         );
-        // leave marking: Mark pressed again turns it off and drops the marks, so nothing is sent or left behind
+        // leave marking: Mark pressed again turns it off (nothing is sent). The mark stays, as Try keeps marks; it goes
+        // with the terminal the teardown closes
         await h.ev(`document.querySelector('[data-canvas-pane] button[title^="Mark parts of the board"]')?.click()`);
         await polishNap(200);
         return steps;

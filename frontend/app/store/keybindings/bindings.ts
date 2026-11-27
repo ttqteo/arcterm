@@ -1524,15 +1524,17 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
         const s = brainstorm();
         return s == null ? 0 : pickableOptions(shownBrainstormFile(s), s);
     };
-    // the step the brainstorm pane's back control takes, which Esc takes too. A drawn mark's note owns Esc on the
-    // open board (it drops the mark there), so the board's step waits for it even while the note's field is unfocused
+    // the step the brainstorm pane's back control takes, which Esc takes too. While the open board is being marked, a drawn
+    // mark's note owns Esc (it drops the mark there), so the board's step waits for it even while the note's field is
+    // unfocused. In Try the marks are only kept for a Send, so Esc closes the board, which drops them
     const paneStep = () => {
         const s = brainstorm();
         if (s?.mode !== "brainstorm") {
             return null;
         }
         const step = paneBack({ ...s, exited: exited() }, shownBrainstormFile(s));
-        return step === "board" && (focusedCanvas(model)?.marks.length ?? 0) > 0 ? null : step;
+        const marked = focusedCanvas(model);
+        return step === "board" && marked?.marking === true && marked.marks.length > 0 ? null : step;
     };
     // canvas, review and brainstorm mode hide the rail and the terminal, so their keys stand down there
     const noCanvas = () => !terminalSwapped(model);
@@ -2624,16 +2626,11 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             group: "Agent",
             label: "Send the marks to the agent",
             // live inside a note input on purpose: the last note is where the user finishes; it stands down in
-            // History and a session, which cover the canvas without leaving canvas mode
+            // History and a session, which cover the canvas without leaving canvas mode. Live whenever a mark is
+            // unsent, in Try too: Try keeps the marks, and the tray with its Send stays on screen
             when: (ctx) => {
                 const s = focusedCanvasMode(model);
-                return (
-                    ctx.surface === "agent" &&
-                    !ctx.modalOpen &&
-                    centerAtRest() &&
-                    s?.marking === true &&
-                    s.marks.length > 0
-                );
+                return ctx.surface === "agent" && !ctx.modalOpen && centerAtRest() && s != null && s.marks.length > 0;
             },
             run: () => clickThrough("[data-canvas-send]"),
         },
