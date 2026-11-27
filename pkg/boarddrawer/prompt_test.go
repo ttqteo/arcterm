@@ -90,7 +90,7 @@ func TestPromptRequestAndAsk(t *testing.T) {
 	// the agent's request must be drawn, never flagged
 	req := turnPrompt(turnInput{Scene: scene, Request: true, Question: "Draw the retry loop.", AgentTitle: agentName})
 	if !strings.Contains(req, agentName+" asks you to draw: Draw the retry loop.") || strings.Contains(req, "<briefing>") ||
-		!strings.Contains(req, "This is the agent's own request: draw it as a new drawing. Never flag it as a question.") {
+		!strings.Contains(req, agentRequestLine) {
 		t.Errorf("a one-line request carries its sender and ask, and no briefing block:\n%s", req)
 	}
 	noAsk := turnPrompt(turnInput{Scene: scene, Request: true, Context: "facts", AgentTitle: agentName})
@@ -123,10 +123,12 @@ func TestPromptDrawingInView(t *testing.T) {
 			t.Errorf("drawing %q is not a live frame, so none is in view:\n%s", id, p)
 		}
 	}
-	// the agent's request has no drawing in view, even on a board with drawings
-	req := turnPrompt(turnInput{Scene: framed, Request: true, Question: "Draw the retry loop."})
-	if strings.Contains(req, drawingInViewHead) || !strings.Contains(req, noDrawingLine) || !strings.Contains(req, "as a new drawing") {
-		t.Errorf("an agent's request is a new drawing:\n%s", req)
+	// the agent's request has no drawing in view, even on a board with drawings: it is new, or an edit of the drawing
+	// it names
+	req := turnPrompt(turnInput{Scene: framed, Request: true, Question: "Draw the retry loop.", DrawingId: "f1"})
+	if strings.Contains(req, drawingInViewHead) || strings.Contains(req, noDrawingLine) || !strings.Contains(req, requestDrawingLine) ||
+		!strings.Contains(req, agentRequestLine) || !strings.Contains(req, `"drawing"`) {
+		t.Errorf("an agent's request is a new drawing or an edit of the one it names:\n%s", req)
 	}
 }
 
@@ -134,7 +136,7 @@ func TestPromptDrawingInView(t *testing.T) {
 func TestPromptOneDrawingAtATime(t *testing.T) {
 	first := firstPrompt(firstInput{BoardName: "Board talk"}, turnInput{Scene: Scene{}, Question: "Draw it."})
 	for _, want := range []string{
-		"One drawing at a time", `"edit": true`, "At most 40 shapes in `add`", "at most 12 words", "An agent's request is always a new drawing",
+		"One drawing at a time", `"edit": true`, "At most 40 shapes in `add`", "at most 12 words", "An agent's request has no drawing in view", `"drawing"`, "To delete a whole drawing",
 		"chart", // main's vocabulary stays
 	} {
 		if !strings.Contains(first, want) {

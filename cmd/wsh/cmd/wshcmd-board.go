@@ -35,6 +35,10 @@ what you pass short.
                   argument to a native command.
   --ask           the one line the drawer answers on the board ("add the retry path"). Alone, once the board exists.
 
+A request is a new drawing, unless it asks to fix, change or delete a drawing already on the board: say which one by its
+title ("in Part 1, drop the two long arrows", "delete the drawing Part 2, fixed"), and the drawer edits or deletes that
+one. One request changes one drawing.
+
 A board whose agent ended (its tab is gone) goes to the agent that draws on it next, drawing and turns kept.
 
 Pass --context, --ask or both. The command waits for the drawing (up to 9 minutes) and prints one line:

@@ -53,8 +53,12 @@ and never answers in words. Don't draw a one-line answer.
 - Keep the briefing short. The drawer reads what you said in the conversation since its last read, so don't restate
   it, and never paste shapes or coordinates. Say what to draw and the angle (the boxes that matter, the direction of
   the flow), not the explanation itself.
-- Every request becomes one new, short drawing: one idea, a handful of boxes, a few words each. For more, send another
+- A request becomes one new, short drawing: one idea, a handful of boxes, a few words each. For more, send another
   request, and it becomes another drawing beside the first, never a denser one.
+- To fix a drawing already on the board, ask for the fix and name the drawing by its title: `--ask "in Part 1, drop
+  the two long arrows and write 'continued in Part 2' under the last box"`. The drawer edits that drawing in place.
+  `--ask "delete the drawing Part 2, fixed"` removes a whole drawing. One request changes one drawing, so a fix and a
+  delete are two requests. Fix in place rather than drawing a corrected copy beside the old one.
 - A board draws bar and line charts to scale, beside the boxes. For one, give the drawer the numbers themselves, with
   their labels and units, in the briefing or the `--ask` line ("add a bar chart of pass rate: baseline 0.42, LLM
   0.61, agent 0.70"); it never invents numbers. A chart of numbers on its own, with no drawing around it, reads better
@@ -64,9 +68,8 @@ and never answers in words. Don't draw a one-line answer.
   - `Still drawing on board "<name>"; its card in Chat shows when it lands.` — the wait ran out; carry on (exit 0).
   - `Couldn't draw on board "<name>": <reason>` — nothing changed (exit 1); an RPC error prints the same way.
 - The board never opens by itself: your turn in Chat gets a card for it (name, shape count, **Open**), and the person
-  opens it beside Chat when they want to look. Your request always lands as a new drawing in its own frame, beside the
-  earlier ones: the drawer changes an earlier drawing only when the person asks it to on the board, so a drawing of
-  yours stays as it was until then.
+  opens it beside Chat when they want to look. A new drawing lands in its own frame, beside the earlier ones; a fix
+  lands in the drawing it names.
 
 **Questions asked on the board reach you.** The person can select shapes and ask about them on the board. When the
 drawer can't answer that by drawing, it forwards the question to you as a message headed

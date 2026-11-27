@@ -55,6 +55,8 @@ and a picture given to a line that is not big.
 
 ### Changed
 
+- An agent can now fix a drawing on a board in place, or delete one, instead of drawing a corrected copy beside it:
+  ask it to fix "Part 1" and the drawer edits that drawing.
 - A board's Tidy button is gone.
 - Copy image on a diagram in Chat (its toolbar and the enlarged viewer) shows a camera, as Copy screenshot does
   elsewhere, so it no longer looks like copying the text.

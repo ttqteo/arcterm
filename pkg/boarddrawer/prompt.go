@@ -10,12 +10,17 @@ import (
 )
 
 const (
-	agentRequestLine = "This is the agent's own request: draw it as a new drawing. Never flag it as a question."
-	drawLine         = "The person sent this line to be drawn: draw it, even if it reads as a question. Never flag it."
-	noAskLine        = "none given: draw what the briefing explains."
+	agentRequestLine = "This is the agent's own request: draw it, as a new drawing or as an edit of the drawing it asks " +
+		"to change. Never flag it as a question."
+	drawLine  = "The person sent this line to be drawn: draw it, even if it reads as a question. Never flag it."
+	noAskLine = "none given: draw what the briefing explains."
 	// drawingInViewHead opens the line naming the drawing in view
 	drawingInViewHead = "The drawing in view: "
 	noDrawingLine     = "No drawing is in view: draw this turn's answer as a new drawing."
+	// requestDrawingLine stands in for the drawing in view on the agent's request, which has none
+	requestDrawingLine = "The agent's request is a new drawing, unless it asks to fix, change or delete a drawing " +
+		"already on the board: then it edits that one. Set `\"edit\": true` and `\"drawing\"` to its frame's id, and " +
+		"change only its shapes (marked `\"frame\":\"<that id>\"`)."
 )
 
 //go:embed drawer-prompt.md
@@ -85,7 +90,9 @@ func turnPrompt(t turnInput) string {
 		fmt.Fprintf(&b, "\nSelected: %s (ids %s, marked \"selected\" above). The question is about these shapes.\n",
 			on, strings.Join(t.SelectedIds, ", "))
 	}
-	if title, ok := t.Scene.Frames[t.DrawingId]; ok {
+	if t.Request {
+		b.WriteString("\n" + requestDrawingLine + "\n")
+	} else if title, ok := t.Scene.Frames[t.DrawingId]; ok {
 		fmt.Fprintf(&b, "\n%s%q (id %s). A follow-up that changes it sets `\"edit\": true` and changes only its shapes "+
 			"(marked `\"frame\":\"%s\"`); a new question gets a new drawing.\n", drawingInViewHead, title, t.DrawingId, t.DrawingId)
 	} else {

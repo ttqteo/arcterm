@@ -524,7 +524,7 @@ func (d *Drawer) answer(ctx context.Context, b Board, talk wshrpc.BoardTalk, tur
 	if ctx.Err() != nil {
 		return Answer{}, ctx.Err()
 	}
-	answer, err := ParseAnswer(out.Text, scene, turn.DrawingId)
+	answer, err := ParseAnswer(out.Text, scene, turn.DrawingId, turn.Kind == KindRequest)
 	if err != nil {
 		return Answer{}, err
 	}
@@ -566,10 +566,9 @@ func (d *Drawer) deliver(ctx context.Context, b Board, turn wshrpc.BoardTurn, a 
 		ID: d.d.NewId(), Project: b.Project, BoardId: b.BoardId, TurnId: turn.ID,
 		Add: a.Add, Update: a.Update, Remove: a.Remove, Title: a.Title, Ts: d.d.Now(),
 	}
-	// only an edit joins the frame it names: a new drawing gets a frame of its own
-	if a.Edit {
-		delivered.DrawingId = turn.DrawingId
-	}
+	// only an edit joins the frame it names (the one in view, or the one the agent's request picked): a new drawing
+	// gets a frame of its own
+	delivered.DrawingId = a.DrawingId
 	if err = d.d.Deliver(delivered); err != nil {
 		return fmt.Errorf("the drawer's answer could not be delivered: %w", err)
 	}

@@ -41,7 +41,7 @@ func manyAdds(n int) string {
 
 func TestParseAnswer(t *testing.T) {
 	// an edit whose add, update and remove stay in the drawing in view
-	a, err := ParseAnswer("```json\n"+answerWith(`,"edit":true,"add":`+goodAdd+`,"update":[{"id":"box", "x":40,"label":"wavesrv"},{"id":"note","text":"hi","strokeColor":"#e03131"}],"remove":["wire"]`)+"\n```", checkScene, "f1")
+	a, err := ParseAnswer("```json\n"+answerWith(`,"edit":true,"add":`+goodAdd+`,"update":[{"id":"box", "x":40,"label":"wavesrv"},{"id":"note","text":"hi","strokeColor":"#e03131"}],"remove":["wire"]`)+"\n```", checkScene, "f1", false)
 	if err != nil {
 		t.Fatalf("valid answer refused: %v", err)
 	}
@@ -59,23 +59,23 @@ func TestParseAnswer(t *testing.T) {
 
 	// a reply key (words) and an elsewhere key are ignored: words alone draw nothing and flag nothing, and the turn
 	// decides what that means
-	words, err := ParseAnswer(`{"reply":"No drawing needed.","elsewhere":true}`, checkScene, "")
+	words, err := ParseAnswer(`{"reply":"No drawing needed.","elsewhere":true}`, checkScene, "", false)
 	if err != nil || words.HasDrawing() || words.Question || words.Add != "" || words.Update != "" || words.Title != "" {
 		t.Errorf("words only must be valid with no drawing and no question: %+v %v", words, err)
 	}
-	q, err := ParseAnswer(`{"question":true}`, checkScene, "")
+	q, err := ParseAnswer(`{"question":true}`, checkScene, "", false)
 	if err != nil || !q.Question || q.HasDrawing() {
 		t.Errorf("a question flag must pass as a question: %+v %v", q, err)
 	}
 	// a new drawing that only adds, with or without a drawing in view
 	for _, inView := range []string{"", "f1"} {
-		if a, err := ParseAnswer(`{"title":"x","add":`+goodAdd+`}`, checkScene, inView); err != nil || a.Added != 3 || a.Edit {
+		if a, err := ParseAnswer(`{"title":"x","add":`+goodAdd+`}`, checkScene, inView, false); err != nil || a.Added != 3 || a.Edit {
 			t.Errorf("a new drawing (in view %q) must pass: %+v %v", inView, a, err)
 		}
 	}
 	at := fmt.Sprintf(`,"add":[{"type":"rectangle","id":"a","label":{"text":%q}},{"type":"text","id":"b","text":%q}],"update":[{"id":"note","text":%q},{"id":"box","label":%q}]`,
 		twelveWords, twelveWords, twelveWords, twelveWords)
-	if _, err := ParseAnswer(answerWith(`,"edit":true`+at), checkScene, "f1"); err != nil {
+	if _, err := ParseAnswer(answerWith(`,"edit":true`+at), checkScene, "f1", false); err != nil {
 		t.Errorf("%d words must pass: %v", MaxLabelWords, err)
 	}
 
@@ -122,7 +122,7 @@ func TestParseAnswer(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			_, err := ParseAnswer(c.reply, checkScene, c.drawing)
+			_, err := ParseAnswer(c.reply, checkScene, c.drawing, false)
 			if err == nil || !strings.Contains(err.Error(), c.wantErr) {
 				t.Fatalf("want error containing %q, got %v", c.wantErr, err)
 			}
@@ -132,12 +132,71 @@ func TestParseAnswer(t *testing.T) {
 		})
 	}
 
-	if _, err := ParseAnswer(answerWith(`,"add":`+manyAdds(MaxDrawingAdds)), checkScene, ""); err != nil {
+	if _, err := ParseAnswer(answerWith(`,"add":`+manyAdds(MaxDrawingAdds)), checkScene, "", false); err != nil {
 		t.Errorf("%d adds must pass: %v", MaxDrawingAdds, err)
 	}
 	// an edit that touches no shape draws nothing, so it has no drawing to keep to, wherever it points
-	if a, err := ParseAnswer(`{"edit":true,"question":true}`, checkScene, ""); err != nil || !a.Question || a.HasDrawing() {
+	if a, err := ParseAnswer(`{"edit":true,"question":true}`, checkScene, "", false); err != nil || !a.Question || a.HasDrawing() {
 		t.Errorf("a flagged question with a stray edit key must pass as a question: %+v %v", a, err)
+	}
+}
+
+// the agent's request has no drawing in view: its edit names the drawing it changes, any drawing on the board
+func TestParseAnswerRequestPicksTheDrawing(t *testing.T) {
+	a, err := ParseAnswer(answerWith(`,"edit":true,"drawing":"f2","update":[{"id":"other","x":1}]`), checkScene, "", true)
+	if err != nil || !a.Edit || a.DrawingId != "f2" || a.Changed != 1 {
+		t.Fatalf("a request's edit of f2 must pass: %+v %v", a, err)
+	}
+	// a new drawing still only adds, and stays new
+	if a, err := ParseAnswer(answerWith(`,"add":`+goodAdd), checkScene, "", true); err != nil || a.Edit || a.DrawingId != "" {
+		t.Errorf("a request's new drawing must pass: %+v %v", a, err)
+	}
+	// a person's ask edits only the drawing in view: a drawing key there is ignored
+	if a, err := ParseAnswer(answerWith(`,"edit":true,"drawing":"f2","update":[{"id":"box","x":1}]`), checkScene, "f1", false); err != nil || a.DrawingId != "f1" {
+		t.Errorf("an ask's edit stays on the drawing in view: %+v %v", a, err)
+	}
+	edit := func(fields string) string { return answerWith(`,"edit":true` + fields) }
+	cases := []struct{ name, reply, wantErr string }{
+		{"no drawing key", edit(`,"update":[{"id":"other","x":1}]`), "names none"},
+		{"a drawing that is gone", edit(`,"drawing":"gone","update":[{"id":"other","x":1}]`), `"gone", which is no drawing`},
+		{"a shape as the drawing", edit(`,"drawing":"box","update":[{"id":"other","x":1}]`), `"box", which is no drawing`},
+		{"a shape of another drawing", edit(`,"drawing":"f2","update":[{"id":"box","x":1}]`), `"box", which is outside the drawing`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if _, err := ParseAnswer(c.reply, checkScene, "", true); err == nil || !strings.Contains(err.Error(), c.wantErr) {
+				t.Fatalf("want error containing %q, got %v", c.wantErr, err)
+			}
+		})
+	}
+}
+
+// an edit that removes its own frame deletes the whole drawing: every shape in it, then the frame
+func TestParseAnswerDeletesAWholeDrawing(t *testing.T) {
+	a, err := ParseAnswer(answerWith(`,"edit":true,"drawing":"f1","remove":["f1"]`), checkScene, "", true)
+	if err != nil || a.DrawingId != "f1" || a.Removed != 4 {
+		t.Fatalf("deleting f1: %+v %v", a, err)
+	}
+	if want := []string{"box", "link", "note", "wire", "f1"}; strings.Join(a.Remove, ",") != strings.Join(want, ",") {
+		t.Errorf("remove: %v, want %v", a.Remove, want)
+	}
+	// the person's ask deletes the drawing in view the same way
+	if a, err := ParseAnswer(answerWith(`,"edit":true,"remove":["f2","other"]`), checkScene, "f2", false); err != nil || a.Removed != 1 ||
+		strings.Join(a.Remove, ",") != "other,f2" {
+		t.Errorf("deleting f2 in view: %+v %v", a, err)
+	}
+	cases := []struct{ name, reply, drawing, wantErr string }{
+		{"and adds to it", answerWith(`,"edit":true,"add":` + goodAdd + `,"remove":["f1"]`), "f1", "deletes the drawing"},
+		{"and updates it", answerWith(`,"edit":true,"update":[{"id":"box","x":1}],"remove":["f1"]`), "f1", "deletes the drawing"},
+		{"another drawing", answerWith(`,"edit":true,"remove":["f2"]`), "f1", `"f2", a drawing's frame`},
+		{"as a new drawing", answerWith(`,"remove":["f1"]`), "f1", "a new drawing only adds"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if _, err := ParseAnswer(c.reply, checkScene, c.drawing, false); err == nil || !strings.Contains(err.Error(), c.wantErr) {
+				t.Fatalf("want error containing %q, got %v", c.wantErr, err)
+			}
+		})
 	}
 }
 
@@ -168,16 +227,16 @@ func TestParseAnswerCapsTheWholeAnswer(t *testing.T) {
 		return fmt.Sprintf(`,"edit":true,"add":%s,"update":[%s],"remove":[%s]`, manyAdds(adds), strings.Join(upd, ","), strings.Join(rem, ","))
 	}
 	// 40 + 80 + 80
-	a, err := ParseAnswer(answerWith(entries(MaxDrawingAdds, 80, 80)), scene, "f1")
+	a, err := ParseAnswer(answerWith(entries(MaxDrawingAdds, 80, 80)), scene, "f1", false)
 	if err != nil || a.Added+a.Changed+a.Removed != MaxShapes {
 		t.Errorf("%d entries in an edit must pass: %+v %v", MaxShapes, a, err)
 	}
-	_, err = ParseAnswer(answerWith(entries(MaxDrawingAdds, 81, 80)), scene, "f1")
+	_, err = ParseAnswer(answerWith(entries(MaxDrawingAdds, 81, 80)), scene, "f1", false)
 	if err == nil || !strings.Contains(err.Error(), "201 entries") || !strings.HasPrefix(err.Error(), unusableHead) {
 		t.Errorf("201 entries in an edit: %v", err)
 	}
 	// a new drawing past 40 adds is refused, however far under 200 it is
-	_, err = ParseAnswer(answerWith(`,"add":`+manyAdds(MaxDrawingAdds+1)), scene, "")
+	_, err = ParseAnswer(answerWith(`,"add":`+manyAdds(MaxDrawingAdds+1)), scene, "", false)
 	if err == nil || !strings.Contains(err.Error(), "adds 41 shapes") {
 		t.Errorf("41 adds in a new drawing: %v", err)
 	}
@@ -190,7 +249,7 @@ func TestParseAnswerChartCountsOnceTowardTheAddLimit(t *testing.T) {
 	for i := range parts {
 		parts[i] = fmt.Sprintf(chart, i)
 	}
-	a, err := ParseAnswer(answerWith(`,"add":[`+strings.Join(parts, ",")+`]`), checkScene, "")
+	a, err := ParseAnswer(answerWith(`,"add":[`+strings.Join(parts, ",")+`]`), checkScene, "", false)
 	if err != nil || a.Added != MaxDrawingAdds {
 		t.Fatalf("%d charts must pass as %d adds: %+v %v", MaxDrawingAdds, MaxDrawingAdds, a, err)
 	}
@@ -198,12 +257,12 @@ func TestParseAnswerChartCountsOnceTowardTheAddLimit(t *testing.T) {
 		t.Errorf("the charts must still land as the shapes they lay out, got %d rectangles", n)
 	}
 	more := append(parts, fmt.Sprintf(chart, MaxDrawingAdds))
-	if _, err := ParseAnswer(answerWith(`,"add":[`+strings.Join(more, ",")+`]`), checkScene, ""); err == nil || !strings.Contains(err.Error(), "adds 41 shapes") {
+	if _, err := ParseAnswer(answerWith(`,"add":[`+strings.Join(more, ",")+`]`), checkScene, "", false); err == nil || !strings.Contains(err.Error(), "adds 41 shapes") {
 		t.Errorf("41 charts: %v", err)
 	}
 	// a chart's title is laid out by Arc, not written as a label: the 12 words are the drawer's own text
 	title := fmt.Sprintf(`[{"type":"chart","id":"c","kind":"bar","x":0,"y":0,"title":%q,"data":[["a",1]]}]`, thirteenWords)
-	if _, err := ParseAnswer(answerWith(`,"add":`+title), checkScene, ""); err != nil {
+	if _, err := ParseAnswer(answerWith(`,"add":`+title), checkScene, "", false); err != nil {
 		t.Errorf("a chart's title is not counted in words: %v", err)
 	}
 }

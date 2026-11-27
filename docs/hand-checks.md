@@ -24,6 +24,10 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
 
 ## 2026-11-27
 
+- [ ] (arcterm) **An agent fixes or deletes a drawing in place** (`pkg/boarddrawer` answer.go `drawing` key, prompt).
+  Go and vitest only, no real drawer run. On a board with two drawings, have an agent run
+  `wsh board draw --board <name> --ask "in <title>, drop the long arrows"`: that drawing changes, no new frame appears.
+  Then `--ask "delete the drawing <title>"`: the frame and its shapes go, the other drawing stays, Undo brings it back.
 - [ ] (arcterm) **Copy image on a diagram shows a camera** (`mermaidviewer.tsx` CopyImageButton, 820090bc2). Lint
   only. Hover a mermaid diagram in Chat: the toolbar's Copy image is a camera; it turns to a check after a press. Same
   in the enlarged viewer.
