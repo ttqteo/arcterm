@@ -8,6 +8,7 @@ import {
     insertAt,
     insertIntoChatBox,
     interruptChat,
+    quoteWhenReady,
     registerChatBox,
     registerChatInsert,
     replaceChatBox,
@@ -213,5 +214,89 @@ describe("the chat box registry (chatBoxText, submitIntoChatBox, appendToChatBox
         expect(newBox.submit).toHaveBeenCalledOnce();
         expect(oldBox.submit).not.toHaveBeenCalled();
         offNew();
+    });
+});
+
+describe("quoteWhenReady", () => {
+    const box = (over: Partial<Parameters<typeof registerChatBox>[1]> = {}) => ({
+        text: vi.fn(() => "a draft"),
+        submit: vi.fn(() => true),
+        append: vi.fn(() => true),
+        replace: vi.fn(() => true),
+        write: vi.fn(() => true),
+        focus: vi.fn(() => true),
+        interrupt: vi.fn(() => true),
+        cancelQueued: vi.fn(() => true),
+        ...over,
+    });
+    const quoting = (text: string) => vi.fn((draft: string) => `${draft}|${text}`);
+
+    it("puts the quote into a mounted box at once, built from the box's own text", () => {
+        const b = box();
+        const off = registerChatBox("qw-1", b);
+        const quote = quoting("q");
+        expect(quoteWhenReady("qw-1", quote)).toBe(true);
+        expect(quote).toHaveBeenCalledWith("a draft");
+        expect(b.replace).toHaveBeenCalledWith("a draft|q");
+        off();
+    });
+    it("holds the quote for an agent with no box yet and applies it when the box registers", () => {
+        const quote = quoting("held");
+        expect(quoteWhenReady("qw-2", quote)).toBe(false);
+        expect(quote).not.toHaveBeenCalled();
+        const b = box();
+        const off = registerChatBox("qw-2", b);
+        expect(quote).toHaveBeenCalledOnce();
+        expect(b.replace).toHaveBeenCalledWith("a draft|held");
+        off();
+    });
+    it("applies a held quote once: a second registration of the same agent leaves its box alone", () => {
+        quoteWhenReady("qw-3", quoting("once"));
+        registerChatBox("qw-3", box())();
+        const again = box();
+        const off = registerChatBox("qw-3", again);
+        expect(again.replace).not.toHaveBeenCalled();
+        off();
+    });
+    it("holds one quote per agent: a newer one replaces the held one", () => {
+        const older = quoting("older");
+        const newer = quoting("newer");
+        quoteWhenReady("qw-4", older);
+        quoteWhenReady("qw-4", newer);
+        const b = box();
+        const off = registerChatBox("qw-4", b);
+        expect(older).not.toHaveBeenCalled();
+        expect(b.replace).toHaveBeenCalledOnce();
+        expect(b.replace).toHaveBeenCalledWith("a draft|newer");
+        off();
+    });
+    it("keeps agents apart: another agent's box does not take a held quote", () => {
+        const quote = quoting("mine");
+        quoteWhenReady("qw-5", quote);
+        const other = box();
+        const off = registerChatBox("qw-5-other", other);
+        expect(other.replace).not.toHaveBeenCalled();
+        expect(quote).not.toHaveBeenCalled();
+        off();
+        registerChatBox("qw-5", box())();
+    });
+    it("takes a quote that says nothing to add as nothing: the box is left alone and nothing is held", () => {
+        const b = box();
+        const off = registerChatBox("qw-6", b);
+        expect(quoteWhenReady("qw-6", () => null)).toBe(false);
+        expect(b.replace).not.toHaveBeenCalled();
+        off();
+        const none = vi.fn(() => null);
+        quoteWhenReady("qw-6b", none);
+        const late = box();
+        const offLate = registerChatBox("qw-6b", late);
+        expect(late.replace).not.toHaveBeenCalled();
+        offLate();
+    });
+    it("says so when the mounted box refuses the text (a wake in flight)", () => {
+        const b = box({ replace: vi.fn(() => false) });
+        const off = registerChatBox("qw-7", b);
+        expect(quoteWhenReady("qw-7", quoting("x"))).toBe(false);
+        off();
     });
 });

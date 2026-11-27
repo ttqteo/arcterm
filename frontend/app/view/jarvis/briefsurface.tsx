@@ -225,6 +225,8 @@ import {
 } from "./jarvisstore";
 import { activeSubjectAtom, persistedSubjectAtom, stageRunAtom } from "./jarvissubjectstore";
 import { JarvisTour, TourButton, TourOffer } from "./jarvistourview";
+import { laterGroups } from "./laterchunks";
+import { LaterChunksRegion } from "./laterchunksregion";
 import { NewInitiativeControl } from "./newinitiativecontrol";
 import { openOrPeek, openOrPeekAddress } from "./openref";
 import { planReviewORef } from "./planreviewtarget";
@@ -744,6 +746,17 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
         const kept = (c: EffortCardModel) => !pendingDeletes.has(effortKey(c.oref));
         return { trackers: g.trackers.filter(kept), ideas: g.ideas.filter(kept) };
     }, [efforts, pendingDeletes]);
+    // The Later section's groups (laterchunks.ts): the items saved for later, from the summaries the briefing carries. An
+    // initiative whose delete is waiting out its undo window is gone from them too; the Brief's filter narrows them.
+    const summaries = snapshot?.state.efforts;
+    const laterGroupsShown = useMemo(
+        () =>
+            laterGroups(
+                (summaries ?? []).filter((e) => !pendingDeletes.has(effortKey(e.oref))),
+                query
+            ),
+        [summaries, pendingDeletes, query]
+    );
     const archivedKept = useMemo(
         () => archivedCards.filter((c) => !pendingDeletes.has(effortKey(c.oref))),
         [archivedCards, pendingDeletes]
@@ -2032,6 +2045,14 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                             }}
                                             cursor={cursor}
                                             summary={queueSummary}
+                                        />
+                                        {/* what was saved for later: its own section under Waiting, never part of it (drawn
+                                        only with items) */}
+                                        <LaterChunksRegion
+                                            model={model}
+                                            groups={laterGroupsShown}
+                                            filter={query}
+                                            agents={agents}
                                         />
                                         <section
                                             data-jarvis-brief-region="initiatives"
