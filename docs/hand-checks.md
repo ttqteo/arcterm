@@ -24,6 +24,9 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
 
 ## 2026-11-27
 
+- [ ] (arcterm) **Copy image on a diagram shows a camera** (`mermaidviewer.tsx` CopyImageButton, 820090bc2). Lint
+  only. Hover a mermaid diagram in Chat: the toolbar's Copy image is a camera; it turns to a check after a press. Same
+  in the enlarged viewer.
 - [ ] (arcterm) **Ask about, and delete, the part being read** (`boardsplit.tsx`, `boardaskbox.tsx`, `boardheader.tsx`,
   `boardparts.ts` ids). Unit tests and typecheck; scenario boards-split 8c written, not run. On a dense board press
   ‹ 8 parts ›: the ask line reads "Asking about <part>"; ask something and check the drawer's or agent's answer is about
