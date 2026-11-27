@@ -7,6 +7,20 @@ import (
 	"testing"
 )
 
+// The openings a transcript reader matches must be how the filled prompts really begin.
+func TestOpeningsBeginThePrompts(t *testing.T) {
+	o := Openings()
+	if len(o) != 2 || o[0] == "" || o[1] == "" || o[0] == o[1] {
+		t.Fatalf("Openings() = %q, want two distinct non-empty lines", o)
+	}
+	if got := Prompt("spec.md", "report.md"); !strings.HasPrefix(got, o[0]) {
+		t.Errorf("the builder check's prompt does not begin with %q", o[0])
+	}
+	if !strings.HasPrefix(judgePromptTemplate, o[1]) || strings.Contains(o[1], "[") || strings.Contains(o[1], "%") {
+		t.Errorf("the judge's opening %q is not a placeholder-free start of its template", o[1])
+	}
+}
+
 func TestPromptFillsBothPaths(t *testing.T) {
 	spec := filepath.Join("proj", "docs", "spec.md")
 	report := filepath.Join("tmp", "report-uuid.md")

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/wavetermdev/waveterm/pkg/agentobserve"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/blockcontroller"
 	"github.com/wavetermdev/waveterm/pkg/consult"
@@ -219,8 +220,9 @@ type RunWorkerOptions struct {
 // treats like cli (not a hosted surface: it still loads the org's managed settings), and unlike sdk-cli it is not
 // arcterm's mark of a nested print-mode session (agentobserve.HeadlessEntrypoint), so the worker's own hooks still
 // report into its block. Every block env is inherited, so a `claude -p` the worker runs records bench too, and its
-// hooks tell it nested by the process walk alone (agentobserve.NestedSession).
-const EngineEntrypoint = "bench"
+// hooks tell it nested by the process walk alone (agentobserve.NestedSession). The value lives in agentobserve, so the
+// transcript readers below jarvis (pkg/sessionideas) can tell an engine session too.
+const EngineEntrypoint = agentobserve.EngineEntrypoint
 
 // createWorkerTab is the tab-creation seam, so tests make a tab without a layout or a live workspace.
 var createWorkerTab = wcore.CreateTab

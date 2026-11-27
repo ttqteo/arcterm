@@ -22,6 +22,11 @@ const HeadlessEntrypoint = "sdk-cli"
 // hides sdk-cli's.
 const BoardDrawerEntrypoint = "sdk-arc-board"
 
+// EngineEntrypoint is the CLAUDE_CODE_ENTRYPOINT an engine session (a run's task worker, reviewer or judge) runs under:
+// jarvis.EngineEntrypoint, which says why it is "bench". It is not headless: the session runs in a tab and its hooks
+// report, but no person types into it.
+const EngineEntrypoint = "bench"
+
 // IsHeadlessEntrypoint reports whether a transcript record's entrypoint marks a print-mode run, which
 // is never a session a user typed into and never work they could usefully resume.
 func IsHeadlessEntrypoint(entrypoint string) bool {

@@ -24,21 +24,41 @@ var sessionIdeasArmed int64
 
 // StartSessionIdeasLoop runs the schedule's tick until ctx ends: the first after 90 seconds, then every five minutes on
 // DUM-E's cadence (dumeTickEvery). A leftover window is only the stretch before a 5-hour reset, which an hourly check
-// can miss. A tick reads file times and the marks, nothing more, until a session is due.
+// can miss. A tick reads file times and the marks, and the head of a transcript it has not seen as it stands (to tell a
+// machine session), nothing more, until a session is due. At the first tick the loop also lists the sessions once
+// (warmSessionIdeasOrigins), whether or not a scan was ever asked for.
 func StartSessionIdeasLoop(ctx context.Context) {
 	go func() {
 		timer := time.NewTimer(sessionIdeasFirstTick)
 		defer timer.Stop()
+		warmed := false
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-timer.C:
 			}
+			if !warmed {
+				warmed = true
+				warmSessionIdeasOrigins()
+			}
 			safeSessionIdeasTick(ctx)
 			timer.Reset(dumeTickEvery)
 		}
 	}()
+}
+
+// warmSessionIdeasOrigins lists the sessions once, off any RPC: the first list reads the head of every transcript to
+// leave out the machine sessions (seconds over a few thousand; sessionideas.PersonSessions caches each until its file
+// changes), so the Brief's first read of the list does not wait on it. It reads files only, and calls no model.
+func warmSessionIdeasOrigins() {
+	defer func() {
+		panichandler.PanicHandler("sessionideas-warm", recover())
+	}()
+	if _, on := sessionIdeasFixture(); on {
+		return
+	}
+	sessionIdeasOnDisk()
 }
 
 // safeSessionIdeasTick keeps a panic in one tick from ending the loop for good.
