@@ -48,15 +48,10 @@ import {
     drawingViewport,
     isFollowing,
     rowState,
+    stepDrawing,
     type Drawing,
 } from "./boarddrawings";
-import {
-    parseBoardFile,
-    serializeBoard,
-    withReadableFont,
-    wrapEarlier,
-    type BoardScene,
-} from "./boardmodel";
+import { parseBoardFile, serializeBoard, withReadableFont, wrapEarlier, type BoardScene } from "./boardmodel";
 import {
     boardParts,
     lerpViewport,
@@ -507,11 +502,16 @@ function OpenBoard({ project, boardId, part: partProp, onPart, onParts }: BoardC
         );
     }
 
-    // → and ← step through the parts, Esc goes back to the whole drawing: only while nothing is selected or being
-    // written, with the select or hand tool, so Excalidraw's own keys (nudging a selection, leaving a tool) stay its own
+    // → and ← step through the parts of a dense drawing, else from drawing to drawing (stopping at either end, eased as a
+    // pick in the row is); Esc goes back to the whole drawing. Only while nothing is selected or being written, with the
+    // select or hand tool, so Excalidraw's own keys (nudging a selection, leaving a tool) stay its own
     function onKeyDownCapture(e: KeyboardEvent<HTMLDivElement>): void {
         const api = apiRef.current;
-        if (api == null || parts.length === 0 || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) {
+        if (api == null || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) {
+            return;
+        }
+        const arrow = e.key === "ArrowRight" || e.key === "ArrowLeft";
+        if (parts.length === 0 && !arrow) {
             return;
         }
         const target = e.target as HTMLElement;
@@ -524,6 +524,16 @@ function OpenBoard({ project, boardId, part: partProp, onPart, onParts }: BoardC
             st.editingTextElement == null &&
             (st.activeTool.type === "selection" || st.activeTool.type === "hand");
         if (!idle) {
+            return;
+        }
+        if (parts.length === 0) {
+            const to = stepDrawing(row?.drawings ?? [], row?.inView ?? null, e.key === "ArrowRight" ? 1 : -1);
+            if (to == null) {
+                return;
+            }
+            e.preventDefault();
+            e.stopPropagation();
+            globalStore.set(boardPickAtom(boardId), { drawingId: to, ts: Date.now() });
             return;
         }
         let next: number | null | undefined;

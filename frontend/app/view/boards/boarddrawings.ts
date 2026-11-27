@@ -102,6 +102,19 @@ export function drawingShapes(elements: readonly ExcalidrawElement[], drawingId:
     return elements.filter((el) => !el.isDeleted && !isFrame(el) && el.frameId === drawingId);
 }
 
+// → and ← between drawings: the drawing after (step 1) or before (-1) the one in view, or null at either end, with no
+// drawings, or with none in view and nothing to step to. With none in view, → goes to the first and ← to the last.
+export function stepDrawing(drawings: readonly { id: string }[], inView: string | null, step: 1 | -1): string | null {
+    if (drawings.length === 0) {
+        return null;
+    }
+    const at = inView == null ? -1 : drawings.findIndex((d) => d.id === inView);
+    if (at < 0) {
+        return step === 1 ? drawings[0].id : drawings[drawings.length - 1].id;
+    }
+    return drawings[at + step]?.id ?? null;
+}
+
 // The view follows the newest drawing: true with no drawings, or while the newest is the one in view
 export function isFollowing(drawings: readonly Drawing[], inView: string | null): boolean {
     return drawings.length === 0 || inView === drawings[drawings.length - 1].id;

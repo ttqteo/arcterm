@@ -11,6 +11,7 @@ import {
     isFollowing,
     isFrame,
     rowState,
+    stepDrawing,
     type BoardDrawings,
     type Drawing,
     type ViewRect,
@@ -257,5 +258,29 @@ describe("afterLanding", () => {
         // an edit whose frame was gone lands new: the answer names the old id, the drawing is another
         expect(afterLanding(["d1", "d2"], true, "d2", [d1, d2, d3], "d2")).toEqual({ fit: "d3", fresh: null });
         expect(afterLanding(["d1", "d2"], false, "d2", [d1, d2, d3], "d2")).toEqual({ fit: null, fresh: "d3" });
+    });
+});
+
+describe("stepDrawing", () => {
+    const ds = [{ id: "a" }, { id: "b" }, { id: "c" }];
+
+    it("steps to the drawing after or before the one in view", () => {
+        expect(stepDrawing(ds, "b", 1)).toBe("c");
+        expect(stepDrawing(ds, "b", -1)).toBe("a");
+    });
+
+    it("stops at either end, without wrapping", () => {
+        expect(stepDrawing(ds, "c", 1)).toBeNull();
+        expect(stepDrawing(ds, "a", -1)).toBeNull();
+    });
+
+    it("with none in view, goes to the first or the last", () => {
+        expect(stepDrawing(ds, null, 1)).toBe("a");
+        expect(stepDrawing(ds, null, -1)).toBe("c");
+        expect(stepDrawing(ds, "gone", 1)).toBe("a");
+    });
+
+    it("has nowhere to go with no drawings", () => {
+        expect(stepDrawing([], null, 1)).toBeNull();
     });
 });

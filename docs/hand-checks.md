@@ -24,6 +24,10 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
 
 ## 2026-11-27
 
+- [ ] (arcterm) **→ / ← between a board's drawings** (`boardcanvas.tsx` onKeyDownCapture, `stepDrawing`). Vitest and
+  typecheck; no scenario step. Open a board with several short drawings, click the canvas, press → several times: the
+  view eases drawing to drawing and the row's marker slides along; at the last drawing → does nothing, ← goes back. On a
+  dense "Earlier drawings", → still reads its parts. With a shape selected in Edit, → nudges the shape as before.
 - [ ] (arcterm) **An agent fixes or deletes a drawing in place** (`pkg/boarddrawer` answer.go `drawing` key, prompt).
   Go and vitest only, no real drawer run. On a board with two drawings, have an agent run
   `wsh board draw --board <name> --ask "in <title>, drop the long arrows"`: that drawing changes, no new frame appears.

@@ -34,6 +34,8 @@ and a picture given to a line that is not big.
 
 ### Added
 
+- `→` and `←` on a board step to the next and previous drawing, easing there as a click on its chip does, so a board
+  of drawings reads like slides. A dense drawing read in parts still steps through its parts first.
 - A Note button on the nav rail, above Translate, and `Mod`+`Shift`+`N` open a new note straight away: you type its
   title and body and save it with `Ctrl`+`Enter`. Before, it took Search, the Notes scope and its New note row.
   <!-- try: new-note -->
