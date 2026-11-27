@@ -1,5 +1,5 @@
 // The clickable prototype the proto-chips, proto-pane and proto-rail scenarios open
-// (docs/superpowers/plans/2026-11-27-prototype-feedback.md). writeProtoTopic writes a canvas topic folder:
+// (docs/superpowers/specs/2026-11-27-prototype-feedback-design.md). writeProtoTopic writes a canvas topic folder:
 //
 //   Main.dc.html    the prototype, "is_interactive": true. Plain HTML (no support.js, no CDN) with two screens in one page,
 //                   the board script wavesrv appends to every board is all that reads it. A button on each screen switches

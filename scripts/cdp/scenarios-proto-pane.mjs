@@ -1,5 +1,5 @@
 // proto-pane: the canvas pane's Try | Mark toggle, marks across a prototype's screens and variants, and the header readout
-// (docs/superpowers/plans/2026-11-27-prototype-feedback.md, Task 6). The fixture is ./proto-fixtures.mjs: Main.dc.html is a
+// (docs/superpowers/specs/2026-11-27-prototype-feedback-design.md). The fixture is ./proto-fixtures.mjs: Main.dc.html is a
 // prototype of two screens ("Trang chủ", "Để sau") whose slot `list` ("danh sách") has variants A, B and C on the first
 // screen and A and B on the second; Later.dc.html is the second screen as a file of its own (part_of Main), and
 // Static.dc.html is a board with no screen and no slot.

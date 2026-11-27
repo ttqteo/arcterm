@@ -1,5 +1,5 @@
 // proto-chips: the A/B/C chips Arc draws on a clickable prototype's variant slots, on every board opened large
-// (docs/superpowers/plans/2026-11-27-prototype-feedback.md, Task 4). The fixture is ./proto-fixtures.mjs: Main.dc.html is a
+// (docs/superpowers/specs/2026-11-27-prototype-feedback-design.md). The fixture is ./proto-fixtures.mjs: Main.dc.html is a
 // prototype of two screens whose slot `list` ("danh sách") has variants A, B and C on the first screen and only A and B on
 // the second; Static.dc.html has no slot. Each variant is drawn in its own color, so a screenshot says which one shows.
 //

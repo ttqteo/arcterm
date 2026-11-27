@@ -1,5 +1,5 @@
 // proto-rail: the brainstorm rail's opened prototype board: Try on it, the question's slot previewing its options, marks that
-// survive Try (docs/superpowers/plans/2026-11-27-prototype-feedback.md, Task 7). The fixture is ./proto-fixtures.mjs: Main.dc.html
+// survive Try (docs/superpowers/specs/2026-11-27-prototype-feedback-design.md). The fixture is ./proto-fixtures.mjs: Main.dc.html
 // is a prototype of two screens whose slot `list` ("danh sách") has variants A, B and C on the first screen and A and B on the
 // second. The brainstorm asks one question about the part that lists that one board, names the slot (`slot: "list"`) and has
 // three options, so option i is the slot's letter i, and the chip's letter is the option the pick bar offers.

@@ -66527,7 +66527,7 @@ const BS_KIT = {
 };
 
 // what the clickable prototype's scenarios (scenarios-proto-chips.mjs, -proto-pane.mjs, -proto-rail.mjs; plan
-// docs/superpowers/plans/2026-11-27-prototype-feedback.md) need of this file. Their fixture is ./proto-fixtures.mjs.
+// docs/superpowers/specs/2026-11-27-prototype-feedback-design.md) need of this file. Their fixture is ./proto-fixtures.mjs.
 // A scenario that needs more than this adds it here once, in the task that owns this kit, not in its own module
 const CANVAS_KIT = {
     // an agent's canvas: a temp design folder (boards of canvas.json, or the prototype) and a terminal that owns it, the
@@ -76972,7 +76972,7 @@ export const SCENARIOS = [
     ...codeBlameDraftScenarios(CODE_KIT),
     ...diffFileKeysScenarios(FILES_KIT),
     ...brainstormBoardPickScenarios(BS_KIT),
-    // the clickable prototype (docs/superpowers/plans/2026-11-27-prototype-feedback.md): chips, the pane's Try | Mark and the
+    // the clickable prototype (docs/superpowers/specs/2026-11-27-prototype-feedback-design.md): chips, the pane's Try | Mark and the
     // rail's opened board; the rail's also reads the brainstorm helpers
     ...protoChipsScenarios(CANVAS_KIT),
     ...protoPaneScenarios(CANVAS_KIT),

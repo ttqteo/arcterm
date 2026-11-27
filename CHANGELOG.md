@@ -40,7 +40,7 @@ and a picture given to a line that is not big.
   names the screen and the option you are on. Marks keep the screen and the options they were drawn on, stay when you go
   back to Try, and one Send saves a picture per screen and tells the agent which screen and option each mark is on. A
   prototype's screen files no longer show up as boards of their own. <!-- big -->
-  <!-- shot: none -->
+  <!-- shot: 1.13.0-proto-pane.webp -->
 
 ### Fixed
 

@@ -427,8 +427,8 @@ make it a `guess`. It stays a guess until they keep or restore it.
 thumbnail in the part, under its body when the user opens it, in the talk and in the builder check's
 review alike. A clickable prototype (`arc:design`'s **Clickable or static**) lists only its main
 board, the one `canvas.json` marks `is_interactive`, never a screen file (an entry with `part_of`):
-Arc shows the screens as parts of that one board. The run's prototype is the first board any part
-lists.
+Arc shows the screens as parts of that one board. The board a run's plan names on its `**Prototype:**`
+line is the first board any part lists, clickable or static.
 
 **Options as boards.** When a question chooses between options that differ in UI, draw them as
 `arc:design`'s **Options** section says, by how much they differ, and list the result in `boards`
