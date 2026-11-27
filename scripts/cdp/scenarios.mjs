@@ -69,6 +69,7 @@ import remoteScenarios from "./scenarios-remote.mjs";
 import agentStartFailedScenarios from "./scenarios-agent-start-failed.mjs";
 import sidebarColumnsScenarios from "./scenarios-sidebar-columns.mjs";
 import sidebarPermissionRowScenarios from "./scenarios-sidebar-permission-row.mjs";
+import sleepKeepsAskScenarios from "./scenarios-sleep-keeps-ask.mjs";
 import agentStreamsScenarios from "./scenarios-agent-streams.mjs";
 import chatBgTasksScenarios from "./scenarios-chat-bg-tasks.mjs";
 import chatUnreadTurnsScenarios from "./scenarios-chat-unread-turns.mjs";
@@ -76855,6 +76856,7 @@ export const SCENARIOS = [
     ...remoteScenarios({ lookEval, polishNap, polishWaitFor }),
     ...agentStartFailedScenarios(RT_KIT),
     ...sidebarPermissionRowScenarios(RT_KIT),
+    ...sleepKeepsAskScenarios(RT_KIT),
     ...agentStreamsScenarios(RT_KIT),
     ...chatBgTasksScenarios(RT_KIT),
     ...chatUnreadTurnsScenarios(RT_KIT),

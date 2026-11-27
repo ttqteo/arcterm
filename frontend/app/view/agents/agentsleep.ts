@@ -32,7 +32,10 @@ const SLEEP_TIMEOUT_MS = 15_000;
 const VIEWING_REFRESH_MS = 60_000;
 
 /** Pure: the sleep keys of a block's meta as AgentVM.sleeping, or undefined for an awake agent (agent:sleeping absent,
- *  0, or not a time). A missing size counts as nothing freed; an empty failure reason as none. */
+ *  0, or not a time). A missing size counts as nothing freed; an empty failure reason as none. `asking` is the
+ *  agent:sleepasking mark wavesrv writes with agent:sleeping when the agent was put to sleep while it waited on you (a
+ *  question or a permission); it is read only as the boolean true, so a stale or odd value is no mark, and it never
+ *  makes an awake block asleep. */
 export function sleepingOf(meta: Record<string, unknown> | undefined | null): AgentVM["sleeping"] {
     const since = meta?.["agent:sleeping"];
     if (typeof since !== "number" || !(since > 0)) {
@@ -44,6 +47,7 @@ export function sleepingOf(meta: Record<string, unknown> | undefined | null): Ag
         since,
         freedBytes: typeof freed === "number" && freed > 0 ? freed : 0,
         ...(typeof failed === "string" && failed !== "" ? { wakeFailed: failed } : {}),
+        ...(meta?.["agent:sleepasking"] === true ? { asking: true } : {}),
     };
 }
 

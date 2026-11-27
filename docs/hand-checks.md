@@ -24,6 +24,16 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
 
 ## 2026-11-27
 
+- [ ] (arcterm) **A sleeping agent's question and permission in Chat** (`sleepheldview.tsx`, `permissioncard.tsx`,
+  `permissionrow.tsx`, task 2 of the sleep-keeps-ask run). Vitest and typecheck only; the end state is
+  `task verify:ui -- sleep-keeps-ask` on the merged tree, never run here, and no motion was watched. With the build
+  installed, let a Claude agent ask you something (AskUserQuestion, arc mod on) and Sleep it from its row menu: Chat
+  should keep the question beside "Asleep since …" and Wake. Pick an option: the question card goes and your answer
+  grows in under the conversation with "Goes in when <name> wakes" (a spring open, no jump; at once under reduced
+  motion), and the agent stays asleep. Press Wake: that block should fold away on the same spring and the agent
+  carries on with your answer. Then let an agent wait on a permission prompt (a Bash command) and Sleep it: its Chat
+  card and its sidebar row should show the command and Wake alone (no Allow, Deny or Answer in Terminal), the dot not
+  pulsing; Wake pressed twice quickly should wake it once.
 - [ ] (arcterm) **A paused run keeps its worker's open question.** After a build, start a run whose worker asks you
   something (AskUserQuestion, arc mod on), pause the run while the question is open: it should stay in Needs you and on
   the run. Answer it while paused, resume: the reopened worker should start with "the person answered your question:

@@ -37,13 +37,15 @@ export const STATE_DOT: Record<AgentState, string> = {
 // stays clear of.
 export const SLEEPABLE_AGENTS: ReadonlySet<string> = new Set(["claude", "pi", "agy"]);
 
-/** Whether Sleep is offered for an agent: awake and idle, on a harness that resumes, and not working for a run (a run's
- *  lead and workers never sleep). The server decides again when asked. The one rule behind the sidebar row's Sleep, the
- *  Consumers panel and the palette. A kind of "agent" is an agent; a terminal or a background task is not. */
+/** Whether Sleep is offered for an agent: awake and idle or asking you, on a harness that resumes, and not working for a
+ *  run (a run's lead and workers never sleep). An asking agent sleeps with its question kept (wavesrv holds the answer
+ *  you give it for its wake); one that is working is never offered it. The server decides again when asked. The one
+ *  rule behind the sidebar row's Sleep, the Consumers panel and the palette. A kind of "agent" is an agent; a terminal
+ *  or a background task is not. */
 export function canSleep(vm: AgentVM): boolean {
     return (
         vm.sleeping == null &&
-        vm.state === "idle" &&
+        (vm.state === "idle" || vm.state === "asking") &&
         (vm.kind == null || vm.kind === "agent") &&
         vm.runId == null &&
         SLEEPABLE_AGENTS.has(vm.agent ?? "")
@@ -73,7 +75,7 @@ export interface ConsumerRow {
     burn: boolean; // the busiest agent, past BURN_WARN_TOKENS
     canSonnet: boolean;
     sleeping: boolean; // asleep: no process, so no RAM; Wake instead of Sleep
-    canSleep: boolean; // awake and idle, on a harness that resumes, and not working for a run
+    canSleep: boolean; // awake and idle or asking, on a harness that resumes, and not working for a run
     work?: AgentWork; // its CPU and heaviest command, where the Resource Manager reads them; absent asleep
     dag?: ConsumerDag; // a run worker's task, for Stop
     runId?: string; // the orchestrator run it works for, which groups it: a lead's own, a dag child's owner

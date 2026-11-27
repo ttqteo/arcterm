@@ -441,6 +441,22 @@ describe("withAsk", () => {
         expect(withAsk(baseWorking(), cleared, NOW)).toEqual(baseWorking());
     });
 
+    it("reads asking on a sleeping agent's vm and keeps its sleeping, so lists count it and Chat still draws Wake", () => {
+        const sleeping = { since: 5_000, freedBytes: 0, asking: true };
+        const ask: AgentAskData = {
+            oref: "block:abc",
+            askid: "ask-9",
+            questions: [{ question: "Ship it?", multiselect: false, options: [{ label: "Yes" }] }],
+            ts: NOW - 30_000,
+        };
+        const asleep: AgentVM = { id: "tab-1", name: "waveterm", task: "", state: "idle", idleSince: 5_000, sleeping };
+        const vm = withAsk(asleep, ask, NOW);
+        expect(vm.state).toBe("asking");
+        expect(vm.sleeping).toEqual(sleeping);
+        expect(vm.ask?.askId).toBe("ask-9");
+        expect(vm.blockedMs).toBe(30_000);
+    });
+
     it("carries why an ask came back onto the card", () => {
         const vm = withAsk(
             { id: "t1", name: "loom", task: "", state: "working" } as AgentVM,
@@ -632,13 +648,17 @@ describe("streamableTranscriptAgents", () => {
 describe("liveAsk", () => {
     const ask = { oref: "block:b", askid: "a1", ts: 1_000, questions: [] } as AgentAskData;
     it("keeps a pending ask while the agent is awake", () => {
-        expect(liveAsk(ask, false)).toBe(ask);
+        expect(liveAsk(ask, undefined)).toBe(ask);
     });
-    it("drops an ask a sleeping agent's block still holds: its process is gone, so nothing is waiting on you", () => {
-        expect(liveAsk(ask, true)).toBeNull();
+    it("drops an ask an unmarked sleeping agent's block still holds: its process is gone, so nothing is waiting on you", () => {
+        expect(liveAsk(ask, { since: 1, freedBytes: 0 })).toBeNull();
+    });
+    it("keeps the ask of a sleeping agent that was asleep while it waited on you (agent:sleepasking)", () => {
+        expect(liveAsk(ask, { since: 1, freedBytes: 0, asking: true })).toBe(ask);
     });
     it("passes no ask through", () => {
-        expect(liveAsk(null, false)).toBeNull();
+        expect(liveAsk(null, undefined)).toBeNull();
+        expect(liveAsk(null, { since: 1, freedBytes: 0, asking: true })).toBeNull();
     });
 });
 

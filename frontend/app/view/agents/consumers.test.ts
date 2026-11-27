@@ -293,7 +293,7 @@ describe("buildConsumers", () => {
             agy: true,
             codex: false,
             busy: false,
-            asking: false,
+            asking: true,
             nap: false,
             worker: false,
             lead: false,
@@ -320,6 +320,19 @@ describe("buildConsumers", () => {
         expect(canSleep(vm("a", { state: "idle", kind: "agent", runId: "r" }))).toBe(false);
         expect(canSleep(vm("a", { state: "working", kind: "agent" }))).toBe(false);
         expect(canSleep(vm("a", { state: "idle", sleeping: { since: 1, freedBytes: 0 } }))).toBe(false);
+    });
+
+    it("canSleep offers Sleep to an awake agent that is asking you, and still not to a working, an asleep, a run's or a non-resuming one (the server keeps its ask)", () => {
+        expect(canSleep(vm("a", { state: "asking" }))).toBe(true);
+        expect(canSleep(vm("a", { state: "asking", kind: "agent", agent: "pi" }))).toBe(true);
+        expect(canSleep(vm("a", { state: "working" }))).toBe(false);
+        // asleep, marked or not: already asleep
+        expect(canSleep(vm("a", { state: "asking", sleeping: { since: 1, freedBytes: 0 } }))).toBe(false);
+        expect(canSleep(vm("a", { state: "asking", sleeping: { since: 1, freedBytes: 0, asking: true } }))).toBe(false);
+        expect(canSleep(vm("a", { state: "asking", runId: "r" }))).toBe(false);
+        expect(canSleep(vm("a", { state: "asking", agent: "codex" }))).toBe(false);
+        expect(canSleep(vm("a", { state: "asking", kind: "terminal" }))).toBe(false);
+        expect(canSleep(vm("a", { state: "asking", kind: "background" }))).toBe(false);
     });
 
     it("canDrive: an agent with a terminal block that is awake", () => {
