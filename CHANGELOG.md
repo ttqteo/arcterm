@@ -56,6 +56,7 @@ and a picture given to a line that is not big.
 
 ### Changed
 
+- An agent's question card shows ↵ on its Submit button once every question is answered, so you know Enter sends.
 - When an agent sums up progress over time, results with numbers or a roadmap in words, Chat offers a chip to draw it
   on a board ("vẽ timeline lên board"), and the agent offers it itself: a timeline, a chart, a map of topics, with the
   to-do items going to an initiative instead.
