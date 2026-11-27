@@ -73,6 +73,7 @@ import { useBashComplete } from "./bashcomplete";
 import { bashGhost } from "./chatbash";
 import { noteBashRun, useBashHistory } from "./chatbashstore";
 import { ChatBgLine } from "./chatbgline";
+import { ChatBoardChip, setBoardPicked, useChatBoard } from "./chatboardchip";
 import { boxLayout, boxState, boxTabPlaceholder, type BoxState, type HintPart } from "./chatboxstate";
 import { ContextNudgeLine } from "./chatcontextnudgeline";
 import { ChatEditor, type KeyLike } from "./chateditor";
@@ -298,6 +299,8 @@ function ComposerBox({
     // Waking… under it until the transcript holds it. A wake that failed drops the bubble and puts the text
     // (useAgentSend) and the chips back. `wake` is the wake send in flight: its bubble and the paths of what rode along.
     const wake = useRef<{ pendingId: string | null; paths: string[]; runs: SleepRun[] } | null>(null);
+    // the board in the agent's split, offered under the box; picked, it rides the next message as `board:<id>`
+    const chatBoard = useChatBoard(agent.id);
     const {
         text: fullText,
         setText: setFullText,
@@ -315,6 +318,7 @@ function ComposerBox({
             }
         },
         wakeClears: true,
+        boardRef: chatBoard?.picked ? chatBoard.board.boardId : undefined,
         onWakeFailed: () => {
             const w = wake.current;
             wake.current = null;
@@ -649,6 +653,10 @@ function ComposerBox({
             putBackSleepRuns(agent.id, runs);
         }
         if (taken) {
+            // a picked board rides this one message only
+            if (chatBoard?.picked) {
+                setBoardPicked(agent.id, null);
+            }
             onSent?.(sent);
             recalled.current = { at: null, shown: "" };
             noteSent(agent.id, sent);
@@ -1560,6 +1568,13 @@ function ComposerBox({
                                     />
                                     {asleep ? sleepingLine("Asleep", agent.sleeping!) : fallAsleepLabel(fallingAsleep!)}
                                 </div>
+                            </Fold>
+                        ) : null}
+                    </AnimatePresence>
+                    <AnimatePresence initial={false}>
+                        {chatBoard != null ? (
+                            <Fold key="board" className="min-w-0">
+                                <ChatBoardChip agentId={agent.id} chat={chatBoard} />
                             </Fold>
                         ) : null}
                     </AnimatePresence>

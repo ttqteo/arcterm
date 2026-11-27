@@ -39,6 +39,9 @@ and a picture given to a line that is not big.
 - Snap layouts for a split, as Windows has: rest the pointer on the layout button in the agent header (Focus board's,
   on a board split) and pick a zone of 1 | 1, 7 | 3, 3 | 7, one beside two, or 2 × 2; the agent in focus goes there
   and the other cells fill the rest. The palette has the same as Layout rows, and Swap cells for a split of two.
+- With a board in the split beside a Chat, a dashed chip with its name shows under the chat box: a click attaches the
+  board to your next message (it goes as `board:<id>`, so the agent draws or answers on that board), and it lets go
+  once that message is sent.
 
 ### Changed
 
