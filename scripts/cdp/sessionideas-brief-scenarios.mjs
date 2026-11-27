@@ -517,7 +517,9 @@ export function sessionIdeasBriefScenarios(kit) {
                 const OTHER_DIR = "C:\\arc-verify-sib\\other\\.claude";
                 await reseed(h, ctx, (seed) => {
                     seed.data.ideas = [];
-                    seed.data.marks = [];
+                    // sib-sessions 1 and 2 stay scanned (with nothing left), so sib-project has 1 session to read and
+                    // sib-other's 2 come first: 3 in all
+                    seed.data.marks = seed.data.marks.map((m) => ({ ...m, ideas: 0, outcome: "nothing" }));
                     seed.data.firstscandone = false;
                     seed.data.lastscants = 0;
                     seed.data.nextscants = 0;
@@ -551,7 +553,8 @@ export function sessionIdeasBriefScenarios(kit) {
                 const started = Date.now();
                 await click(h, `${OFFER} [data-jarvis-sessionideas-offer-scan]`);
                 const done = await waitScan(h, started - 1000);
-                const read = done?.sessions?.filter((s) => s.outcome !== "not-scanned").map((s) => s.sessionid).sort() ?? [];
+                // what is left unread: sib-project's own session (1 and 2 were scanned before, 4 and 5 by this scan)
+                const read = done?.sessions?.filter((s) => s.outcome === "not-scanned").map((s) => s.sessionid).sort() ?? [];
                 const stays = await polishWaitFor(h, `(${q(OFFER)}?.textContent ?? "").includes("Scanned so far: sib-other.")`, 15000);
                 const meta = await textOf(h, `${REGION} [data-jarvis-sessionideas-meta]`);
                 const button = await textOf(h, `${OFFER} [data-jarvis-sessionideas-offer-scan]`);
@@ -568,7 +571,8 @@ export function sessionIdeasBriefScenarios(kit) {
                         done != null &&
                         done.firstscandone === false &&
                         JSON.stringify(done.scanprojects) === JSON.stringify([OTHER_DIR]) &&
-                        JSON.stringify(read) === JSON.stringify(["sib-session-4", "sib-session-5"]) &&
+                        JSON.stringify(read) === JSON.stringify(["sib-session-3"]) &&
+                        (done?.sessions?.length ?? 0) === 5 &&
                         stays &&
                         meta.includes("sib-other only") &&
                         button === "Scan my sessions",
@@ -623,6 +627,14 @@ export function sessionIdeasBriefScenarios(kit) {
                 const opened = await polishWaitFor(h, `!!${q(PICKER)} && document.activeElement === ${q(`${PICKER} [data-filter-picker-input]`)}`, 5000);
                 const noContextMenu = !(await exists(h, "[data-context-menu]"));
                 const all = await items();
+                // the offer sits low on the Brief: the picker turns upward or fits, and shows five rows or more, whole
+                await briefNap(400);
+                const box = await h.ev(`(() => {
+                    const p = ${q(PICKER)}.getBoundingClientRect();
+                    const list = ${q(`${PICKER} [role="listbox"]`)};
+                    return { top: Math.round(p.top), bottom: Math.round(p.bottom), vh: innerHeight, list: list.clientHeight };
+                })()`);
+                const fits = box.top >= 0 && box.bottom <= box.vh && box.list >= 5 * 28;
                 await h.shot("cdp-shots/sessionideas-brief-offer-picker.png");
                 await h.cdp("Input.insertText", { text: "siem" });
                 const narrowed = await polishWaitFor(h, `document.querySelectorAll("${PICKER} [data-filter-picker-item]").length === 3`, 5000);
@@ -648,6 +660,7 @@ export function sessionIdeasBriefScenarios(kit) {
                         shown &&
                         opened &&
                         noContextMenu &&
+                        fits &&
                         all.length === PATHS.length + 2 &&
                         want.every((l) => all.includes(l)) &&
                         narrowed &&
@@ -657,7 +670,7 @@ export function sessionIdeasBriefScenarios(kit) {
                         faceFocused &&
                         reopened &&
                         escClosed,
-                    detail: { shown, opened, noContextMenu, all, narrowed, siem, picked, closed, faceFocused, reopened, escClosed },
+                    detail: { shown, opened, noContextMenu, box, all, narrowed, siem, picked, closed, faceFocused, reopened, escClosed },
                 };
             });
 

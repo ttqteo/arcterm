@@ -112,6 +112,10 @@ export function FilterMenu<T>(spec: FilterSpec<T>) {
     );
 }
 
+// the picker's height: at most enough for about ten rows, at least the field, five rows and the key line
+const PICKER_MAX_HEIGHT = 420;
+const PICKER_MIN_HEIGHT = 250;
+
 const ROW = "flex h-[28px] cursor-pointer items-center gap-[8px] rounded-[6px] px-[8px] text-left";
 
 function PickerBody<T>({
@@ -265,7 +269,7 @@ function FilterPicker<T>({
     onClose: (refocus: boolean) => void;
 }) {
     const [maxHeight, setMaxHeight] = useState<number | undefined>(undefined);
-    const { refs, floatingStyles, context } = useFloating({
+    const { refs, floatingStyles, context, placement } = useFloating({
         open,
         onOpenChange: (next) => {
             if (!next) {
@@ -279,8 +283,14 @@ function FilterPicker<T>({
             offset(6),
             flip({ padding: 8 }),
             shift({ padding: 8 }),
-            // the panel never runs past the window: its list scrolls instead
-            size({ padding: 8, apply: ({ availableHeight }) => setMaxHeight(Math.min(420, availableHeight)) }),
+            // the panel never runs past the window: its list scrolls instead. It never shrinks below PICKER_MIN_HEIGHT
+            // either: under the face near the window's bottom it would show two rows, and flip only turns it upward
+            // when it overflows at that height
+            size({
+                padding: 8,
+                apply: ({ availableHeight }) =>
+                    setMaxHeight(Math.max(PICKER_MIN_HEIGHT, Math.min(PICKER_MAX_HEIGHT, availableHeight))),
+            }),
         ],
         whileElementsMounted: open ? autoUpdate : undefined,
     });
@@ -305,7 +315,12 @@ function FilterPicker<T>({
                 {...getFloatingProps(contained)}
                 className="z-[80] flex"
             >
-                <PopoverReveal open={open} origin="top left" className="flex max-h-[inherit]">
+                {/* it grows from the edge at the face: the bottom when flip turned it upward */}
+                <PopoverReveal
+                    open={open}
+                    origin={placement.startsWith("top") ? "bottom left" : "top left"}
+                    className="flex max-h-[inherit]"
+                >
                     <PickerBody {...spec} onPick={onPick} onClose={onClose} />
                 </PopoverReveal>
             </div>
