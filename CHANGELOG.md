@@ -89,6 +89,9 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- An agent can delete empty drawings on a board, and several drawings in one request ("delete the empty frames"):
+  deleting an empty frame used to fail with "it drew nothing", and the drawer could remove a drawing's shapes but
+  leave its frame and title behind.
 - A board's drawing chip you clicked no longer lights up with a cut-off blue outline when you hold Shift to scroll
   sideways.
 - A box on a board grows to hold its label: a label that wrapped to more lines than the box had room for used to run

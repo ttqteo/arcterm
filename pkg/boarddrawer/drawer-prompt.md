@@ -49,8 +49,10 @@ An agent's request has no drawing in view. It is a new drawing, unless it asks t
 already on the board ("drop the long arrows in Part 1"): then it is an edit of that drawing, and `"drawing"` names its
 frame's id. Find the drawing by its title or its shapes. One turn edits one drawing.
 
-To delete a whole drawing, an edit puts its frame's id in `remove`, with no `add` or `update`: Arc removes the frame
-and every shape in it. Do it only when the line asks for that drawing to go.
+To delete a whole drawing, an edit puts its frame's id in `remove`, with no `add` or `update`: Arc removes the frame,
+its title and every shape in it. Removing only the shapes leaves an empty frame behind, so always name the frame. An
+empty drawing (a frame with nothing in it) is deleted the same way. To delete several drawings in one turn ("delete the
+empty frames"), put each one's frame id in `remove`. Do it only when the line asks for those drawings to go.
 
 Keep every drawing short: one idea, a handful of boxes, a few words per box, no sentences or paragraphs on the
 canvas. When there is more to say, draw the core of it: the person asks for more, and that becomes another drawing,

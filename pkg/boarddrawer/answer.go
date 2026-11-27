@@ -46,8 +46,9 @@ var updateKeys = map[string]string{
 
 // Answer is a checked drawer reply: a drawing, or a question flagged for the board's agent. Add and Update are
 // compact JSON arrays, "" when empty. A drawing is new, or with Edit, a change to the drawing DrawingId names: the one
-// in view, or for the agent's request the one the answer picked. An edit that removes its drawing's frame deletes the
-// whole drawing: Remove then holds the frame and every shape in it.
+// in view, or for the agent's request the one the answer picked. An edit that removes drawings' frames deletes those
+// drawings whole: Remove then holds every shape in them and their frames, and Removed counts the frames too, so deleting
+// an empty drawing is a change like any other.
 type Answer struct {
 	Title, Add, Update      string
 	Remove                  []string
@@ -131,6 +132,10 @@ func ParseAnswer(reply string, scene Scene, drawing string, pick bool) (Answer, 
 			return Answer{}, unusable("remove names %q, which is not on the board", id)
 		}
 	}
+	// an edit that removes frames deletes those drawings, every shape in them with them, and changes nothing else
+	if frames := framesIn(raw.Remove, scene); a.Edit && len(frames) > 0 {
+		return deleteDrawings(a, raw.Remove, frames, scene)
+	}
 	if pick && a.Edit && a.HasDrawing() {
 		if drawing = strings.TrimSpace(raw.Drawing); drawing == "" {
 			return Answer{}, unusable("it edits a drawing, but its drawing key names none")
@@ -144,13 +149,6 @@ func ParseAnswer(reply string, scene Scene, drawing string, pick bool) (Answer, 
 	}
 	if a.Edit && a.HasDrawing() {
 		a.DrawingId = drawing
-	}
-	if a.Edit && slices.Contains(raw.Remove, drawing) {
-		if a.Added+a.Changed > 0 {
-			return Answer{}, unusable("it deletes the drawing %q and also adds or updates shapes in it", drawing)
-		}
-		raw.Remove = wholeDrawing(scene, drawing)
-		a.Remove, a.Removed = raw.Remove, len(raw.Remove)-1
 	}
 	if a.Add, err = compactArray(raw.Add); err != nil {
 		return Answer{}, err
@@ -182,7 +180,7 @@ func couldNotDraw(what, how string) error {
 }
 
 // checkScope keeps an answer to one drawing: a new drawing only adds, and an edit changes (updates or removes) only
-// shapes of the drawing it edits, never a frame but its own, which it may remove to delete the drawing. Both are kept
+// shapes of the drawing it edits, never a frame (an edit that removes frames is deleteDrawings'). Both are kept
 // short. An answer that draws nothing has no drawing to keep to, so its edit key is moot. updated and removed are the
 // ids the answer updates and removes.
 func checkScope(a Answer, updated, removed []string, scene Scene, drawing string) error {
@@ -196,9 +194,6 @@ func checkScope(a Answer, updated, removed []string, scene Scene, drawing string
 		return unusable("a new drawing only adds shapes, and it updates or removes shapes on the board")
 	}
 	for _, id := range removed {
-		if id == drawing {
-			continue // its own frame: the whole drawing goes
-		}
 		if scene.Types[id] == typeFrame {
 			return unusable("it changes %q, a drawing's frame, which only Arc changes", id)
 		}
@@ -215,6 +210,41 @@ func checkScope(a Answer, updated, removed []string, scene Scene, drawing string
 		}
 	}
 	return nil
+}
+
+// framesIn is the ids in remove that are drawings' frames on the board, in the order given, each once.
+func framesIn(remove []string, scene Scene) []string {
+	var frames []string
+	for _, id := range remove {
+		if scene.Types[id] == typeFrame && !slices.Contains(frames, id) {
+			frames = append(frames, id)
+		}
+	}
+	return frames
+}
+
+// deleteDrawings is an edit that deletes the drawings whose frames it removes, an empty one too ("delete the six empty
+// frames" is one answer): every shape of each with it. It may also name shapes of those drawings, which go anyway, but
+// nothing outside them, and it adds and updates nothing. DrawingId is the first drawing it deletes.
+func deleteDrawings(a Answer, remove, frames []string, scene Scene) (Answer, error) {
+	if a.Added+a.Changed > 0 {
+		return Answer{}, unusable("it deletes the drawing %q and also adds or updates shapes", frames[0])
+	}
+	for _, id := range remove {
+		if scene.Types[id] != typeFrame && !slices.Contains(frames, scene.FrameOf[id]) {
+			return Answer{}, unusable("it removes %q, which is outside the drawings it deletes", id)
+		}
+	}
+	var ids []string
+	for _, f := range frames {
+		for _, id := range wholeDrawing(scene, f) {
+			if !slices.Contains(ids, id) {
+				ids = append(ids, id)
+			}
+		}
+	}
+	a.Remove, a.Removed, a.DrawingId, a.Add, a.Update = ids, len(ids), frames[0], "", ""
+	return a, nil
 }
 
 // wholeDrawing is every shape of the drawing, sorted, then its frame: what deleting it removes. A container's bound
