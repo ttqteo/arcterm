@@ -80,3 +80,11 @@ debug = false
 lto = true
 codegen-units = 1
 strip = true
+
+# `task tauri:build FAST=1`, for a build needed in a hurry: thin LTO over 16 codegen units runs in parallel and needs far
+# less memory than one fat unit, which swaps on a machine busy with agents. A bigger exe that runs the same. Its own
+# profile, so it builds in target/release-fast and neither build's cache evicts the other's.
+[profile.release-fast]
+inherits = "release"
+lto = "thin"
+codegen-units = 16
