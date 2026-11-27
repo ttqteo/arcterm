@@ -149,7 +149,9 @@ func dropSessionIdea(store *sessionideas.Store, id string) error {
 
 // keepSessionIdea puts an idea on its initiative as a pending chunk, or makes it a new idea when it has no initiative
 // (or the initiative is gone), then marks it kept. The initiative is written inside the store's update, so two keeps of
-// one idea cannot both write, and a write the initiative refuses leaves the idea in review.
+// one idea cannot both write, and a write the initiative refuses leaves the idea in review. When the initiative was
+// written but the store could not be, the idea is still in review: the error says so, and the next Keep finds what this
+// one wrote (keptBefore) and only marks it.
 func keepSessionIdea(ctx context.Context, store *sessionideas.Store, id, label string) error {
 	d, err := store.Load()
 	if err != nil {
@@ -170,21 +172,66 @@ func keepSessionIdea(ctx context.Context, store *sessionideas.Store, id, label s
 			head = effortHead(ctx, e.Project)
 		}
 	}
-	return store.Update(func(d *wshrpc.SessionIdeasData) error {
+	wrote := "" // where the idea went, once the initiative holds it
+	err = store.Update(func(d *wshrpc.SessionIdeasData) error {
 		i, err := reviewIdea(d, id)
 		if err != nil {
 			return err
 		}
 		now := store.Clock().UnixMilli()
-		keptAs, err := writeKeptIdea(ctx, *i, sessionideas.ChunkLabel(*i, label), head, now)
+		name := sessionideas.ChunkLabel(*i, label)
+		keptAs, err := keptBefore(ctx, *i, name)
 		if err != nil {
 			return err
 		}
+		if keptAs == "" {
+			if keptAs, err = writeKeptIdea(ctx, *i, name, head, now); err != nil {
+				return err
+			}
+		}
+		wrote = keptAs
 		i.State = wshrpc.SessionIdeaState_Kept
 		i.KeptAs = keptAs
 		i.ResolvedTs = now
 		return nil
 	})
+	if err != nil && wrote != "" {
+		log.Printf("sessionideas: keep %s: written as %s, but the ideas store was not: %v", id, wrote, err)
+		return fmt.Errorf("the idea is on its initiative, but the ideas store could not be saved, so it still waits for review; Keep it again to finish: %w", err)
+	}
+	return err
+}
+
+// keptBefore is where an earlier Keep of this idea wrote it, when that Keep could not then save the ideas store: the
+// chunk of this name on the idea's initiative, or the idea of this name in its project, whose first note is this idea's
+// KeepNote (the note names the session and quotes it, so it is this idea's). "" when nothing was written for it.
+func keptBefore(ctx context.Context, i wshrpc.SessionIdea, name string) (string, error) {
+	note := sessionideas.KeepNote(i)
+	if oid := effortstore.BareOID(i.EffortOID); oid != "" {
+		e, err := effortstore.Get(ctx, oid)
+		if err == nil {
+			for _, c := range e.Chunks {
+				if c.Label == name && len(c.Notes) > 0 && c.Notes[0].Text == note {
+					return "chunk:" + oid + ":" + name, nil
+				}
+			}
+			return "", nil
+		}
+		if !errors.Is(err, wstore.ErrNotFound) {
+			return "", err
+		}
+		// the initiative is gone, so the earlier Keep made a new idea, as writeKeptIdea does
+	}
+	all, err := effortstore.GetAll(ctx)
+	if err != nil {
+		return "", err
+	}
+	for _, e := range all {
+		if e.Title == name && e.Project == i.Project && len(e.Chunks) == 0 && len(e.Notes) > 0 && e.Notes[0].Text == note {
+			return "effort:" + e.OID, nil
+		}
+	}
+	return "", nil
 }
 
 // writeKeptIdea writes a kept idea to the vault and says where it went (the idea's KeptAs): "chunk:<effort oid>:<label>"

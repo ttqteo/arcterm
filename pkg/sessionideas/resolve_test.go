@@ -4,8 +4,10 @@
 package sessionideas
 
 import (
+	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
@@ -84,5 +86,37 @@ func TestChunkLabel(t *testing.T) {
 	}
 	if got := ChunkLabel(wshrpc.SessionIdea{}, ""); got != "" {
 		t.Fatalf("no label and no gist is empty, for the caller to refuse, got %q", got)
+	}
+}
+
+func TestChunkLabelCapsTheName(t *testing.T) {
+	exact := strings.Repeat("a", MaxLabel)
+	if got := ChunkLabel(wshrpc.SessionIdea{Gist: exact}, ""); got != exact {
+		t.Fatalf("a gist of exactly %d bytes is kept whole, got %d bytes", MaxLabel, len(got))
+	}
+	words := strings.Repeat("filter the wall ", 20) // 320 bytes
+	got := ChunkLabel(wshrpc.SessionIdea{Gist: words}, "")
+	if len(got) > MaxLabel || !strings.HasSuffix(got, "the…") && !strings.HasSuffix(got, "wall…") && !strings.HasSuffix(got, "filter…") {
+		t.Fatalf("a long gist is cut at a word, within %d bytes, got %d: %q", MaxLabel, len(got), got)
+	}
+	if got := ChunkLabel(wshrpc.SessionIdea{Gist: "gist"}, words); len(got) > MaxLabel || !strings.HasPrefix(got, "filter the wall") {
+		t.Fatalf("the person's label is capped the same way, got %q", got)
+	}
+	// no space to cut at, and three bytes a rune: the cut falls between runes
+	vi := strings.Repeat("ữ", 100)
+	got = ChunkLabel(wshrpc.SessionIdea{Gist: vi}, "")
+	if len(got) > MaxLabel || !utf8.ValidString(got) || !strings.HasSuffix(got, "ữ…") {
+		t.Fatalf("a long word is cut on a rune boundary, got %d bytes, valid %v: %q", len(got), utf8.ValidString(got), got)
+	}
+}
+
+func TestKeepNoteKeepsALongGistWhole(t *testing.T) {
+	long := strings.Repeat("filter the wall ", 20)
+	note := KeepNote(wshrpc.SessionIdea{Gist: long, SessionID: "9a842b04"})
+	if note != "Idea: "+strings.TrimSpace(long)+"\n\nFrom session (9a842b04)" {
+		t.Fatalf("a gist too long for the name opens the note, got %q", note)
+	}
+	if note := KeepNote(wshrpc.SessionIdea{Gist: "short", SessionID: "9a842b04"}); note != "From session (9a842b04)" {
+		t.Fatalf("a gist that names the chunk whole is not repeated, got %q", note)
 	}
 }
