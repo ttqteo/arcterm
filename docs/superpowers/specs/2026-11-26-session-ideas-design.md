@@ -136,6 +136,12 @@ Board `Nudges`.
   facts count them, `pkg/consult/consult.go:150`), and the region's scanned line shows them. The first scan is the one
   the person starts, after the offer card's estimate; the schedule's own scans come after it. The first scan's real
   numbers (sessions, tokens per call) go into `docs/open-issues.md`'s RAM watch.
+- **Measured 2026-11-27** (`TestSessionIdeasMeasure`, real prompts and six real haiku calls, nothing stored): a first
+  scan here reads 1,494 sessions; a call is 5k–113k tokens, about 5k fixed plus 0.43 a prompt character, so **~60k a
+  session and ~90M for the whole first scan**, ~7 h at 6–44 s a call. The offer's estimate is now 60k a session (it was
+  a guessed 10k). The project context, not the transcript, is most of a prompt: arcterm's is 170k characters, 141k of
+  them its 61 open initiatives with up to 60 chunk labels each. Open: list fewer chunks per initiative, or only the
+  initiatives' titles, before a full first scan.
 - Each Discuss or Go through is one ordinary sonnet session, not a fan-out.
 - The digest store grows if search goes to 90 days (below): measure its RAM and disk and log it in `docs/open-issues.md`'s
   RAM watch.

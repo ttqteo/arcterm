@@ -458,7 +458,7 @@ export function sessionIdeasBriefScenarios(kit) {
                 const regionShown = await exists(h, REGION);
                 // the first-scan offer's M is the sessions wavesrv lists as not scanned
                 const m = ((await h.rpc("sessionideasget", {}))?.sessions ?? []).filter((s) => s.outcome === "not-scanned").length;
-                const costOk = m > 0 ? new RegExp(`^haiku · about \\d+k? tokens for ${m} sessions?$`).test(cost) : /no quiet sessions/.test(cost);
+                const costOk = m > 0 ? new RegExp(`^haiku · about [\\d.]+[kM]? tokens for ${m} sessions?$`).test(cost) : /no quiet sessions/.test(cost);
                 await h.shot("cdp-shots/sessionideas-brief-offer.png");
                 await click(h, `${OFFER} [data-jarvis-sessionideas-offer-later]`);
                 const away = await polishWaitFor(h, `!${q(OFFER)}`, 8000);

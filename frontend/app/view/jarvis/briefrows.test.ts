@@ -1468,10 +1468,10 @@ describe("From your sessions", () => {
         ];
         expect(scanOffer(data({ sessions }))).toMatchObject({
             sessions: 2,
-            tokens: 20_000,
-            text: "haiku · about 20k tokens for 2 sessions",
+            tokens: 120_000,
+            text: "haiku · about 120k tokens for 2 sessions",
         });
-        expect(scanOffer(data({ sessions: [sessions[0]] })).text).toBe("haiku · about 10k tokens for 1 session");
+        expect(scanOffer(data({ sessions: [sessions[0]] })).text).toBe("haiku · about 60k tokens for 1 session");
         expect(scanOffer(data()).text).toBe("haiku · no quiet sessions to read yet");
     });
 
@@ -1512,7 +1512,7 @@ describe("From your sessions", () => {
         });
 
         it("estimates the picked project alone, or every project", () => {
-            expect(scanOffer(data({ sessions }), T).text).toBe("haiku · about 20k tokens for 2 sessions");
+            expect(scanOffer(data({ sessions }), T).text).toBe("haiku · about 120k tokens for 2 sessions");
             expect(scanOffer(data({ sessions }), null).sessions).toBe(7);
         });
 
