@@ -24,6 +24,10 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
 
 ## 2026-11-27
 
+- [ ] (arcterm) **An ask's Submit button shows ↵ once every question is answered** (`answerbar.tsx` submitButton,
+  d58a5abbe). Lint only. Have an agent ask two questions, answer both: the Submit tab's button reads "✓ Submit ↵" and
+  Enter sends; before the last answer the grey button has no ↵. Check the ↵ sits on the button's baseline and the
+  button does not grow taller than the ← → buttons beside it.
 - [ ] (arcterm) **Session ideas: a scan cut off by a restart reads as stopped.** Go tests only. On a dev app, press Scan
   now and stop the dev app (by PID) while it reads, then start it again: the region shows "The scan stopped at session
   N of M: arcterm closed before it finished." with Retry, not a scan that runs forever with Scan now hidden; Retry goes
