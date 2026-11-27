@@ -24,6 +24,12 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
 
 ## 2026-11-27
 
+- [ ] (arcterm) **A background command's RAM** (`pkg/resmon/shelltaskmem.go`, `agentram.ts bgTaskRamBytes`,
+  `agenttree.tsx BgTaskRam`, `agentdetailsrail.tsx`). Go and vitest only, no dev app run. With the sidebar's RAM field
+  on, have an agent run a build in the background (`task tauri:build FAST=1`): its task row reads `running · 8m · 1.2
+  GB` within a few seconds of cargo starting, the agent row's RAM grows by about as much (it read 283 MB with 1.2 GB of
+  rustc running before), and the rail's Background tasks card shows the same figure. A `sleep 600` task shows a few MB.
+
 - [ ] (arcterm) **Allow and Deny on an agent's sidebar row** (`permissionrow.tsx`, branch of the sidebar-permission-row
   run). Vitest and typecheck only; the end state is `task verify:ui -- sidebar-permission-row`, never run here (a run
   agent runs no CDP). With a real Claude agent outside a run, have it run a Bash command that asks permission: its row's

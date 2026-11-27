@@ -7,6 +7,7 @@ import (
 	"cmp"
 	"context"
 	"log"
+	"maps"
 	"os"
 	"runtime"
 	"slices"
@@ -66,6 +67,7 @@ type sample struct {
 	procs    map[int]proc // tracked pids only: job members and the Arc group
 	arcRows  []treeRow
 	jobs     []jobobject.LiveJob
+	tasks    map[rootKey][]shellTask // each job's tool commands
 	rootTs   map[rootKey]int64
 	totalMem int64
 	busyCpu  bool
@@ -93,6 +95,8 @@ type tickState struct {
 	gpu    gpuReader
 	// the machine's CPU times at the last tick that read them, for its CPU percent
 	cpuBusy, cpuAll float64
+	// each MSYS install's process table as last read, by its ps.exe (shellTasks)
+	msys map[string]msysTable
 }
 
 func newTickState() *tickState {
@@ -103,6 +107,7 @@ func newTickState() *tickState {
 		cpuMarks: map[procId]uint64{},
 		cmdlines: map[procId]string{},
 		rootTs:   map[rootKey]int64{},
+		msys:     map[string]msysTable{},
 	}
 }
 
@@ -146,10 +151,10 @@ func (st *tickState) tick() *sample {
 	marks := make(map[procId]uint64, len(tracked))
 	cmdlines := make(map[procId]string, len(tracked))
 	procs := make(map[int]proc, len(tracked))
-	for pid := range tracked {
+	measure := func(pid int) {
 		p, ok := table[pid]
 		if !ok {
-			continue // exited since the membership read
+			return // exited since the membership read
 		}
 		s := stat(pid)
 		p.CreateTs, p.Cpu, p.Mem, p.Ports = s.createTs, -1, -1, listen[pid]
@@ -169,6 +174,20 @@ func (st *tickState) tick() *sample {
 			p.Command = cmd
 		}
 		procs[pid] = p
+	}
+	for pid := range tracked {
+		measure(pid)
+	}
+	// the agents' tool commands, and what Git Bash started for them out of their jobs: measured and tracked too, so
+	// the others below do not count them again
+	tasks := st.shellTasks(procs, table, jobs, inJob, maps.Clone(tracked), func(pid int) int64 { return stat(pid).createTs }, now)
+	for _, list := range tasks {
+		for _, t := range list {
+			for _, pid := range t.outside {
+				tracked[pid] = true
+				measure(pid)
+			}
+		}
 	}
 	var others []wshrpc.ResMonOther
 	var gpuByPid map[int]float64
@@ -249,7 +268,7 @@ func (st *tickState) tick() *sample {
 		}
 	}
 	s := &sample{
-		ts: now.UnixMilli(), ready: ready, procs: procs, arcRows: arcRows, jobs: jobs, rootTs: rootTs,
+		ts: now.UnixMilli(), ready: ready, procs: procs, arcRows: arcRows, jobs: jobs, tasks: tasks, rootTs: rootTs,
 		totalMem: totalMem, hostPid: st.hostPid, selfPid: st.selfPid, others: others, machine: machine,
 	}
 	// busy counts every group, so it groups without labels: owner info changes no total
@@ -279,7 +298,7 @@ func (st *tickState) machineCpu() float64 {
 func (s *sample) jobViews(info func(o jobobject.Owner) OwnerInfo) []jobView {
 	views := make([]jobView, 0, len(s.jobs))
 	for _, j := range s.jobs {
-		v := jobView{Job: j, RootTs: s.rootTs[rootKey{j.Owner, j.RootPid}]}
+		v := jobView{Job: j, RootTs: s.rootTs[rootKey{j.Owner, j.RootPid}], Tasks: s.tasks[rootKey{j.Owner, j.RootPid}]}
 		if info != nil {
 			v.Info = info(j.Owner)
 		}

@@ -26,6 +26,32 @@ export function agentRamBytes(
     return c?.rambytes != null && c.rambytes >= 0 ? c.rambytes : null;
 }
 
+/** The bytes one of an agent's shell tasks holds: the process claude started for it and everything it runs, the
+ * commands Git Bash started out of the agent's job included (pkg/resmon shelltaskmem.go). It is matched as Stop matches
+ * it (ResMonKillShellTask): a PowerShell task by its id, a Bash one by its command, the start nearest `startMs`
+ * winning. Null off Windows (no Resource Manager), before a snapshot names it, or once it ended. */
+export function bgTaskRamBytes(
+    blockId: string | undefined,
+    task: { taskId?: string; command?: string; startMs?: number },
+    snap: ResMonSnapshotData | null
+): number | null {
+    if (blockId == null || blockId === "" || !snap?.supported) {
+        return null;
+    }
+    const tasks = snap.groups.find((x) => x.key !== ARC_KEY && x.ownerid === blockId)?.tasks ?? [];
+    let hit = task.taskId ? tasks.find((t) => t.taskid === task.taskId) : undefined;
+    if (hit == null && task.command) {
+        const start = task.startMs ?? 0;
+        for (const t of tasks) {
+            const nearer = hit == null || Math.abs(t.createts - start) < Math.abs(hit.createts - start);
+            if (t.command === task.command && nearer) {
+                hit = t;
+            }
+        }
+    }
+    return hit != null && hit.mem >= 0 ? hit.mem : null;
+}
+
 /** The bytes a run's tabs hold together (its lead, workers, reviewers and stage sessions): the sum of the figures the
  * readings name, or null when they name none of them. A tab no reading names adds nothing. */
 export function runRamBytes(

@@ -5359,6 +5359,7 @@ declare global {
         cpu: number;
         mem: number;
         rows: ProcessInfo[];
+        tasks?: ResMonShellTask[];
     };
 
     // wshrpc.ResMonKillRtnData
@@ -5387,6 +5388,15 @@ declare global {
         gpu?: number;
         icon?: string;
         endable?: boolean;
+    };
+
+    // wshrpc.ResMonShellTask
+    type ResMonShellTask = {
+        taskid?: string;
+        command?: string;
+        createts: number;
+        cpu: number;
+        mem: number;
     };
 
     // wshrpc.ResMonSnapshotData

@@ -23,12 +23,6 @@ const (
 	defaultPoll = 2 * time.Second
 
 	imageBash = "bash.exe"
-
-	// the arc mod runs a heavy background command as
-	//   '<wsh>' jobslot --hold-parent -- '<command>'; [ $? -ne 75 ] || exit 75\n<command>
-	// (claude/arc-mod/hooks/jobslot-core.ts heldInBackground; 75 is JOBSLOT_REFUSED_EXIT)
-	heldMarker = " jobslot --hold-parent -- "
-	heldTail   = "; [ $? -ne 75 ] || exit 75\n"
 )
 
 // Agent is one agent to watch: the block it runs in and the agent's own process.
@@ -154,7 +148,7 @@ func (m *meter) step(t memusage.Table, agents []Agent, s seams) []Done {
 			if !ok {
 				continue
 			}
-			command = unwrapHeld(command)
+			command = resmon.HeldOriginal(command)
 			if strings.TrimSpace(command) == "" {
 				continue
 			}
@@ -230,32 +224,6 @@ func isBash(argv0 string) bool {
 		argv0 = argv0[i+1:]
 	}
 	return strings.EqualFold(argv0, imageBash)
-}
-
-// unwrapHeld is the command the arc mod's background wrapper holds, which is what the person ran; any other command
-// comes back as it is. It is jobslot-core.ts heldOriginal without knowing the wsh path: the wrapper is rebuilt around
-// each candidate original, and only a command that equals its rebuilt self is a wrapper. The quoted copy may hold
-// the tail's text too, so each place the tail occurs is tried.
-func unwrapHeld(command string) string {
-	i := strings.Index(command, heldMarker)
-	if i < 2 || command[0] != '\'' || command[i-1] != '\'' {
-		return command
-	}
-	prefix := command[:i] + heldMarker
-	quote := func(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
-	for from := 0; from < len(command); {
-		k := strings.Index(command[from:], heldTail)
-		if k < 0 {
-			break
-		}
-		at := from + k
-		original := command[at+len(heldTail):]
-		if command == prefix+quote(original)+heldTail+original {
-			return original
-		}
-		from = at + 1
-	}
-	return command
 }
 
 // poll reads the process table once and reports the commands that ended.
