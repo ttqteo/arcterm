@@ -93,6 +93,9 @@ import chatBrainstormReviewScenarios from "./scenarios-chat-brainstorm-review.mj
 import chatRedesignScenarios from "./scenarios-chat-redesign.mjs";
 import chatCodeBoxScenarios from "./scenarios-chat-code-box.mjs";
 import saveLaterScenarios from "./scenarios-save-later.mjs";
+import laterCardScenarios from "./scenarios-later-card.mjs";
+import laterSectionScenarios from "./scenarios-later-section.mjs";
+import laterSheetScenarios from "./scenarios-later-sheet.mjs";
 import chatVerdictHandoffScenarios from "./scenarios-chat-verdict-handoff.mjs";
 import chatCouncilScenarios from "./scenarios-chat-council.mjs";
 import chatSuggestCardScenarios from "./scenarios-chat-suggest-card.mjs";
@@ -76791,6 +76794,8 @@ export const SCENARIOS = [
     ...jarvisActivityScenarios(JARVIS_KIT),
     ...jarvisSheetScenarios(JARVIS_KIT),
     ...jarvisLaterScenarios(JARVIS_KIT),
+    ...laterSheetScenarios(JARVIS_KIT),
+    ...laterSectionScenarios(JARVIS_KIT),
     ...sessionIdeasBriefScenarios(JARVIS_KIT),
     ...sessionIdeasPetScenarios(JARVIS_KIT),
     ...libraryScenarios(LIBRARY_KIT),
@@ -76829,6 +76834,7 @@ export const SCENARIOS = [
     ...chatVerdictHandoffScenarios(CBR_KIT),
     ...chatCouncilScenarios(CR_KIT),
     ...chatSuggestCardScenarios(CR_KIT),
+    ...laterCardScenarios(CR_KIT),
     ...agentAccountScenarios(CR_KIT),
     ...gitAccountsScenarios(CR_KIT),
     ...chatJudgeScenarios(CR_KIT),

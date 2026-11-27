@@ -35,7 +35,8 @@ makes a new initiative with no chunks. Neither shows on Jarvis as something stil
   draws it as a card (`chatinitiativecard.tsx`), and the person adds the chunks from that card.
 - The Brief's "Waiting on you" strip (`waitingstrip.tsx`) pulses in the asking color and leads with the most urgent
   item. It disappears once nothing is waiting.
-- A past conversation reopens in a tab of its own through `reopenSessionById` (`openref.ts:395`).
+- A past conversation reopens in a tab of its own through `reopenSessionById` (`frontend/app/cockpit/cockpit-actions.ts:341`;
+  `openref.ts:395` calls it).
 - The chunk-priority spec of the same day (`2026-11-27-chunk-priority-design.md`) also adds a field to `EffortChunk`.
   The two changes touch the same type, ops and `wsh effort` command.
 
@@ -129,9 +130,12 @@ Made by the builder of the autonomous run, 2026-11-27, each with why. The plan's
    Work on's active chunk, the palette) then follows the rule without learning about the mark, and the Brief's Later
    section reads one list that the ledger already pushes. `since` is the first note's ts, else the `chunk-added` event's,
    else the chunk's `UpdatedTs`; `note` is the first note's text cut to 1,000 runes (the passage Ask agent quotes).
+   A later chunk's notes are not the summary's `LastNote` either: a save is not where the initiative's work was left.
 4. **Readers of the whole effort filter with one helper per side.** Go checks `c.Later` (`advance`, `chunkDueItems`,
-   DUM-E's `ClassifyChunk`, the backlog pass, the Jarvis status counts, `wsh effort show`). The frontend's effort-detail
-   readers (`nextChunk`, `effortFacts`, the inline tracker, the popover and band models, chatsuggest) call
+   DUM-E's `ClassifyChunk`, the backlog pass, the Jarvis status counts, the session-ideas scan's project context,
+   `wsh effort show`). The frontend's effort-detail readers (`nextChunk`, `effortFacts`, the inline tracker and its
+   edits, the popover and band models, chatsuggest, the peek, and the chunk an agent is attached to when it is linked
+   in `agentheader.tsx`) call
    `planChunks()` from `frontend/app/view/jarvis/laterchunk.ts`. Plan Chunk lines and `AttachRunToChunks` are left as
    they are: they name a chunk on purpose, and the spec forbids picking one up, not naming it.
 5. **On the initiative page, later chunks are their own group.** `initiativeRows` holds every later chunk (any status)
@@ -151,7 +155,8 @@ Made by the builder of the autonomous run, 2026-11-27, each with why. The plan's
 9. **Move to… re-adds, then removes.** The chunk is added to the picked initiative with its label (made unique there),
    its mark, its due and its first note's text, session and conversation, then removed from the first one. A chunk
    moved from the toast has only that note. It is two writes, not one: if the remove fails, an error toast names both
-   initiatives so the person can delete the copy.
+   initiatives so the person can delete the copy. `removeChunk` lets a later chunk go even when it is the initiative's
+   only chunk (the last-chunk guard is for plan chunks), so a move out of an initiative made by call 8 works.
 10. **The toast's Open** opens the initiative (`openAddress(model, oref)`).
 11. **The Later section** sits in the Brief's main column right under the Waiting on you strip. It is drawn only with
     items (and, while the Brief's filter is typed, only with items whose label or initiative title match). Header
@@ -179,3 +184,7 @@ Made by the builder of the autonomous run, 2026-11-27, each with why. The plan's
 16. **Chunk priority** (run af2b7967, in flight) adds `EffortChunk.Priority` and a shared rank rule
     (`chunkorder.go`, `chunkorder.ts`). Whichever lands second keeps both fields and makes the rank rule leave later
     chunks out of the order of work, as call 4 does for `advance` and `nextChunk`.
+17. **The changelog line is `<!-- big -->` with `<!-- shot: none -->` in this run.** No tree before the final stage runs
+    a dev app, so no task can take the picture, and a shot comment naming a missing file fails `whatsnew.test.ts`.
+    After the land, the picture is taken with `node scripts/whatsnew-shot.mjs save-later --selector
+    '[data-jarvis-brief-region="later-chunks"]'` and the comment swapped in one commit.

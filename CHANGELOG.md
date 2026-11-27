@@ -34,6 +34,13 @@ and a picture given to a line that is not big.
 
 ### Added
 
+- Save for later: right-click text you selected in Chat and pick Save for later to leave it on an initiative to come
+  back to, not to work on now. An agent linked to an initiative saves into it at once; any other opens a picker with
+  your recent initiatives first, and a toast follows with Open and Move to…. An agent can also offer a list of things to
+  leave for later as a card in its Chat, one row each with a × and an Add. What you saved sits in a Later section on
+  Jarvis right under Waiting on you, grouped by initiative with its age and due day, ticked off when done, and Ask agent
+  on an item takes you to the agent that said it (or reopens its conversation) with the passage quoted in the chat box.
+  Saved items stay out of the initiative's plan, its count and its next step. <!-- big --> <!-- shot: none -->
 - A running background command shows how much RAM it holds, beside how long it has run, in the sidebar and in the
   agent's Background tasks. On Windows an agent's RAM now counts what its commands run too, such as a build's compilers,
   which it used to leave out.
