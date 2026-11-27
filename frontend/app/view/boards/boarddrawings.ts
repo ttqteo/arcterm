@@ -28,14 +28,12 @@ export interface ViewRect {
     height: number;
 }
 
-// what the open canvas of a board publishes for the drawings row and the ask: the drawings in order, the one in view,
-// the ones that landed while the view was on an earlier drawing and are not in view yet, and the drawing every selected
-// shape belongs to (null when none is selected or they span drawings)
+// what the open canvas of a board publishes for the drawings row: the drawings in order, the one in view, and the ones
+// that landed while the view was on an earlier drawing and are not in view yet
 export interface BoardDrawings {
     drawings: { id: string; n: number; title: string }[];
     inView: string | null;
     fresh: string[];
-    selected: string | null;
 }
 
 export function isFrame(el: ExcalidrawElement): el is ExcalidrawFrameElement {
@@ -99,31 +97,22 @@ export function drawingInView(drawings: readonly Drawing[], view: ViewRect): str
     return best;
 }
 
-// the one live frame every selected shape belongs to (a selected frame belongs to itself), else the one in view
-export function askedDrawing(
-    elements: readonly ExcalidrawElement[],
-    selectedIds: readonly string[],
-    inView: string | null
-): string | null {
-    const byId = new Map(elements.filter((el) => !el.isDeleted).map((el) => [el.id, el]));
-    const frames = new Set<string | null>();
-    for (const id of selectedIds) {
-        const el = byId.get(id);
-        if (el != null) {
-            frames.add(isFrame(el) ? el.id : el.frameId);
-        }
-    }
-    if (frames.size !== 1) {
-        return inView;
-    }
-    const [frameId] = frames;
-    const frame = byId.get(frameId ?? "");
-    return frame != null && isFrame(frame) ? frame.id : inView;
-}
-
 // the drawing's live children, its frame left out: what parts and a reading view work from
 export function drawingShapes(elements: readonly ExcalidrawElement[], drawingId: string): ExcalidrawElement[] {
     return elements.filter((el) => !el.isDeleted && !isFrame(el) && el.frameId === drawingId);
+}
+
+// → and ← between drawings: the drawing after (step 1) or before (-1) the one in view, or null at either end, with no
+// drawings, or with none in view and nothing to step to. With none in view, → goes to the first and ← to the last.
+export function stepDrawing(drawings: readonly { id: string }[], inView: string | null, step: 1 | -1): string | null {
+    if (drawings.length === 0) {
+        return null;
+    }
+    const at = inView == null ? -1 : drawings.findIndex((d) => d.id === inView);
+    if (at < 0) {
+        return step === 1 ? drawings[0].id : drawings[drawings.length - 1].id;
+    }
+    return drawings[at + step]?.id ?? null;
 }
 
 // The view follows the newest drawing: true with no drawings, or while the newest is the one in view
@@ -136,15 +125,13 @@ export function isFollowing(drawings: readonly Drawing[], inView: string | null)
 export function rowState(
     prev: BoardDrawings | null,
     drawings: readonly Drawing[],
-    inView: string | null,
-    selected: string | null
+    inView: string | null
 ): BoardDrawings {
     const ids = new Set(drawings.map((d) => d.id));
     const fresh = (prev?.fresh ?? []).filter((id) => id !== inView && ids.has(id));
     if (
         prev != null &&
         prev.inView === inView &&
-        prev.selected === selected &&
         prev.fresh.length === fresh.length &&
         prev.fresh.every((id, i) => id === fresh[i]) &&
         prev.drawings.length === drawings.length &&
@@ -152,7 +139,7 @@ export function rowState(
     ) {
         return prev;
     }
-    return { drawings: drawings.map(({ id, n, title }) => ({ id, n, title })), inView, fresh, selected };
+    return { drawings: drawings.map(({ id, n, title }) => ({ id, n, title })), inView, fresh };
 }
 
 // What a landed answer does to the view. A drawing not there before is new: fit it while following, else mark it fresh

@@ -279,10 +279,14 @@ function DrawingsRow({ boardId }: { boardId: string }) {
                                 initial="initial"
                                 animate="animate"
                                 exit="exit"
+                                // a mouse press leaves focus where it was (the canvas, whose ← → step the parts): a
+                                // chip that took it lit its focus ring at the next key, Shift for a sideways scroll too
+                                onMouseDown={(e) => e.preventDefault()}
                                 // a new ts each press, so picking the drawing already picked fits it again
                                 onClick={() => pick({ drawingId: d.id, ts: Date.now() })}
                                 className={cn(
-                                    "relative flex h-[22px] flex-none cursor-pointer items-center gap-1.5 rounded-[6px] px-2 text-[12px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                                    // the ring sits inside: the row scrolls sideways, which clips anything outside it
+                                    "relative flex h-[22px] flex-none cursor-pointer items-center gap-1.5 rounded-[6px] px-2 text-[12px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
                                     current
                                         ? "text-primary"
                                         : "text-secondary hover:bg-surface-hover hover:text-primary"

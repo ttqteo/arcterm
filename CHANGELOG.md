@@ -38,6 +38,8 @@ and a picture given to a line that is not big.
   board scenarios", `$ npm test`) and holds Allow and Deny under it, so you no longer pick the agent or open its chat.
   A prompt with choices of its own, such as a plan approval, offers Answer in chat instead. <!-- big -->
   <!-- shot: none -->
+- `→` and `←` on a board step to the next and previous drawing, easing there as a click on its chip does, so a board
+  of drawings reads like slides. A dense drawing read in parts still steps through its parts first.
 - A Note button on the nav rail, above Translate, and `Mod`+`Shift`+`N` open a new note straight away: you type its
   title and body and save it with `Ctrl`+`Enter`. Before, it took Search, the Notes scope and its New note row.
   <!-- try: new-note -->
@@ -53,18 +55,27 @@ and a picture given to a line that is not big.
 - Buttons on a board's strip, beside Edit: Copy view puts the board on the clipboard as a picture, just as it shows at
   its zoom; Export saves the drawing in view as a PNG or SVG file; and while Edit is on, Delete removes the drawing in
   view, with an Undo on its toast.
-- While you read one part of a board (‹ 3/13 ›), the ask line under its turns asks about that part: its shapes go with
-  your question as if you had selected them, and the line says "Asking about" and the part's name. With Edit on, a
-  trash button beside the stepper deletes the part (one drawn by mistake), with an Undo on its toast.
+- While you read one part of a board (‹ 3/13 ›) with Edit on, a trash button beside the stepper deletes the part (one
+  drawn by mistake), with an Undo on its toast.
 
 ### Changed
 
+- An agent's question card shows ↵ on its Submit button once every question is answered, so you know Enter sends.
 - When an agent sums up progress over time, results with numbers or a roadmap in words, Chat offers a chip to draw it
   on a board ("vẽ timeline lên board"), and the agent offers it itself: a timeline, a chart, a map of topics, with the
   to-do items going to an initiative instead.
 - An agent can now fix a drawing on a board in place, or delete one, instead of drawing a corrected copy beside it:
   ask it to fix "Part 1" and the drawer edits that drawing.
 - A board's Tidy button is gone.
+- A board no longer has a turns column or an ask box, so the canvas gets the whole cell: ask about a board in Chat
+  with `@board`. A line under the canvas shows only while the drawer works (Stop once it runs long) or when the latest
+  drawing failed (why, and Retry). Library → Boards drops its turns column the same way.
+- When a board's drawer answers in a way Arc can't use (a label over 12 words, a reply that is not one JSON object),
+  it is told why and asked once more, so fewer drawings end in "Couldn't draw" and need the agent to ask again.
+- A board's drawer starts a fresh session once its talk has grown long, instead of re-reading the whole day's
+  talk for every new drawing: a board drawn on all day stops costing more usage per drawing.
+- A visual in Chat shows at its whole height, so you scroll the chat past it rather than inside it; the icon row over
+  it and its Show all button are gone. The visual's HTML file no longer shows up in the turn's changed-files card.
 - Copy image on a diagram in Chat (its toolbar and the enlarged viewer) shows a camera, as Copy screenshot does
   elsewhere, so it no longer looks like copying the text.
 - The part stepper in a board's header (‹ 3/13 ›) stays in one place beside the header's buttons: stepping through
@@ -83,6 +94,16 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- An agent can delete empty drawings on a board, and several drawings in one request ("delete the empty frames"):
+  deleting an empty frame used to fail with "it drew nothing", and the drawer could remove a drawing's shapes but
+  leave its frame and title behind.
+- A board's drawing chip you clicked no longer lights up with a cut-off blue outline when you hold Shift to scroll
+  sideways.
+- A box on a board grows to hold its label: a label that wrapped to more lines than the box had room for used to run
+  out of it. Boards drawn before this are fixed the next time they open.
+- An agent that was waiting on a background command (a dev app coming up, a build) carries on after arcterm restarts:
+  it is told which of its commands the restart stopped and starts again what its work still needs. Before, it sat idle
+  until you typed something.
 - A long chunk title in the rail's Initiative tab reads across the whole row when you select it: Work on this sits on
   its own line under the title, no longer beside it squeezing the title into a narrow column of short lines.
 - The context ring under Chat's input drops right after a compaction: it shows what the compaction left (14k), not

@@ -5,13 +5,18 @@ package blockcontroller
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"log"
+	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/wavetermdev/waveterm/pkg/agentsleep"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/panichandler"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
@@ -31,6 +36,11 @@ import (
 // A restart also cuts off the turn an agent was in. agent:inturn records, as its status changes, that a tracked agent
 // is mid-turn; the boot relaunches such an agent with restoreNudge as its first turn, so it carries on with its work
 // instead of waiting at its prompt for someone to type "continue".
+//
+// A Claude agent can also end its turn waiting on a background command it started (a dev app coming up, a build): the
+// command's end would wake it. The restart kills that command with the agent, and the resumed session only records it
+// stopped, which starts no turn, so the agent sat idle on a wake that never came. The boot reads such an agent's
+// transcript and nudges it too, naming the commands that stopped.
 
 // MetaKey_AgentLive holds a token unique to the process start that set it, so the exit of a replaced process
 // cannot clear the mark its successor set.
@@ -344,6 +354,111 @@ type restoreAgent struct {
 	nudge   bool
 	session string // the harness and the session its cmd:args resume
 	started int64  // when the last server started its process: its live mark
+	// the transcript of a Claude session, which names the background commands the restart stopped; "" for none
+	transcript string
+}
+
+// Pure: the transcript a restored block's session writes, "" when it is not Claude or the path its hook recorded
+// is another session's (a resume that forked, a later conversation in the tab).
+func restoreTranscript(meta waveobj.MetaMapType) string {
+	if meta.GetString(waveobj.MetaKey_Cmd, "") != "claude" {
+		return ""
+	}
+	path := meta.GetString(waveobj.MetaKey_AgentTranscriptPath, "")
+	session := restoreSession(meta)
+	if path == "" || session == "" || strings.TrimSuffix(filepath.Base(path), ".jsonl") != session {
+		return ""
+	}
+	return path
+}
+
+// restoreTailBytes bounds how much of a transcript's end the boot reads for background commands: they start in the
+// agent's last turns, and a transcript can run to many MBs. A start cut off by the bound is missed, never a false nudge,
+// since the notice that a command finished always comes after its start. A var so tests can shorten it.
+var restoreTailBytes int64 = 4 << 20
+
+// readRestoreTail is the complete lines in the last restoreTailBytes of the file at path.
+func readRestoreTail(path string) ([]string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	offset := max(st.Size()-restoreTailBytes, 0)
+	if _, err := f.Seek(offset, io.SeekStart); err != nil {
+		return nil, err
+	}
+	data, err := io.ReadAll(f)
+	if err != nil {
+		return nil, err
+	}
+	text := string(data)
+	if offset > 0 {
+		// the window starts inside a line
+		if i := strings.IndexByte(text, '\n'); i >= 0 {
+			text = text[i+1:]
+		} else {
+			text = ""
+		}
+	}
+	var lines []string
+	for ln := range strings.SplitSeq(text, "\n") {
+		if strings.TrimSpace(ln) != "" {
+			lines = append(lines, ln)
+		}
+	}
+	return lines, nil
+}
+
+// stoppedBackground is the background commands and Monitors of a restored agent's transcript that had not finished
+// when its process stopped: the restart ended them.
+func stoppedBackground(transcript string) []string {
+	if transcript == "" {
+		return nil
+	}
+	lines, err := readRestoreTail(transcript)
+	if err != nil {
+		return nil
+	}
+	return agentsleep.BackgroundRunning(lines)
+}
+
+// how many stopped commands a nudge names, and how long each name may run
+const (
+	nudgeMaxCommands = 5
+	nudgeMaxLabel    = 80
+)
+
+// Pure: the first turn a restored agent is owed, "" for none. inTurn is an agent cut off mid-turn; background is the
+// commands its restart stopped, which an idle agent may have ended its turn waiting on.
+func restoreNudgeText(inTurn bool, background []string) string {
+	if len(background) == 0 {
+		if inTurn {
+			return restoreNudge
+		}
+		return ""
+	}
+	names := make([]string, 0, nudgeMaxCommands)
+	for i, label := range background {
+		if i == nudgeMaxCommands {
+			names = append(names, fmt.Sprintf("and %d more", len(background)-i))
+			break
+		}
+		label = strings.Join(strings.Fields(label), " ")
+		if r := []rune(label); len(r) > nudgeMaxLabel {
+			label = string(r[:nudgeMaxLabel]) + "…"
+		}
+		names = append(names, strconv.Quote(label))
+	}
+	list := strings.Join(names, ", ")
+	if inTurn {
+		return restoreNudge + " The restart also stopped your background commands (" + list + "): start again what your work still needs."
+	}
+	return "The app restarted, and the background commands you started stopped with your process before they finished: " + list + ". If you were waiting on them, start again what your work still needs and carry on. If not, say in one line what stopped and wait for the person."
 }
 
 // Pure: one block to restore per session, and the rest. Two tabs on one conversation would run two processes writing
@@ -388,10 +503,11 @@ func RestoreLiveAgents(ctx context.Context) {
 		if shouldRestoreAgent(block.Meta) {
 			started, _ := strconv.ParseInt(block.Meta.GetString(MetaKey_AgentLive, ""), 10, 64)
 			restore = append(restore, restoreAgent{
-				blockId: block.OID,
-				nudge:   shouldNudgeRestore(block.Meta),
-				session: block.Meta.GetString(waveobj.MetaKey_Cmd, "") + " " + restoreSession(block.Meta),
-				started: started,
+				blockId:    block.OID,
+				nudge:      shouldNudgeRestore(block.Meta),
+				session:    block.Meta.GetString(waveobj.MetaKey_Cmd, "") + " " + restoreSession(block.Meta),
+				started:    started,
+				transcript: restoreTranscript(block.Meta),
 			})
 		}
 	}
@@ -433,8 +549,8 @@ func restoreOne(r restoreAgent) {
 	if err != nil {
 		return // its tab is gone
 	}
-	if r.nudge {
-		queueRestoreNudge(r.blockId, time.Now())
+	if text := restoreNudgeText(r.nudge, stoppedBackground(r.transcript)); text != "" {
+		queueNudge(r.blockId, text, time.Now())
 	}
 	if err := restartAgentBlock(ctx, tabId, r.blockId); err != nil {
 		takeRestoreNudge(r.blockId, time.Now())

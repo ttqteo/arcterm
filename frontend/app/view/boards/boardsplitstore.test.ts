@@ -31,7 +31,6 @@ import {
     removeBoardFromList,
     setBoardMax,
     switchBoard,
-    turnsFoldedAtom,
     type BoardOpenModel,
 } from "./boardsplitstore";
 
@@ -200,18 +199,6 @@ describe("boardMaxAtom", () => {
         expect(globalStore.get(boardMaxAtom("arcterm/b1"))).toBe(true);
         expect(globalStore.get(boardMaxAtom("arcterm/b2"))).toBe(false);
         setBoardMax(B1, false);
-    });
-});
-
-describe("turnsFoldedAtom", () => {
-    it("is per board, starts open and is kept in localStorage", () => {
-        expect(globalStore.get(turnsFoldedAtom("arcterm/b1"))).toBe(false);
-        globalStore.set(turnsFoldedAtom("arcterm/b1"), true);
-        expect(globalStore.get(turnsFoldedAtom("arcterm/b1"))).toBe(true);
-        expect(globalStore.get(turnsFoldedAtom("arcterm/b2"))).toBe(false);
-        expect(JSON.parse(stored.get("board.turns.folded") ?? "null")).toEqual({ "arcterm/b1": true });
-        globalStore.set(turnsFoldedAtom("arcterm/b1"), false);
-        expect(JSON.parse(stored.get("board.turns.folded") ?? "null")).toEqual({});
     });
 });
 

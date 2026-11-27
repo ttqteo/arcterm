@@ -22,6 +22,10 @@ const (
 	BusyReason        = "the drawer is answering; ask once this answer lands"
 	StopTooLateReason = "the answer is already on its way to the board"
 
+	// MaxResumeTokens is the drawer session's context past which the next turn starts a new session instead of
+	// resuming. Boards used for a day reached 224k after 10-13 drawings (2026-11-27), each turn re-reading all of it.
+	MaxResumeTokens = 100_000
+
 	// BoardTurn.Kind
 	KindAsk     = "ask"     // the person's line: drawn, or flagged as a question for the agent
 	KindRequest = "request" // the agent's own request (wsh board draw): drawn, or failed
@@ -489,7 +493,13 @@ func (d *Drawer) answer(ctx context.Context, b Board, talk wshrpc.BoardTalk, tur
 		Request: turn.Kind == KindRequest, Context: turn.Context, Draw: turn.Kind == KindAsk && turn.From != "",
 		AgentTitle: agent.title, AgentTurns: agent.text,
 	}
-	call := Call{SessionId: talk.SessionId, Resume: talk.SessionId != "", Prompt: turnPrompt(ti)}
+	// a session past MaxResumeTokens starts over: the first prompt carries the rules, the briefing and the board as it
+	// is now, which is all a turn needs, and every resumed turn would read the whole long talk again
+	resume := talk.SessionId != "" && talk.ContextTokens < MaxResumeTokens
+	if talk.SessionId != "" && !resume {
+		log.Printf("boarddrawer: board %s: session %s holds %d tokens, starting a new one", b.BoardId, talk.SessionId, talk.ContextTokens)
+	}
+	call := Call{SessionId: talk.SessionId, Resume: resume, Prompt: turnPrompt(ti)}
 	first := !call.Resume
 	if first {
 		call.Prompt = firstPrompt(firstInput{BoardName: b.Name, Briefing: boardBriefing(talk)}, ti)
@@ -524,7 +534,30 @@ func (d *Drawer) answer(ctx context.Context, b Board, talk wshrpc.BoardTalk, tur
 	if ctx.Err() != nil {
 		return Answer{}, ctx.Err()
 	}
-	answer, err := ParseAnswer(out.Text, scene, turn.DrawingId, turn.Kind == KindRequest)
+	answer, err := checkAnswer(out.Text, scene, turn)
+	if err == nil {
+		return answer, nil
+	}
+	// One more go in the same session: the drawer reads why Arc refused its answer (13 words in a label, a reply that
+	// is not one JSON object) and answers the same turn again. A second refusal fails the turn with its own reason; a
+	// second run that fails leaves the first refusal as the reason.
+	fix := Call{SessionId: call.SessionId, Resume: true, Prompt: fixPrompt(err.Error())}
+	again, runErr := d.d.Run(ctx, b.ProjectPath, fix)
+	if ctx.Err() != nil {
+		return Answer{}, ctx.Err()
+	}
+	if runErr != nil {
+		log.Printf("boarddrawer: board %s: the second go after a refused answer failed: %v", b.BoardId, runErr)
+		return Answer{}, err
+	}
+	d.recordRun(b, call.SessionId, again.ContextTokens, agent)
+	return checkAnswer(again.Text, scene, turn)
+}
+
+// checkAnswer is a reply read as the turn's answer: parsed against the scene, and routed (a turn that must be drawn
+// may not come back as a question). Every error it returns is the reply's fault, so the drawer may be asked again.
+func checkAnswer(reply string, scene Scene, turn wshrpc.BoardTurn) (Answer, error) {
+	answer, err := ParseAnswer(reply, scene, turn.DrawingId, turn.Kind == KindRequest)
 	if err != nil {
 		return Answer{}, err
 	}

@@ -456,6 +456,23 @@ describe("turnFiles", () => {
         ]);
     });
 
+    it("leaves out a page written under ~/.arc/visuals, Windows or POSIX, in any case", () => {
+        const parts = [
+            work(
+                changed("C:\\Users\\me\\.arc\\visuals\\2026-11-27-board.html", 62, 0),
+                changed("/home/me/.arc/visuals/sub/chart.html", 40, 0),
+                changed("c:/users/me/.ARC/Visuals/q.html", 9, 0),
+                changed("/r/a.ts", 1, 0),
+                changed("/r/.arc/visuals-old/keep.html", 2, 0)
+            ),
+        ];
+        expect(turnFiles(parts)).toEqual([
+            { path: "/r/a.ts", adds: 1, dels: 0 },
+            { path: "/r/.arc/visuals-old/keep.html", adds: 2, dels: 0 },
+        ]);
+        expect(turnFiles([work(changed("/home/me/.arc/visuals/only.html", 5, 0))])).toEqual([]);
+    });
+
     it("a failed or refused edit adds nothing", () => {
         const parts = [
             work(

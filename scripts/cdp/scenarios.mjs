@@ -44977,7 +44977,7 @@ function acWriteFixtures(dir) {
 // The pages steps 40-44 draw as inline visuals, in a folder of the scenario's own that window.__chatVisualsDir points the chat
 // at (the person's real ~/.arc/visuals is not touched). Every page has no margin, so its height is its div's. chart.html has two
 // buttons at known places (#ask at 16,16 and #theme at 16,64, each 120x36); auto.html asks by itself 300 ms after it loads;
-// tall.html is taller than the frame's cap. #theme adds " scheme:<it>" when the page's root is not color-scheme dark. The pages call arc.sendPrompt from handlers and a timer, never at top level: the
+// tall.html is 900 px, taller than the frame's old 640 cap. #theme adds " scheme:<it>" when the page's root is not color-scheme dark. The pages call arc.sendPrompt from handlers and a timer, never at top level: the
 // bridge script that defines `arc` is appended after the page, so it does not exist yet while the page's own script first runs.
 function acWriteVisuals(dir) {
     const folder = join(dir, "visuals");
@@ -47430,8 +47430,8 @@ const agentChat = {
             const pendingOfA = (text) =>
                 `[...(${acLayer(A)}?.querySelectorAll("[data-chat-pending]") ?? [])].filter((p) => p.firstElementChild?.textContent.trim() === ${JSON.stringify(text)})`;
 
-            // 40. a reply holding five arc-visual blocks: chart.html is a figure with a header naming it and a frame served from
-            // the file server that grows to the page's own height. The other four are read by steps 41-43
+            // 40. a reply holding five arc-visual blocks: chart.html is a figure with no header, only a frame (titled with the
+            // page's name) served from the file server that grows to the page's own height. The other four are read by steps 41-43
             await showAgent(A);
             await polishWaitFor(h, `!!${acBox(A)} && ${acLayer(A)}?.hasAttribute("data-chat-leaving") === false`, AC_WAIT_MS);
             await acClear(h, acBox(A));
@@ -47462,7 +47462,9 @@ const agentChat = {
                 const fig = ${acVisual(A, "chart.html")};
                 const frame = ${acVisualFrame(A, "chart.html")};
                 return {
-                    header: fig?.firstElementChild?.textContent.replace(/\\s+/g, " ").trim() ?? null,
+                    firstIsFrame: !!frame && fig?.firstElementChild === frame,
+                    children: fig?.children.length ?? 0,
+                    title: frame?.getAttribute("title") ?? null,
                     src: frame?.getAttribute("src") ?? null,
                     height: ${acFrameHeight(A, "chart.html")},
                     sandbox: frame?.getAttribute("sandbox") ?? null,
@@ -47470,8 +47472,8 @@ const agentChat = {
             })()`);
             await h.shot("cdp-shots/agent-chat-40-visual.png");
             rec(
-                "40. a reply holding five arc-visual blocks draws chart.html as a figure whose header names it, with a frame served from the file server (/html-preview/) that is 290-320 px tall once the page has reported its height",
-                figure40 && src40 && sized40 && (read40.header ?? "").includes("chart.html") && (read40.src ?? "").includes("/html-preview/"),
+                "40. a reply holding five arc-visual blocks draws chart.html as a figure holding only its frame (no header row over it; the frame's title names chart.html), served from the file server (/html-preview/) and 290-320 px tall once the page has reported its height",
+                figure40 && src40 && sized40 && read40.firstIsFrame && read40.children === 1 && (read40.title ?? "").includes("chart.html") && (read40.src ?? "").includes("/html-preview/"),
                 { figure40, src40, sized40, read40 }
             );
 
@@ -47523,8 +47525,8 @@ const agentChat = {
                 { click42, sent42, pending42, click42b, typed42, box42, gapMs: click42 && click42b ? click42b.at - click42.at : null }
             );
 
-            // 43. a page's own prompt without a click is dropped; a page taller than the cap shows at 640 px with an expand button that
-            // grows the frame to the page and back; a missing page says so; a path outside the folder stays code, with the reason
+            // 43. a page's own prompt without a click is dropped; a tall page shows at its whole height (the chat scrolls past it,
+            // nothing scrolls inside it) with no expand button; a missing page says so; a path outside the folder stays code, with the reason
             await acClear(h, acBox(A));
             const before43 = (await acSettled(h, blockA)).length;
             await acShowVisual(h, A, "auto.html");
@@ -47536,15 +47538,10 @@ const agentChat = {
             const box43 = await boxValue(A);
             const everTyped43 = (await acInputs(h, blockA)).some((i) => i.includes("unasked"));
             await acShowVisual(h, A, "tall.html");
-            const tallSized43 = await polishWaitFor(h, acFrameBetween(A, "tall.html", 639, 641), 8000);
-            const expand = `${acVisual(A, "tall.html")}?.querySelector("[data-chat-visual-expand]")`;
-            const expandUp43 = await polishWaitFor(h, `!!${expand}`, 5000);
-            await h.ev(`${expand}?.click()`);
-            const grown43 = await polishWaitFor(h, `${acFrameHeight(A, "tall.html")} > 640`, 3000);
-            const grownHeight43 = await h.ev(acFrameHeight(A, "tall.html"));
+            const tallSized43 = await polishWaitFor(h, acFrameBetween(A, "tall.html", 890, 910), 8000);
+            const tallHeight43 = await h.ev(acFrameHeight(A, "tall.html"));
+            const noButton43 = await h.ev(`(${acVisual(A, "tall.html")}?.querySelectorAll("button").length ?? -1) === 0`);
             await h.shot("cdp-shots/agent-chat-43-visual-unasked-and-tall.png");
-            await h.ev(`${expand}?.click()`);
-            const folded43 = await polishWaitFor(h, acFrameBetween(A, "tall.html", 639, 641), 3000);
             const missingUp43 = await polishWaitFor(h, `!!${acVisual(A, "gone.html")}?.querySelector("[data-chat-visual-missing]")`, 8000);
             const missing43 = await h.ev(`${acVisual(A, "gone.html")}?.querySelector("[data-chat-visual-missing]")?.textContent.trim() ?? null`);
             const refusedUp43 = await polishWaitFor(h, `!!${acLayer(A)}?.querySelector("[data-chat-visual-refused]")`, 5000);
@@ -47560,13 +47557,13 @@ const agentChat = {
                 };
             })()`);
             rec(
-                "43. auto.html's own prompt (300 ms after it loads, no click) is dropped: nothing is typed and the box holds no unasked, and its frame is 110-130 px; tall.html shows at 640 px with an expand button that grows it past 640 (~900) and back to 640; gone.html shows 'Visual not found'; the path outside the folder stays a code block under 'Shown as code: a visual must sit in ~/.arc/visuals'",
+                "43. auto.html's own prompt (300 ms after it loads, no click) is dropped: nothing is typed and the box holds no unasked, and its frame is 110-130 px; tall.html shows at its whole height (890-910 px, past the old 640 cap) with no button in its figure; gone.html shows 'Visual not found'; the path outside the folder stays a code block under 'Shown as code: a visual must sit in ~/.arc/visuals'",
                 autoSrc43 && autoSized43 && typed43.length === 0 && !(box43 ?? "").includes("unasked") && !everTyped43 &&
-                    tallSized43 && expandUp43 && grown43 && grownHeight43 <= 960 && folded43 &&
+                    tallSized43 && noButton43 &&
                     missingUp43 && (missing43 ?? "").includes("gone.html") &&
                     refusedUp43 && refused43.note === "Shown as code: a visual must sit in ~/.arc/visuals" && refused43.isCode &&
                     (refused43.code ?? "").includes(outside) && refused43.framed === false,
-                { autoSrc43, autoSized43, autoHeight43, typed43, box43, everTyped43, tallSized43, expandUp43, grown43, grownHeight43, folded43, missingUp43, missing43, refusedUp43, refused43 }
+                { autoSrc43, autoSized43, autoHeight43, typed43, box43, everTyped43, tallSized43, tallHeight43, noButton43, missingUp43, missing43, refusedUp43, refused43 }
             );
 
             // 44. a visual in a sleeping agent's chat: its prompt goes down the wake path, so the agent wakes with it as the message

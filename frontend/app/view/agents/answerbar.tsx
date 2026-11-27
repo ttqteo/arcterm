@@ -475,6 +475,11 @@ export function AnswerBar({
         >
             <Check size={12} aria-hidden />
             Submit
+            {ready ? (
+                <kbd aria-hidden className="font-mono text-[10.5px] font-normal opacity-70">
+                    ↵
+                </kbd>
+            ) : null}
         </button>
     );
 

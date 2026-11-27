@@ -71,8 +71,9 @@ row's drawings on one board named for the topic (`thesis-progress`, `rq4-results
   request, and it becomes another drawing beside the first, never a denser one.
 - To fix a drawing already on the board, ask for the fix and name the drawing by its title: `--ask "in Part 1, drop
   the two long arrows and write 'continued in Part 2' under the last box"`. The drawer edits that drawing in place.
-  `--ask "delete the drawing Part 2, fixed"` removes a whole drawing. One request changes one drawing, so a fix and a
-  delete are two requests. Fix in place rather than drawing a corrected copy beside the old one.
+  `--ask "delete the drawing Part 2, fixed"` removes a whole drawing, its frame and title with it; one request can
+  delete several (`--ask "delete the drawings Part 1 and Part 2, and the empty frames"`). A fix changes one drawing,
+  so a fix and a delete are two requests. Fix in place rather than drawing a corrected copy beside the old one.
 - A board draws bar and line charts to scale, beside the boxes. For one, give the drawer the numbers themselves, with
   their labels and units, in the briefing or the `--ask` line ("add a bar chart of pass rate: baseline 0.42, LLM
   0.61, agent 0.70"); it never invents numbers. A chart of numbers on its own, with no drawing around it, reads better
@@ -85,8 +86,8 @@ row's drawings on one board named for the topic (`thesis-progress`, `rq4-results
   opens it beside Chat when they want to look. A new drawing lands in its own frame, beside the earlier ones; a fix
   lands in the drawing it names.
 
-**Questions asked on the board reach you.** The person can select shapes and ask about them on the board. When the
-drawer can't answer that by drawing, it forwards the question to you as a message headed
-`[From board "<name>" · on <shapes> · turn <id>]`, then their words. Treat it as the person's own message: answer in
-words, in your reply. If your answer is worth a picture, send the drawer a one-line
-`wsh board draw --board <name> --ask "<what to draw>"`: it becomes a new drawing beside the others.
+**Questions about a board come in Chat.** The person asks about a board in a message to you, naming it with `@board`
+(the `board:<id>` above). Answer in words, in your reply. If your answer is worth a picture, send the drawer a one-line
+`wsh board draw --board board:<id> --ask "<what to draw>"`: it becomes a new drawing beside the others. An older
+message headed `[From board "<name>" · on <shapes> · turn <id>]` is a question the person asked on the board itself
+before that went away: treat it as their own message, the same way.

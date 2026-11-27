@@ -371,6 +371,122 @@ func TestAskUnusableAnswerFails(t *testing.T) {
 	}
 }
 
+// A refused answer is asked again once, in the same session, with why it was refused; the fixed answer is drawn.
+func TestRefusedAnswerIsAskedAgainOnce(t *testing.T) {
+	answers := []string{"Here is the drawing you asked for.", drawAnswer}
+	f := newFake(func(_ context.Context, c Call) (string, error) {
+		if c.Resume {
+			return answers[1], nil
+		}
+		return answers[0], nil
+	})
+	f.ctxTokens = 4321
+	d := New(f.deps())
+	turn, err := d.Ask(board, requests("Draw the store.", "The store keeps talks in sidecars."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	land(t, f, d, board, turn.ID, "n1", "n2")
+	talk := settled(t, f, d)
+	calls := f.callList()
+	if len(calls) != 2 || calls[0].Resume || !calls[1].Resume || calls[1].SessionId != calls[0].SessionId {
+		t.Fatalf("want the first run, then one resume of its session: %+v", calls)
+	}
+	for _, want := range []string{"## Your answer was refused", "the reply is not one JSON object", "JSON object alone"} {
+		if !strings.Contains(calls[1].Prompt, want) {
+			t.Errorf("the second prompt lacks %q:\n%s", want, calls[1].Prompt)
+		}
+	}
+	if got := talk.Turns[0]; got.State != StateAnswered || got.Title != "wavesrv, opened up" {
+		t.Errorf("the fixed answer must be drawn: %+v", got)
+	}
+	if talk.ContextTokens != 4321 {
+		t.Errorf("the second run's context is recorded, got %d", talk.ContextTokens)
+	}
+}
+
+// A second refusal fails the turn with its own reason; there is no third go.
+func TestRefusedTwiceFails(t *testing.T) {
+	answers := []string{"not json", `{"title":"t","update":[{"id":"nope","x":1}]}`}
+	f := newFake(func(_ context.Context, c Call) (string, error) {
+		if c.Resume {
+			return answers[1], nil
+		}
+		return answers[0], nil
+	})
+	d := New(f.deps())
+	if _, err := d.Ask(board, asks("q")); err != nil {
+		t.Fatal(err)
+	}
+	talk := settled(t, f, d)
+	if n := len(f.callList()); n != 2 {
+		t.Errorf("want exactly two runs, got %d", n)
+	}
+	got := talk.Turns[0]
+	if got.State != StateFailed || !strings.HasPrefix(got.Reason, unusableHead) || strings.Contains(got.Reason, "one JSON object") {
+		t.Errorf("the turn fails with the second refusal's reason: %+v", got)
+	}
+	if f.deliveredCount() != 0 {
+		t.Errorf("a refused answer delivers nothing")
+	}
+}
+
+// A second run that fails (the session is gone, the model errs) fails the turn with the first refusal.
+func TestRefusedThenRunFailsKeepsFirstReason(t *testing.T) {
+	f := newFake(func(_ context.Context, c Call) (string, error) {
+		if c.Resume {
+			return "", errors.New("claude exited 1")
+		}
+		return "not json", nil
+	})
+	d := New(f.deps())
+	if _, err := d.Ask(board, asks("q")); err != nil {
+		t.Fatal(err)
+	}
+	talk := settled(t, f, d)
+	if got := talk.Turns[0]; got.State != StateFailed || !strings.Contains(got.Reason, "one JSON object") {
+		t.Errorf("the turn fails with the first refusal: %+v", got)
+	}
+}
+
+// A session whose context reached MaxResumeTokens is not resumed: the turn starts a new one with the first prompt, and
+// the talk keeps it with its own size. One under the cap resumes.
+func TestLongSessionStartsNew(t *testing.T) {
+	for _, tc := range []struct {
+		tokens int
+		resume bool
+	}{{MaxResumeTokens - 1, true}, {MaxResumeTokens, false}, {224_000, false}} {
+		f := newFake(reply(drawAnswer))
+		f.ctxTokens = 9000
+		f.talks["b1"] = wshrpc.BoardTalk{Project: board.Project, BoardId: "b1", SessionId: "old", ContextTokens: tc.tokens}
+		d := New(f.deps())
+		f.landsAnswers(d, board)
+		if _, err := d.Ask(board, requests("Draw the store.", "The store keeps talks in sidecars.")); err != nil {
+			t.Fatal(err)
+		}
+		talk := settled(t, f, d)
+		calls := f.callList()
+		if len(calls) != 1 || calls[0].Resume != tc.resume {
+			t.Fatalf("%d tokens: want resume=%v, calls %+v", tc.tokens, tc.resume, calls)
+		}
+		if tc.resume {
+			if calls[0].SessionId != "old" {
+				t.Errorf("%d tokens: resumes the old session, got %q", tc.tokens, calls[0].SessionId)
+			}
+			continue
+		}
+		if calls[0].SessionId == "old" || calls[0].SessionId == "" || !strings.Contains(calls[0].Prompt, "## Your reply") {
+			t.Errorf("%d tokens: a new session with the first prompt, got %+v", tc.tokens, calls[0])
+		}
+		if !strings.Contains(calls[0].Prompt, "The store keeps talks in sidecars.") {
+			t.Errorf("%d tokens: the new session's prompt keeps the briefing:\n%s", tc.tokens, calls[0].Prompt)
+		}
+		if talk.SessionId != calls[0].SessionId || talk.ContextTokens != 9000 || talk.Turns[0].State != StateAnswered {
+			t.Errorf("%d tokens: the talk keeps the new session and its size: %+v", tc.tokens, talk)
+		}
+	}
+}
+
 func TestAskBrokenFileFirstTurnKeepsNoSession(t *testing.T) {
 	f := newFake(reply(drawAnswer))
 	f.files["b1"] = `{"elements":[`
@@ -818,7 +934,7 @@ func TestRequestDrawsNewOrEditsTheDrawingItNames(t *testing.T) {
 	if _, err := d.Ask(board, requests("Delete the cache drawing.", "")); err != nil {
 		t.Fatal(err)
 	}
-	if got := settled(t, f, d).Turns[0]; got.Removed != 1 || len(f.delivered) != 1 || strings.Join(f.delivered[0].Remove, ",") != "cache,f1" {
+	if got := settled(t, f, d).Turns[0]; got.Removed != 2 || len(f.delivered) != 1 || strings.Join(f.delivered[0].Remove, ",") != "cache,f1" {
 		t.Errorf("a delete removes the drawing whole: %+v, delivered %+v", got, f.delivered)
 	}
 }

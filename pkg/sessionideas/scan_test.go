@@ -378,6 +378,41 @@ func TestScanNowAModelErrorStopsAndKeepsWhatWasFound(t *testing.T) {
 	}
 }
 
+func TestEndUnfinishedScanEndsOnlyAScanWithNoEnd(t *testing.T) {
+	s, events := newTestStore(t)
+	if ended, err := EndUnfinishedScan(s, EndedByShutdown); ended || err != nil || *events != 0 {
+		t.Fatalf("a store with no scan: ended %v, err %v, %d events", ended, err, *events)
+	}
+	// wavesrv stopped while the third of five sessions was read: two are marked, one idea found
+	left := wshrpc.SessionIdeasScan{Done: 2, Total: 5, StartedTs: 1000, NewIdeas: 1, Tokens: 400}
+	mark := wshrpc.SessionIdeaMark{TranscriptPath: "/a.jsonl", Outcome: wshrpc.SessionIdeaOutcome_Nothing}
+	if err := s.Update(func(d *wshrpc.SessionIdeasData) error {
+		d.Scan = &left
+		d.Marks = []wshrpc.SessionIdeaMark{mark}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	*events = 0
+	ended, err := EndUnfinishedScan(s, EndedByShutdown)
+	if !ended || err != nil || *events != 1 {
+		t.Fatalf("a scan with no end: ended %v, err %v, %d events", ended, err, *events)
+	}
+	d := loadStore(t, s)
+	want := left
+	want.EndedTs, want.StoppedAt, want.Error = scanNow.UnixMilli(), 2, EndedByShutdown
+	if *d.Scan != want || d.LastScanTs != scanNow.UnixMilli() || len(d.Marks) != 1 {
+		t.Fatalf("ended as a stopped scan, keeping its marks: scan %+v, last %d, marks %+v", *d.Scan, d.LastScanTs, d.Marks)
+	}
+	// a scan that has its end is left as it is, and nothing is written
+	if ended, err := EndUnfinishedScan(s, EndedByFailure); ended || err != nil || *events != 1 {
+		t.Fatalf("a scan that ended: ended %v, err %v, %d events", ended, err, *events)
+	}
+	if got := loadStore(t, s); got.Scan.Error != EndedByShutdown {
+		t.Fatalf("an ended scan is not ended again: %+v", got.Scan)
+	}
+}
+
 func TestScanNowCancelledScanSaysStopped(t *testing.T) {
 	s, _ := newTestStore(t)
 	w := newWorld()

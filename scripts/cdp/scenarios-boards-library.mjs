@@ -1,7 +1,7 @@
 // Scenario `boards-library`: Library → Boards (docs/superpowers/specs/2026-11-19-kael-boards-design.md, plan
 // 2026-11-19-kael-boards.md Task 9). The list of the boards agents drew, with a thumbnail each, and what a row opens:
-// the open board of an ended agent in Library (canvas, turns, copied reply, no ask box, Open conversation), a live
-// agent's board beside its Chat on the Agent surface.
+// the open board of an ended agent in Library (canvas, status line, Open conversation), a live agent's board beside its
+// Chat on the Agent surface. There is no turns column and no ask box: questions about a board go through Chat's `@board`.
 //
 // One fixture claude agent over a real tab (no controller, so nothing runs) is the live one; the other boards belong to
 // agents that are not in the roster, which is how an ended agent reads. The board commands are stubbed in the page
@@ -11,6 +11,9 @@
 //   list      [data-library-boards-list] > [data-library-board="<id>"] with [data-library-board-name],
 //             [data-library-board-agent-line], [data-library-board-summary], [data-library-board-thumb]
 //   open      [data-library-board-open="<id>"] with [data-library-board-conversation], [data-library-board-ended]
+//   status    [data-board-status="<waiting|answering|slow|failed|error>"] under the open board's canvas, only while the
+//             drawer works or the latest turn failed: [data-board-status-label], [data-board-status-reason], and
+//             [data-board-status-stop] (slow) or [data-board-status-retry] (failed)
 //   empty     [data-library-boards-empty]
 //   strip     [data-board-strip] above the open board's canvas: its drawings row ([data-board-drawings] with a
 //             [data-board-drawing="<id>"] chip each) and the Edit switch [data-board-edit] (aria-pressed); a board opens in
@@ -20,7 +23,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as AC from "./agent-page-fixtures.mjs";
-import { boardCalls, boardFile, boardPage, boxElements, installBoardStubs, putBoard, rectElement, removeBoardStubs } from "./boards-fixtures.mjs";
+import { boardCalls, boardFile, boardPage, boxElements, installBoardStubs, putBoard, putTurns, rectElement, removeBoardStubs } from "./boards-fixtures.mjs";
 
 const NAME = "boards-library";
 const PROJECT = "boards-library-fx";
@@ -30,7 +33,7 @@ const SESSION = "boards-library-session";
 const SESSION_ENDED = "boards-library-ended-session";
 const WAIT_MS = 15000;
 const REPLY = "The host makes a fresh key on every launch so no other process can reach the last session's wavesrv.";
-const ENDED_LINE = "The agent ended, so you can't ask here";
+const ENDED_LINE = "Its agent has ended.";
 
 const B_ENDED = "b0b1b001"; // wavesrv-startup: its agent ended; the newest
 const B_LIVE = "b0b1b002"; // jobslot-queue: its agent is in the roster
@@ -45,6 +48,7 @@ const N_EMPTY = "empty-notes";
 
 const T_DRAWN = "t-drawn";
 const T_FWD = "t-forwarded";
+const T_FAILED = "t-failed"; // step 6's failed turn, there only while that step runs
 
 const q = JSON.stringify;
 const KEY_3 = { key: "3", code: "Digit3", windowsVirtualKeyCode: 51 };
@@ -323,13 +327,21 @@ export default function (kit) {
                         editLabel: (e?.textContent ?? "").trim(),
                     };
                 })()`);
-            const turnRows = () =>
-                h.ev(`[...document.querySelectorAll(${q(`${OPEN(B_ENDED)} [data-board-turn]`)})].map((row) => ({
-                    id: row.getAttribute("data-board-turn"),
-                    state: row.getAttribute("data-board-turn-state"),
-                    reply: (row.querySelector("[data-board-turn-reply]")?.textContent ?? "").trim(),
-                    buttons: [...row.querySelectorAll("button")].map((b) => b.textContent.trim()),
-                }))`);
+            // the status line under the open ended board's canvas as it reads, or null when there is none
+            const STATUS = `${OPEN(B_ENDED)} [data-board-status]`;
+            const statusLine = () =>
+                h.ev(`(() => {
+                    const el = document.querySelector(${q(STATUS)});
+                    if (el == null) return null;
+                    const label = el.querySelector("[data-board-status-label]");
+                    return {
+                        state: el.getAttribute("data-board-status"),
+                        turn: el.getAttribute("data-board-status-turn"),
+                        label: (label?.textContent ?? "").trim(),
+                        reason: (el.querySelector("[data-board-status-reason]")?.textContent ?? "").trim(),
+                        buttons: [...el.querySelectorAll("button")].map((b) => b.textContent.trim()),
+                    };
+                })()`);
 
             // --- 1. the tab strip names 3 in Boards' tooltip (no digit beside a label; the key is the tab's
             // aria-keyshortcuts), and the key 3 opens it ---
@@ -436,24 +448,22 @@ export default function (kit) {
                 );
             });
 
-            // --- 5. an ended agent's board: its canvas, the turns with the copied reply, the ended line ---
-            await run("5. selecting the ended board shows its canvas, the turns with the copied reply, the ended line and Open conversation", async (name) => {
+            // --- 5. an ended agent's board: its canvas, no status line, the ended line ---
+            await run("5. selecting the ended board shows its canvas, no status line (its latest turn is forwarded), the ended line and Open conversation", async (name) => {
                 const clicked = await click(`[data-library-board="${B_ENDED}"]`);
                 const shown = await until(async () => (await count(OPEN(B_ENDED))) === 1);
                 const ready = await canvasReady(B_ENDED);
                 await polishNap(500);
-                const rows = await turnRows();
+                // a forwarded latest turn is answered in Chat: nothing for the line to say
+                const lines = await count(STATUS);
                 const ended = await text(`${OPEN(B_ENDED)} [data-library-board-ended]`);
                 const title = await text(`${OPEN(B_ENDED)} [data-library-board-title]`);
                 const state = await text(`${OPEN(B_ENDED)} [data-library-board-state]`);
                 const conversation = await text(`${OPEN(B_ENDED)} [data-library-board-conversation]`);
-                const asks = await count(`${OPEN(B_ENDED)} [data-board-ask-input]`);
                 const canvases = await count(`[data-board-canvas="${B_ENDED}"]`);
                 const st = await libState();
                 const selectedRow = (await rowsNow()).find((r) => r.selected)?.id;
                 await shot("5-ended-board");
-                const drawn = rows.find((r) => r.id === T_DRAWN);
-                const fwd = rows.find((r) => r.id === T_FWD);
                 rec(
                     name,
                     clicked &&
@@ -466,38 +476,51 @@ export default function (kit) {
                         selectedRow === B_ENDED &&
                         title === N_ENDED &&
                         state === "claude · startup · ended · hand edits still save" &&
-                        rows.length === 2 &&
-                        drawn?.state === "drawn" &&
-                        drawn.buttons.includes("Show") &&
-                        fwd?.state === "forwarded" &&
-                        fwd.reply === REPLY &&
-                        // an ended agent can be sent nothing; the other way (draw it) is still the drawer's
-                        !fwd.buttons.includes("Send to agent") &&
-                        !drawn.buttons.includes("Send to agent") &&
+                        lines === 0 &&
                         ended === ENDED_LINE &&
-                        asks === 0 &&
                         conversation === "Open conversation" &&
                         // one canvas of this board in the page: the Agent surface's split has none while Library shows
                         canvases === 1,
-                    { st, selectedRow, title, state, rows, ended, asks, conversation, canvases }
+                    { st, selectedRow, title, state, lines, ended, conversation, canvases }
                 );
             });
 
-            // --- 6. Show outlines the drawn turn's shapes ---
-            await run("6. Show on the drawn turn selects its shapes on the canvas", async (name) => {
-                const clicked = await click(`${OPEN(B_ENDED)} [data-board-turn="${T_DRAWN}"] [data-board-turn-show]`);
-                const want = "tauri-host,auth-key";
-                const shown = await until(() => h.ev(`document.querySelector(${q(`${OPEN(B_ENDED)} [data-board-canvas="${B_ENDED}"]`)})?.dataset.boardHighlight === ${q(want)}`));
-                const highlight = await h.ev(`document.querySelector(${q(`${OPEN(B_ENDED)} [data-board-canvas="${B_ENDED}"]`)})?.dataset.boardHighlight ?? null`);
-                const picked = await boardPage(
-                    h,
-                    `${APP}
-                    const a = app();
-                    return Object.keys(a?.state.selectedElementIds ?? {}).filter((id) => a.state.selectedElementIds[id]).sort();`
+            // --- 6. the status line under the canvas, for a failed latest turn of the ended board ---
+            await run("6. a failed latest turn puts the status line under the canvas (Couldn't draw, its reason, Retry); Retry calls BoardAskRetryCommand, and a later drawn turn takes the line away", async (name) => {
+                const now = Date.now();
+                const reason = "the drawer could not read the transcript";
+                const talk = await boardPage(h, `return structuredClone(fx.talks[${q(B_ENDED)}].turns);`);
+                const failedTurn = { id: T_FAILED, ts: now - 5000, kind: "request", question: "add the SQLite store", state: "failed", reason, startedts: now - 4000, answeredts: now - 1000 };
+                await putTurns(h, B_ENDED, [...talk, failedTurn]);
+                const shown = await until(async () => (await statusLine())?.state === "failed");
+                const failed = await statusLine();
+                const lines = await count(STATUS);
+                await polishNap(300);
+                await shot("6-status-failed");
+                const clicked = await click(`${STATUS} [data-board-status-retry]`);
+                await until(async () => (await boardCalls(h, "BoardAskRetryCommand")).length === 1);
+                const calls = await boardCalls(h, "BoardAskRetryCommand");
+                const retried = await until(async () => (await statusLine())?.state === "answering");
+                // the board's own talk again: its latest turn is forwarded, so the line goes
+                await putTurns(h, B_ENDED, talk);
+                const gone = await until(async () => (await count(STATUS)) === 0);
+                rec(
+                    name,
+                    shown &&
+                        failed?.turn === T_FAILED &&
+                        failed.label === "Couldn't draw" &&
+                        failed.reason === `${reason} · nothing changed` &&
+                        failed.buttons.join() === "Retry" &&
+                        lines === 1 &&
+                        clicked &&
+                        calls.length === 1 &&
+                        calls[0].project === PROJECT &&
+                        calls[0].boardid === B_ENDED &&
+                        calls[0].turnid === T_FAILED &&
+                        retried &&
+                        gone,
+                    { failed, lines, calls, retried, gone }
                 );
-                await polishNap(700);
-                await shot("6-show");
-                rec(name, clicked && shown && highlight === want && picked.join() === "auth-key,tauri-host", { highlight, picked });
             });
 
             // --- 7. a hand edit saves under the rev the canvas read ---
@@ -695,7 +718,7 @@ export default function (kit) {
             });
 
             // --- 9b. an ended agent's board goes to a live agent of its project and opens beside its Chat ---
-            await run("9b. Open beside Chat… on an ended board lists the project's live agent; picking it takes the board over and opens it beside that agent's Chat, ask box on", async (name) => {
+            await run("9b. Open beside Chat… on an ended board lists the project's live agent; picking it takes the board over and opens it beside that agent's Chat, its header reading that chat", async (name) => {
                 await boardPage(h, `const S = await mod("app/view/boards/boardsplitstore.ts"); for (const b of [...globalStore.get((await mod("app/view/boards/boardentries.ts")).openBoardsAtom).values()]) S.closeBoard(agentsModel(), b); return true;`);
                 await h.goto("library");
                 await h.ev(`document.querySelector('[data-library-tab="boards"]')?.click()`);
@@ -719,18 +742,8 @@ export default function (kit) {
                     `const S = await mod("app/view/boards/boardsplitstore.ts");
                     return { split: ([...globalStore.get((await mod("app/view/boards/boardentries.ts")).openBoardsAtom).values()][0] ?? null), surface: globalStore.get(agentsModel().surfaceAtom) };`
                 );
-                // the ask box sends again: with a question typed, Send is on (an ended agent's board keeps it off)
-                const ask = await until(() =>
-                    h.ev(`(() => {
-                        const el = document.querySelector(${q(`${SPLIT} [data-board-ask-input]`)});
-                        if (el == null) return false;
-                        if (el.value === "") {
-                            Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(el, "add the result");
-                            el.dispatchEvent(new Event("input", { bubbles: true }));
-                        }
-                        return document.querySelector(${q(`${SPLIT} [data-board-ask-send]`)})?.disabled === false;
-                    })()`)
-                );
+                // the cell's header names the agent just picked as the chat the board reads
+                const tied = await until(async () => (await h.ev(`document.querySelector(${q(`${SPLIT} [data-board-chat]`)})?.getAttribute("data-board-chat") ?? null`)) === A);
                 await polishNap(400);
                 await shot("9b-beside-chat");
                 rec(
@@ -751,8 +764,8 @@ export default function (kit) {
                         calls[0].tabid === A &&
                         st.surface === "agent" &&
                         st.split?.boardId === B_OLD &&
-                        ask,
-                    { items, calls, st, ask, beside }
+                        tied,
+                    { items, calls, st, tied, beside }
                 );
             });
 

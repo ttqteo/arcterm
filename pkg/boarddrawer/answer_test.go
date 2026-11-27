@@ -110,7 +110,6 @@ func TestParseAnswer(t *testing.T) {
 		{"edit updating another drawing's shape", edit(`,"update":[{"id":"other","x":1}]`), "f1", `"other", which is outside the drawing`},
 		{"edit removing a loose shape", edit(`,"remove":["loose"]`), "f1", `"loose", which is outside the drawing`},
 		{"edit updating its frame", edit(`,"update":[{"id":"f1","x":1}]`), "f1", `"f1", a drawing's frame`},
-		{"edit removing a frame", edit(`,"remove":["f2"]`), "f1", `"f2", a drawing's frame`},
 		{"new drawing that updates", answerWith(`,"update":[{"id":"box","x":1}]`), "f1", "a new drawing only adds"},
 		{"new drawing that removes", answerWith(`,"remove":["loose"]`), "", "a new drawing only adds"},
 		{"41 adds", answerWith(`,"add":` + manyAdds(MaxDrawingAdds+1)), "", "adds 41 shapes"},
@@ -171,24 +170,25 @@ func TestParseAnswerRequestPicksTheDrawing(t *testing.T) {
 	}
 }
 
-// an edit that removes its own frame deletes the whole drawing: every shape in it, then the frame
+// an edit that removes its own frame deletes the whole drawing: every shape in it, then the frame; Removed counts both
 func TestParseAnswerDeletesAWholeDrawing(t *testing.T) {
 	a, err := ParseAnswer(answerWith(`,"edit":true,"drawing":"f1","remove":["f1"]`), checkScene, "", true)
-	if err != nil || a.DrawingId != "f1" || a.Removed != 4 {
+	if err != nil || a.DrawingId != "f1" || a.Removed != 5 {
 		t.Fatalf("deleting f1: %+v %v", a, err)
 	}
 	if want := []string{"box", "link", "note", "wire", "f1"}; strings.Join(a.Remove, ",") != strings.Join(want, ",") {
 		t.Errorf("remove: %v, want %v", a.Remove, want)
 	}
 	// the person's ask deletes the drawing in view the same way
-	if a, err := ParseAnswer(answerWith(`,"edit":true,"remove":["f2","other"]`), checkScene, "f2", false); err != nil || a.Removed != 1 ||
+	if a, err := ParseAnswer(answerWith(`,"edit":true,"remove":["f2","other"]`), checkScene, "f2", false); err != nil || a.Removed != 2 ||
 		strings.Join(a.Remove, ",") != "other,f2" {
 		t.Errorf("deleting f2 in view: %+v %v", a, err)
 	}
 	cases := []struct{ name, reply, drawing, wantErr string }{
 		{"and adds to it", answerWith(`,"edit":true,"add":` + goodAdd + `,"remove":["f1"]`), "f1", "deletes the drawing"},
 		{"and updates it", answerWith(`,"edit":true,"update":[{"id":"box","x":1}],"remove":["f1"]`), "f1", "deletes the drawing"},
-		{"another drawing", answerWith(`,"edit":true,"remove":["f2"]`), "f1", `"f2", a drawing's frame`},
+		{"and a shape outside it", answerWith(`,"edit":true,"remove":["f2","box"]`), "f1", `"box", which is outside the drawings it deletes`},
+		{"and a loose shape", answerWith(`,"edit":true,"remove":["f1","loose"]`), "f1", `"loose", which is outside`},
 		{"as a new drawing", answerWith(`,"remove":["f1"]`), "f1", "a new drawing only adds"},
 	}
 	for _, c := range cases {
@@ -197,6 +197,39 @@ func TestParseAnswerDeletesAWholeDrawing(t *testing.T) {
 				t.Fatalf("want error containing %q, got %v", c.wantErr, err)
 			}
 		})
+	}
+}
+
+// emptyScene has f1 (box) and three empty drawings, e1..e3, as a board is left after their shapes were removed alone.
+var emptyScene = Scene{
+	Types:   map[string]string{"f1": "frame", "box": "rectangle", "e1": "frame", "e2": "frame", "e3": "frame"},
+	Frames:  map[string]string{"f1": "Cache", "e1": "Part 1", "e2": "Part 2", "e3": "Part 2 (fixed)"},
+	FrameOf: map[string]string{"box": "f1"},
+	Shapes:  1,
+}
+
+// An empty drawing is deleted like any other, and one answer deletes several: the agent's "delete the empty frames"
+// used to fail as "drew nothing", since the frame was not counted.
+func TestParseAnswerDeletesEmptyAndSeveralDrawings(t *testing.T) {
+	a, err := ParseAnswer(answerWith(`,"edit":true,"drawing":"e1","remove":["e1"]`), emptyScene, "", true)
+	if err != nil || !a.HasDrawing() || a.Removed != 1 || strings.Join(a.Remove, ",") != "e1" || a.DrawingId != "e1" {
+		t.Fatalf("one empty drawing: %+v %v", a, err)
+	}
+	if _, err := routeAnswer(a, "the agent's request"); err != nil {
+		t.Errorf("deleting an empty drawing is drawn, not %v", err)
+	}
+	// no drawing key: an agent's delete names the frames it removes
+	a, err = ParseAnswer(answerWith(`,"edit":true,"remove":["e1","e2","e3","e2"]`), emptyScene, "", true)
+	if err != nil || a.Removed != 3 || strings.Join(a.Remove, ",") != "e1,e2,e3" || a.DrawingId != "e1" {
+		t.Fatalf("three empty drawings: %+v %v", a, err)
+	}
+	a, err = ParseAnswer(answerWith(`,"edit":true,"remove":["e2","f1"]`), emptyScene, "", true)
+	if err != nil || strings.Join(a.Remove, ",") != "e2,box,f1" || a.Removed != 3 {
+		t.Fatalf("an empty and a full drawing: %+v %v", a, err)
+	}
+	if _, err := ParseAnswer(answerWith(`,"edit":true,"add":`+goodAdd+`,"remove":["e1"]`), emptyScene, "", true); err == nil ||
+		!strings.Contains(err.Error(), "deletes the drawing") {
+		t.Errorf("a delete that also adds is refused, got %v", err)
 	}
 }
 
