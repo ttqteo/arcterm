@@ -5010,6 +5010,7 @@ declare global {
         "agent:loginemail"?: string;
         "agent:sleeping"?: number;
         "agent:sleepfreed"?: number;
+        "agent:sleepasking"?: boolean;
         "agent:wakefailed"?: string;
         count?: number;
     };

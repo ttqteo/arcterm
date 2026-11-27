@@ -314,14 +314,15 @@ func (l livePairLink) Tokens(ctx context.Context, tab string, sinceMs int64) (in
 
 // Sleep puts the agent to sleep now, as a person's Sleep does: the same refusals (not idle, an engine run's, no session),
 // no compaction first, and the auto-sleep setting is not asked, because the sleep belongs to the round and not to the
-// idle rule. sleepAgent answers a sleep that background work stopped with no error and the work in Background: that is
-// an error here, so a refusal is never read as a sleep.
+// idle rule. An agent that waits on the person is refused too (autoSleepRefusal): a person's Sleep may leave its question
+// to wait, a round's may not. sleepAgent answers a sleep that background work stopped with no error and the work in
+// Background: that is an error here, so a refusal is never read as a sleep.
 func (l livePairLink) Sleep(ctx context.Context, tab string) error {
 	_, row, err := l.find(ctx, tab)
 	if err != nil {
 		return err
 	}
-	if err := sleepRefusal(row); err != nil {
+	if err := autoSleepRefusal(row); err != nil {
 		return err
 	}
 	rtn, err := sleepAgent(ctx, row, false)

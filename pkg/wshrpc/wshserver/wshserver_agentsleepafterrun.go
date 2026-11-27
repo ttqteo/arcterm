@@ -22,8 +22,9 @@ import (
 
 // The sleep of a brainstorm's agent once the run its Approve started is going: the frontend arms it as the run starts,
 // and the agent sleeps 15 seconds after the turn that writes the run's id into its brainstorm.json. Everything that
-// stops a person's Sleep (sleepRefusal, no session, background work) stops this one too, and the 30-minute rule then
-// covers the agent. Armed entries live in memory only: a wavesrv restart drops them.
+// stops a person's Sleep (sleepRefusal, no session, background work) stops this one too, and so does an agent that waits
+// on the person (autoSleepRefusal: a person's Sleep may leave its question to wait, this one nobody asked for), and the
+// 30-minute rule then covers the agent. Armed entries live in memory only: a wavesrv restart drops them.
 
 const (
 	// sleepAfterRunWait is how long the agent stays up once it has recorded its run and gone idle
@@ -223,7 +224,8 @@ func fireRunSleep(blockId string, e *runSleep) {
 		log.Printf("agent sleep after run: block %s is no longer tab %s's agent; it stays as it is\n", blockId, e.tabId)
 		return
 	}
-	if err := sleepRefusal(row); err != nil {
+	// not sleepRefusal: this sleep is nobody's choice, so an agent that waits on the person is refused too
+	if err := autoSleepRefusal(row); err != nil {
 		log.Printf("agent sleep after run: %v\n", err)
 		return
 	}

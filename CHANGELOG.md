@@ -32,6 +32,11 @@ and a picture given to a line that is not big.
 
 ## Unreleased
 
+### Changed
+
+- Sleep now works on an agent that is asking you a question or waiting for a permission: its question waits for you, an
+  answer you give while it sleeps reaches it when it wakes.
+
 ### Fixed
 
 - A question an agent in a paused run had open no longer disappears when the run pauses: you can answer it while the

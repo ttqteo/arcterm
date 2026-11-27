@@ -248,6 +248,12 @@ func (r *Registry) Suspend(oref string) bool {
 	return r.Update(oref, "", func(p *PendingAsk) { p.Suspended = true })
 }
 
+// Unsuspend undoes Suspend on oref's pending ask, if any, and reports whether there was one. A sleep whose write
+// failed before it ended the process calls it: the agent lives on, so its --wait caller's end must clear the ask again.
+func (r *Registry) Unsuspend(oref string) bool {
+	return r.Update(oref, "", func(p *PendingAsk) { p.Suspended = false })
+}
+
 // SuspendedAsk reports whether askId is the pending ask of oref and is marked Suspended.
 func (r *Registry) SuspendedAsk(oref, askId string) bool {
 	r.lock.Lock()

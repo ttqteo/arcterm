@@ -851,7 +851,11 @@ func TestPairLinkSleep(t *testing.T) {
 		want string
 	}{
 		{"a working agent", agentFacts(agentsTabA, "design", agentsBlockA, "claude", baseds.AgentState_Working), "not idle"},
-		{"an agent that asks the person", agentFacts(agentsTabA, "design", agentsBlockA, "claude", baseds.AgentState_Asking), "not idle"},
+		// the person's Sleep puts an agent that waits on the person to sleep; a pair round's sleep belongs to the round, and
+		// refuses it, naming what it waits on
+		{"an agent that asks the person", agentFacts(agentsTabA, "design", agentsBlockA, "claude", baseds.AgentState_Asking), "waiting on the person"},
+		{"an agent with a question open", askingClaude(""), "waiting on the person"},
+		{"an agent waiting on a permission", waitingClaude(""), "waiting on the person"},
 		{"an agent that is asleep", sleepingClaude(time.Now()), "already asleep"},
 	} {
 		t.Run("refuses "+c.name, func(t *testing.T) {

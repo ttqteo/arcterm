@@ -55,6 +55,22 @@ func screenPickKeys(moves int) []string {
 // menu, an MCP tool's): the person answers it in the terminal.
 var errNotAnswerable = errors.New("this prompt is answered in the terminal")
 
+// errAgentAsleep is the refusal of an answer for an agent that is asleep. Its Allow and Deny type keys into a PTY that
+// has no process, and Deny's DropAll would take away the summary the sleeping agent's read-only card shows. The wake's
+// nudge makes the resumed agent retry the tool, which raises a fresh prompt.
+var errAgentAsleep = errors.New("agent is asleep; wake it and it will ask again")
+
+// blockAsleep reports whether blockId is an agent that sleeps: agent:sleeping is set and its process is over (a mark over
+// a running process is stale, as in sleepAgent). A block that cannot be read is not asleep: the answer is typed as before.
+func blockAsleep(ctx context.Context, blockId string) bool {
+	meta, err := readBlockMeta(ctx, blockId)
+	if err != nil || metaMillis(meta, waveobj.MetaKey_AgentSleeping) <= 0 {
+		return false
+	}
+	exited, _ := controllerExited(blockId)
+	return exited
+}
+
 // permLock makes changing a queue and publishing its snapshot one step, so two changes cannot publish in the
 // other order from the one they were taken in (the card would then show a queue the registry already dropped).
 // Answer holds it from the claim to the drop, so a double click cannot answer the next prompt too.
@@ -106,6 +122,9 @@ func (ws *WshServer) AgentPermissionAnswerCommand(ctx context.Context, data wshr
 	oref, err := waveobj.ParseORef(data.ORef)
 	if err != nil || oref.OType != waveobj.OType_Block {
 		return fmt.Errorf("invalid block oref %q", data.ORef)
+	}
+	if blockAsleep(ctx, oref.OID) {
+		return errAgentAsleep
 	}
 	if err := answerPermission(data, oref.OID); err != nil {
 		return err

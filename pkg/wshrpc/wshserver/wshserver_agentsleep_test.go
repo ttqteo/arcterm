@@ -5,6 +5,7 @@ package wshserver
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -15,10 +16,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wavetermdev/waveterm/pkg/agentask"
 	"github.com/wavetermdev/waveterm/pkg/agentmsg"
+	"github.com/wavetermdev/waveterm/pkg/agentsleep"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/memusage"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
+	"github.com/wavetermdev/waveterm/pkg/wps"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
 
@@ -584,8 +588,6 @@ func TestSleepCommandRefusals(t *testing.T) {
 		want string
 	}{
 		{"working", agentFacts(agentsTabA, "design", agentsBlockA, "claude", baseds.AgentState_Working), nil, "not idle"},
-		{"waiting on a permission", agentFacts(agentsTabA, "design", agentsBlockA, "claude", baseds.AgentState_Waiting), nil, "not idle"},
-		{"asking", agentFacts(agentsTabA, "design", agentsBlockA, "claude", baseds.AgentState_Asking), nil, "not idle"},
 		{"already asleep", sleepingClaude(time.Now()), nil, "already asleep"},
 		{"a run's worker", agentFacts(agentsTabA, "design", agentsBlockA, "claude", baseds.AgentState_Idle),
 			[]*waveobj.Run{{OID: "run-1", Phases: []waveobj.RunPhase{{WorkerOrefs: []string{"tab:" + agentsTabA}}}}}, "run"},
@@ -1092,5 +1094,526 @@ func TestSetViewingExpires(t *testing.T) {
 	}
 	if got := viewingTabs(time.Now()); len(got) != 1 || !got[agentsTabC] {
 		t.Errorf("viewing = %v, want only the latest push", got)
+	}
+}
+
+// Sleeping an agent that waits on the person (a question open, a permission prompt up): it sleeps with its ask kept, and
+// its wake carries what the person answered meanwhile.
+
+// askingClaude is an awake claude agent whose AskUserQuestion is open: its row reads asking whatever its status says (the
+// arc mod's card skips agent-hook's asking report, and Claude's idle_prompt reports idle a minute into the dialog).
+func askingClaude(transcriptPath string) agentTabFacts {
+	tf := idleClaude(transcriptPath)
+	tf.OpenAsk = true
+	return tf
+}
+
+// waitingClaude is an awake claude agent at a permission prompt: its status reads waiting.
+func waitingClaude(transcriptPath string) agentTabFacts {
+	tf := agentFacts(agentsTabA, "design", agentsBlockA, "claude", baseds.AgentState_Waiting)
+	tf.Status.TranscriptPath = transcriptPath
+	return tf
+}
+
+// keptAskWorld swaps in an empty ask registry holding one pending ask (askId) on agentsBlockA, and returns the block's
+// oref.
+func keptAskWorld(t *testing.T, askId string) string {
+	t.Helper()
+	swap(t, &agentask.GlobalRegistry, agentask.MakeRegistry())
+	oref := blockORef(agentsBlockA)
+	agentask.GlobalRegistry.Set(oref, agentask.PendingAsk{AskId: askId, BlockId: agentsBlockA, Questions: askData(oref, false).Questions, Ts: 1})
+	return oref
+}
+
+func TestSleepRefusalLetsAnAgentWaitingOnThePersonThrough(t *testing.T) {
+	cases := map[string]agentTabFacts{
+		"a question open":         askingClaude(""),
+		"an asking status":        agentFacts(agentsTabA, "design", agentsBlockA, "claude", baseds.AgentState_Asking),
+		"waiting on a permission": waitingClaude(""),
+	}
+	for name, tf := range cases {
+		row := rowOf(t, tf)
+		if err := sleepRefusal(row); err != nil {
+			t.Errorf("%s: sleepRefusal = %v, want the agent let through", name, err)
+		}
+		if !awaitsPerson(row) {
+			t.Errorf("%s: awaitsPerson = false, want true", name)
+		}
+	}
+	for name, tf := range map[string]agentTabFacts{
+		"idle":    idleClaude(""),
+		"working": agentFacts(agentsTabA, "design", agentsBlockA, "claude", baseds.AgentState_Working),
+	} {
+		if awaitsPerson(rowOf(t, tf)) {
+			t.Errorf("%s: awaitsPerson = true, want false", name)
+		}
+	}
+}
+
+func TestSleepRefusalStillRefusesWhatItDid(t *testing.T) {
+	owned := []*waveobj.Run{{OID: "run-1", Phases: []waveobj.RunPhase{{WorkerOrefs: []string{"tab:" + agentsTabA}}}}}
+	runRow := func(tf agentTabFacts) *agentRow {
+		rows := buildAgentRoster(&agentRosterFacts{Tabs: []agentTabFacts{tf}, Runs: owned})
+		if len(rows) != 1 {
+			t.Fatalf("roster = %+v, want one row", rows)
+		}
+		return &rows[0]
+	}
+	cases := []struct {
+		name string
+		row  *agentRow
+		want string
+	}{
+		{"a working agent", rowOf(t, agentFacts(agentsTabA, "design", agentsBlockA, "claude", baseds.AgentState_Working)), "not idle"},
+		{"an agent that is asleep", rowOf(t, sleepingClaude(time.Now())), "already asleep"},
+		{"a run's worker", runRow(idleClaude("")), "run-1"},
+		{"a run's worker that is asking", runRow(askingClaude("")), "run-1"},
+		{"a harness that cannot resume", &agentRow{AgentInfo: wshrpc.AgentInfo{Name: "design", Harness: "codex", State: wshrpc.AgentsState_Idle}}, "cannot resume"},
+	}
+	for _, c := range cases {
+		if err := sleepRefusal(c.row); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: sleepRefusal = %v, want a refusal that says %q", c.name, err, c.want)
+		}
+	}
+}
+
+// the person's Sleep, and Clean Slate's, put an agent that waits on the person to sleep; compaction first is skipped for
+// it: /compact typed into an open dialog would answer or dismiss it, and the loop that finishes a compaction's sleep skips
+// asking rows, so that sleep would never come
+func TestSleepAskingAgentGoesStraightToSleepWithoutCompacting(t *testing.T) {
+	setup := func(t *testing.T, tf agentTabFacts) (*sleepWorld, *int) {
+		t.Helper()
+		w := newSleepWorld(t, claudeMeta())
+		swap(t, &compacts, map[string]pendingCompact{})
+		sent := new(int)
+		swap(t, &sendCompact, func(string) bool { *sent++; return true })
+		swap(t, &currentSleepSettings, func() agentsleep.Settings {
+			return agentsleep.Settings{Enabled: true, After: 30 * time.Minute, Compact: true, CompactAt: 100_000}
+		})
+		tf.HasStream = true
+		w.install(&agentRosterFacts{Tabs: []agentTabFacts{tf}})
+		return w, sent
+	}
+	transcript := func(t *testing.T) string {
+		return writeTranscript(t, "abc", usageLine(time.Now().Add(-2*time.Minute), 150_000))
+	}
+	t.Run("an idle agent in the same setup compacts first", func(t *testing.T) {
+		w, sent := setup(t, idleClaude(transcript(t)))
+		rtn, err := (&WshServer{}).AgentsSleepCommand(context.Background(), wshrpc.CommandAgentsSleepData{Tab: agentsTabA})
+		if err != nil || rtn == nil || !rtn.Compacting || *sent != 1 {
+			t.Fatalf("rtn = %+v, err = %v, compactions sent = %d, want Compacting after one: the setup must pay for a compaction", rtn, err, *sent)
+		}
+		if got := w.eventLog(); len(got) != 0 {
+			t.Errorf("events = %v, want nothing slept yet", got)
+		}
+	})
+	for name, tf := range map[string]func(string) agentTabFacts{"a question open": askingClaude, "waiting on a permission": waitingClaude} {
+		t.Run(name, func(t *testing.T) {
+			w, sent := setup(t, tf(transcript(t)))
+			rtn, err := (&WshServer{}).AgentsSleepCommand(context.Background(), wshrpc.CommandAgentsSleepData{Tab: agentsTabA})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if rtn.Compacting || rtn.FreedBytes != 21000 || *sent != 0 {
+				t.Fatalf("rtn = %+v, compactions sent = %d, want it slept at once with no compaction", rtn, *sent)
+			}
+			if got := w.eventLog(); !slices.Equal(got, []string{"meta", "destroy"}) {
+				t.Errorf("events = %v, want the meta write, then the destroy", got)
+			}
+		})
+	}
+}
+
+// the ask is marked suspended before the process tree goes: with the arc mod a Claude question is a `wsh ask --wait` inside
+// the tree, and its end would otherwise clear the ask before the person could answer it. The asking mark rides the same
+// meta write as agent:sleeping.
+func TestSleepAgentOfAnAskingAgentSuspendsItsAskBeforeTheDestroy(t *testing.T) {
+	w := newSleepWorld(t, claudeMeta())
+	oref := keptAskWorld(t, "ask-sleep-kept")
+	var suspendedAtDestroy bool
+	realDestroy := destroyBlock
+	swap(t, &destroyBlock, func(id string) {
+		suspendedAtDestroy = agentask.GlobalRegistry.SuspendedAsk(oref, "ask-sleep-kept")
+		realDestroy(id)
+	})
+	var writes []waveobj.MetaMapType
+	realUpdate := updateBlockMeta
+	swap(t, &updateBlockMeta, func(ctx context.Context, id string, m waveobj.MetaMapType) error {
+		writes = append(writes, m)
+		return realUpdate(ctx, id, m)
+	})
+
+	rtn, err := sleepAgent(context.Background(), rowOf(t, askingClaude(writeTranscript(t, "abc"))), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rtn.FreedBytes != 21000 {
+		t.Errorf("result = %+v, want 21000 bytes freed", rtn)
+	}
+	if got := w.eventLog(); !slices.Equal(got, []string{"meta", "destroy"}) {
+		t.Fatalf("events = %v, want the meta write, then the destroy", got)
+	}
+	if !suspendedAtDestroy {
+		t.Error("the controller was destroyed before the ask was suspended: its --wait caller's end would clear it")
+	}
+	if len(writes) != 1 {
+		t.Fatalf("meta writes = %v, want one", writes)
+	}
+	if _, ok := writes[0][waveobj.MetaKey_AgentSleeping]; !ok || writes[0][waveobj.MetaKey_AgentSleepAsking] != true {
+		t.Errorf("meta write = %v, want agent:sleeping and agent:sleepasking: true in the same write", writes[0])
+	}
+	if p, ok := agentask.GlobalRegistry.Get(oref); !ok || p.AskId != "ask-sleep-kept" || !p.Suspended {
+		t.Errorf("pending ask = %+v (%v), want the question kept, suspended", p, ok)
+	}
+}
+
+// a permission prompt is no ask in the registry: the sleep still marks the agent, and a registry with nothing to suspend
+// is no failure
+func TestSleepAgentOfAPermissionWaitingAgentMarksItAsAsking(t *testing.T) {
+	w := newSleepWorld(t, claudeMeta())
+	swap(t, &agentask.GlobalRegistry, agentask.MakeRegistry())
+	if _, err := sleepAgent(context.Background(), rowOf(t, waitingClaude(writeTranscript(t, "abc"))), false); err != nil {
+		t.Fatal(err)
+	}
+	if w.metaValue(waveobj.MetaKey_AgentSleepAsking) != true || w.metaValue(waveobj.MetaKey_AgentSleeping) == nil {
+		t.Errorf("agent:sleepasking = %v, agent:sleeping = %v, want both set", w.metaValue(waveobj.MetaKey_AgentSleepAsking), w.metaValue(waveobj.MetaKey_AgentSleeping))
+	}
+	if got := w.eventLog(); !slices.Equal(got, []string{"meta", "destroy"}) {
+		t.Errorf("events = %v, want the meta write, then the destroy", got)
+	}
+}
+
+// a sleep that fails before the kill clears the mark: the process lives on, so its --wait caller must clear the ask as
+// before
+func TestSleepAgentWhoseMetaWriteFailsLeavesTheAskUnsuspended(t *testing.T) {
+	w := newSleepWorld(t, claudeMeta())
+	oref := keptAskWorld(t, "ask-sleep-failed")
+	swap(t, &updateBlockMeta, func(context.Context, string, waveobj.MetaMapType) error { return errors.New("database is locked") })
+
+	_, err := sleepAgent(context.Background(), rowOf(t, askingClaude(writeTranscript(t, "abc"))), false)
+	if err == nil || !strings.Contains(err.Error(), "database is locked") {
+		t.Fatalf("err = %v, want the write's error", err)
+	}
+	if got := w.eventLog(); len(got) != 0 {
+		t.Errorf("events = %v, want nothing destroyed", got)
+	}
+	if agentask.GlobalRegistry.SuspendedAsk(oref, "ask-sleep-failed") {
+		t.Error("the ask stayed suspended after the sleep failed")
+	}
+	if _, ok := agentask.GlobalRegistry.Get(oref); !ok {
+		t.Error("the ask was lost with the failed sleep")
+	}
+}
+
+// an agent slept idle has no ask to keep: nothing is suspended, and a stale asking mark from an earlier sleep never rides
+// into this one
+func TestSleepAgentOfAnIdleAgentSuspendsNoAskAndClearsAStaleAskingMark(t *testing.T) {
+	meta := claudeMeta()
+	meta[waveobj.MetaKey_AgentSleepAsking] = true
+	w := newSleepWorld(t, meta)
+	oref := keptAskWorld(t, "ask-idle-sleep")
+
+	if _, err := sleepAgent(context.Background(), rowOf(t, idleClaude(writeTranscript(t, "abc"))), false); err != nil {
+		t.Fatal(err)
+	}
+	if agentask.GlobalRegistry.SuspendedAsk(oref, "ask-idle-sleep") {
+		t.Error("an idle agent's sleep suspended an ask")
+	}
+	if v := w.metaValue(waveobj.MetaKey_AgentSleepAsking); v != nil {
+		t.Errorf("agent:sleepasking = %v, want it deleted: the agent slept idle", v)
+	}
+	if w.metaValue(waveobj.MetaKey_AgentSleeping) == nil {
+		t.Error("agent:sleeping was not written")
+	}
+}
+
+const (
+	wantSleepNudgeHead = "You were put to sleep while waiting on the person; carry on from where you stopped."
+	wantSleepNudgeTail = "If you were waiting on an answer or a permission that is not above, ask again."
+	wantHeldAnswerLine = "While you were asleep, the person answered your question: A or B? → B"
+)
+
+// markedSleepingMeta is a sleeping agent's meta as a sleep that found it waiting on the person writes it.
+func markedSleepingMeta() waveobj.MetaMapType {
+	meta := sleepingMeta(time.Now())
+	meta[waveobj.MetaKey_AgentSleepAsking] = true
+	return meta
+}
+
+// holdAnAnswer gives blockORef's agent an answer held for its wake: the person picked B for its question while it slept.
+// The registry it uses is the one in place.
+func holdAnAnswer(t *testing.T, oref string) {
+	t.Helper()
+	old := agentask.HoldAnswer
+	agentask.HoldAnswer = func(string) bool { return true }
+	t.Cleanup(func() { agentask.HoldAnswer = old })
+	agentask.GlobalRegistry.Set(oref, agentask.PendingAsk{AskId: "ask-held", BlockId: agentsBlockA, Questions: askData(oref, false).Questions, Ts: 1})
+	if delivered, err := agentask.DeliverAnswer(oref, "", []baseds.AgentAnswerItem{{SelectedIndexes: []int{1}}}); err != nil || !delivered {
+		t.Fatalf("DeliverAnswer = (%v, %v), want the answer held", delivered, err)
+	}
+}
+
+// the wake's one delivery: the nudge with the held answers, a blank line, then the person's message. Two deliveries back
+// to back race the TUI's queued input.
+func TestWakeOfAnAskingSleeperDeliversTheNudgeAndTheMessageAsOne(t *testing.T) {
+	w := newSleepWorld(t, markedSleepingMeta())
+	installSleeping(w)
+	w.status = func(int) baseds.AgentStatusData { return readyStatus() }
+	swap(t, &agentask.GlobalRegistry, agentask.MakeRegistry())
+	oref := blockORef(agentsBlockA)
+	holdAnAnswer(t, oref)
+
+	if err := (&WshServer{}).AgentsWakeCommand(context.Background(), wshrpc.CommandAgentsWakeData{Tab: agentsTabA, Message: "carry on"}); err != nil {
+		t.Fatal(err)
+	}
+	want := wantSleepNudgeHead + "\n" + wantHeldAnswerLine + "\n" + wantSleepNudgeTail + "\n\ncarry on"
+	if got := w.deliveries(); len(got) != 1 || got[0].blockId != agentsBlockA || got[0].text != want {
+		t.Fatalf("delivered %+v, want one message to the agent's block: %q", got, want)
+	}
+	if got := w.eventLog(); got[len(got)-2] != "meta" || got[len(got)-1] != "deliver" {
+		t.Errorf("events = %v, want the sleep marks cleared before the delivery", got)
+	}
+	for _, key := range []string{waveobj.MetaKey_AgentSleeping, waveobj.MetaKey_AgentSleepFreed, waveobj.MetaKey_AgentSleepAsking} {
+		if v := w.metaValue(key); v != nil {
+			t.Errorf("%s = %v, want it deleted with the other sleep marks", key, v)
+		}
+	}
+	if left := agentask.TakeHeldAnswers(oref); len(left) != 0 {
+		t.Errorf("held answers %+v stayed after the wake carried them", left)
+	}
+}
+
+// a Wake with no message (the Wake button, Clean Slate's undo) still tells the agent it slept: the nudge goes alone
+func TestWakeOfAnAskingSleeperWithNoMessageDeliversTheNudgeAlone(t *testing.T) {
+	w := newSleepWorld(t, markedSleepingMeta())
+	installSleeping(w)
+	w.status = func(int) baseds.AgentStatusData { return readyStatus() }
+	swap(t, &agentask.GlobalRegistry, agentask.MakeRegistry())
+
+	if err := (&WshServer{}).AgentsWakeCommand(context.Background(), wshrpc.CommandAgentsWakeData{Tab: agentsTabA}); err != nil {
+		t.Fatal(err)
+	}
+	want := wantSleepNudgeHead + "\n" + wantSleepNudgeTail
+	if got := w.deliveries(); len(got) != 1 || got[0].text != want {
+		t.Fatalf("delivered %+v, want the nudge alone: %q", got, want)
+	}
+}
+
+// Start fresh opens a new conversation: there is nothing to carry on from, so no nudge, and what the person answered
+// meanwhile is dropped with the conversation it answered
+func TestWakeFreshOfAnAskingSleeperDeliversNoNudgeAndDropsTheHeldAnswers(t *testing.T) {
+	w := newSleepWorld(t, markedSleepingMeta())
+	installSleeping(w)
+	w.status = func(int) baseds.AgentStatusData { return readyStatus() }
+	swap(t, &agentask.GlobalRegistry, agentask.MakeRegistry())
+	oref := blockORef(agentsBlockA)
+	holdAnAnswer(t, oref)
+
+	if err := (&WshServer{}).AgentsWakeCommand(context.Background(), wshrpc.CommandAgentsWakeData{Tab: agentsTabA, Fresh: true, Message: "start over"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := w.deliveries(); len(got) != 1 || got[0].text != "start over" {
+		t.Fatalf("delivered %+v, want the message alone", got)
+	}
+	if left := agentask.TakeHeldAnswers(oref); len(left) != 0 {
+		t.Errorf("held answers %+v stayed after Start fresh", left)
+	}
+	if v := w.metaValue(waveobj.MetaKey_AgentSleepAsking); v != nil {
+		t.Errorf("agent:sleepasking = %v, want it deleted", v)
+	}
+	// and with no message, nothing at all is sent
+	w = newSleepWorld(t, markedSleepingMeta())
+	installSleeping(w)
+	w.status = func(int) baseds.AgentStatusData { return readyStatus() }
+	if err := (&WshServer{}).AgentsWakeCommand(context.Background(), wshrpc.CommandAgentsWakeData{Tab: agentsTabA, Fresh: true}); err != nil {
+		t.Fatal(err)
+	}
+	if got := w.deliveries(); len(got) != 0 {
+		t.Errorf("delivered %+v, want nothing for a Start fresh with no message", got)
+	}
+}
+
+// an agent slept idle wakes as it always did: the message alone, with no nudge. Answers held for it (none are, but a
+// registry may hold some from another sleep) are not taken by a wake that sends no nudge.
+func TestWakeWithoutTheAskingMarkDeliversOnlyTheMessage(t *testing.T) {
+	w := newSleepWorld(t, sleepingMeta(time.Now()))
+	installSleeping(w)
+	w.status = func(int) baseds.AgentStatusData { return readyStatus() }
+	swap(t, &agentask.GlobalRegistry, agentask.MakeRegistry())
+	oref := blockORef(agentsBlockA)
+	holdAnAnswer(t, oref)
+
+	if err := (&WshServer{}).AgentsWakeCommand(context.Background(), wshrpc.CommandAgentsWakeData{Tab: agentsTabA, Message: "carry on"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := w.deliveries(); len(got) != 1 || got[0].text != "carry on" {
+		t.Fatalf("delivered %+v, want the message alone", got)
+	}
+	if left := agentask.TakeHeldAnswers(oref); len(left) != 1 {
+		t.Errorf("held answers = %+v, want the one still held: no nudge carried it", left)
+	}
+}
+
+// a wake that never sees the agent report in delivers no nudge, so the answers it would have carried stay held for the
+// next wake rather than vanishing
+func TestWakeOfAnAskingSleeperThatDoesNotReportInKeepsItsHeldAnswers(t *testing.T) {
+	w := newSleepWorld(t, markedSleepingMeta())
+	installSleeping(w)
+	swap(t, &wakeReadyTimeout, 40*time.Millisecond)
+	swap(t, &wakePoll, 5*time.Millisecond)
+	w.status = func(int) baseds.AgentStatusData { return staleStatus() }
+	swap(t, &agentask.GlobalRegistry, agentask.MakeRegistry())
+	oref := blockORef(agentsBlockA)
+	holdAnAnswer(t, oref)
+
+	if err := (&WshServer{}).AgentsWakeCommand(context.Background(), wshrpc.CommandAgentsWakeData{Tab: agentsTabA, Message: "carry on"}); err == nil {
+		t.Fatal("a wake whose agent never reported in reported success")
+	}
+	if got := w.deliveries(); len(got) != 0 {
+		t.Errorf("delivered %+v, want nothing to an agent that did not report in", got)
+	}
+	if left := agentask.TakeHeldAnswers(oref); len(left) != 1 {
+		t.Errorf("held answers = %+v, want the one still held", left)
+	}
+}
+
+// the kept ask does not outlive the wake: the resumed agent asks again, and an answer to the old one would type into a
+// picker that is not there
+func TestWakeRetiresKeptAsk(t *testing.T) {
+	t.Run("a suspended ask nobody answered", func(t *testing.T) {
+		w := newSleepWorld(t, markedSleepingMeta())
+		installSleeping(w)
+		w.status = func(int) baseds.AgentStatusData { return readyStatus() }
+		askId := "ask-wake-retired-" + t.Name()
+		oref := keptAskWorld(t, askId)
+		waiter := agentask.GlobalRegistry.RegisterWaiter(askId)
+		if !agentask.GlobalRegistry.Suspend(oref) {
+			t.Fatal("Suspend found no pending ask")
+		}
+		pendingAtRestart := true
+		w.onResync = func() { _, pendingAtRestart = agentask.GlobalRegistry.Get(oref) }
+
+		if err := (&WshServer{}).AgentsWakeCommand(context.Background(), wshrpc.CommandAgentsWakeData{Tab: agentsTabA}); err != nil {
+			t.Fatal(err)
+		}
+		if pendingAtRestart {
+			t.Error("the kept ask was still pending when the process restarted")
+		}
+		if _, ok := agentask.GlobalRegistry.Get(oref); ok {
+			t.Error("the kept ask outlived the wake")
+		}
+		events := wps.Broker.ReadEventHistory(wps.Event_AgentAsk, oref, 1)
+		if len(events) != 1 {
+			t.Fatalf("ask events = %d, want the Cleared one", len(events))
+		}
+		if got, ok := events[0].Data.(baseds.AgentAskData); !ok || !got.Cleared || got.AskId != askId || got.ORef != oref {
+			t.Errorf("last ask event = %#v, want Cleared for %s", events[0].Data, askId)
+		}
+		select {
+		case res := <-waiter:
+			if !res.Cancelled {
+				t.Errorf("waiter resolved %+v, want cancelled", res)
+			}
+		default:
+			t.Error("the ask's waiter was never resolved")
+		}
+	})
+	t.Run("an ask that was never suspended stays", func(t *testing.T) {
+		w := newSleepWorld(t, markedSleepingMeta())
+		installSleeping(w)
+		w.status = func(int) baseds.AgentStatusData { return readyStatus() }
+		oref := keptAskWorld(t, "ask-wake-not-suspended-"+t.Name())
+
+		if err := (&WshServer{}).AgentsWakeCommand(context.Background(), wshrpc.CommandAgentsWakeData{Tab: agentsTabA}); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := agentask.GlobalRegistry.Get(oref); !ok {
+			t.Error("an ask no sleep had suspended was retired by a wake")
+		}
+	})
+	t.Run("start fresh retires it too", func(t *testing.T) {
+		w := newSleepWorld(t, markedSleepingMeta())
+		installSleeping(w)
+		w.status = func(int) baseds.AgentStatusData { return readyStatus() }
+		oref := keptAskWorld(t, "ask-wake-fresh-"+t.Name())
+		agentask.GlobalRegistry.Suspend(oref)
+
+		if err := (&WshServer{}).AgentsWakeCommand(context.Background(), wshrpc.CommandAgentsWakeData{Tab: agentsTabA, Fresh: true}); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := agentask.GlobalRegistry.Get(oref); ok {
+			t.Error("Start fresh left the old conversation's question pending")
+		}
+	})
+}
+
+// a marked block whose process runs (a forced restart that was no wake left the marks) is cleared by the wake without a
+// restart; the process came back with no nudge, so the wake delivers it with the message, and takes the answers held while
+// the block really slept
+func TestWakeMarkedAwakeOfAnAskingSleeperDeliversTheNudgeWithTheMessage(t *testing.T) {
+	w := newSleepWorld(t, markedSleepingMeta())
+	w.install(&agentRosterFacts{Tabs: []agentTabFacts{idleClaude(writeTranscript(t, "abc"))}})
+	swap(t, &agentask.GlobalRegistry, agentask.MakeRegistry())
+	oref := blockORef(agentsBlockA)
+	holdAnAnswer(t, oref)
+
+	if err := (&WshServer{}).AgentsWakeCommand(context.Background(), wshrpc.CommandAgentsWakeData{Tab: agentsTabA, Message: "carry on"}); err != nil {
+		t.Fatal(err)
+	}
+	if w.resyncs != 0 {
+		t.Error("a running agent was restarted")
+	}
+	for _, key := range []string{waveobj.MetaKey_AgentSleeping, waveobj.MetaKey_AgentSleepFreed, waveobj.MetaKey_AgentSleepAsking} {
+		if v := w.metaValue(key); v != nil {
+			t.Errorf("%s = %v, want it deleted", key, v)
+		}
+	}
+	want := wantSleepNudgeHead + "\n" + wantHeldAnswerLine + "\n" + wantSleepNudgeTail + "\n\ncarry on"
+	if got := w.deliveries(); len(got) != 1 || got[0].text != want {
+		t.Fatalf("delivered %+v, want the nudge and the message as one: %q", got, want)
+	}
+	if left := agentask.TakeHeldAnswers(oref); len(left) != 0 {
+		t.Errorf("held answers %+v stayed after the wake took them", left)
+	}
+}
+
+// while a marked wake is in flight, a second wake that joins it delivers only its own message: the first one's delivery
+// carries the nudge, and a second nudge would tell the agent twice
+func TestWakeMarkedAwakeJoiningAnAskingWakeAddsNoSecondNudge(t *testing.T) {
+	w := newSleepWorld(t, markedSleepingMeta())
+	w.install(&agentRosterFacts{Tabs: []agentTabFacts{idleClaude(writeTranscript(t, "abc"))}})
+	swap(t, &agentask.GlobalRegistry, agentask.MakeRegistry())
+	oref := blockORef(agentsBlockA)
+	holdAnAnswer(t, oref)
+	call := &wakeCall{done: make(chan struct{})}
+	wakeMu.Lock()
+	wakeCalls[agentsBlockA] = call
+	wakeMu.Unlock()
+	t.Cleanup(func() {
+		wakeMu.Lock()
+		delete(wakeCalls, agentsBlockA)
+		wakeMu.Unlock()
+	})
+
+	errs := make(chan error, 1)
+	go func() {
+		errs <- (&WshServer{}).AgentsWakeCommand(context.Background(), wshrpc.CommandAgentsWakeData{Tab: agentsTabA, Message: "carry on"})
+	}()
+	time.Sleep(30 * time.Millisecond)
+	if len(w.deliveries()) != 0 {
+		t.Fatal("the message reached an agent whose wake had not finished")
+	}
+	close(call.done)
+	if err := <-errs; err != nil {
+		t.Fatal(err)
+	}
+	if got := w.deliveries(); len(got) != 1 || got[0].text != "carry on" {
+		t.Errorf("delivered %+v, want the joiner's message alone", got)
+	}
+	if left := agentask.TakeHeldAnswers(oref); len(left) != 1 {
+		t.Errorf("held answers = %+v, want the one still held for the wake in flight to carry", left)
+	}
+	if w.metaValue(waveobj.MetaKey_AgentSleepAsking) == nil {
+		t.Error("the joiner cleared the asking mark of a wake that was still in flight")
 	}
 }
