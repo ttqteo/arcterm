@@ -200,6 +200,15 @@ would write the spec to), question 1 in `question` with `n: 1`, its part created
 `history: []`. In Claude Code a hook reveals the pane when your file-writing tool creates the file;
 in any other harness run `wsh ui reveal brainstorm:<topic>` from your terminal.
 
+**Ideas from earlier sessions.** Before that first write, run `wsh sessionideas list --project . --json`: what a
+scan found floated in this project's past sessions and never decided. Each idea on the brainstorm's topic that is not
+`dropped` goes into the first write as a note: `id` is `idea-` and the first 8 characters of its `id`,
+`"kind": "note"`, `"from": "an earlier session"`, `title` and `gist` its `gist`, and `body` its `quotes` verbatim with
+who said each, its `why`, and the session's title and the day it was said (`saidts`). Leave out the ideas the topic
+does not touch; when none fits, or the command fails, add nothing and say nothing about it. Ask nothing about a note.
+A question may build on one, and the part that answer writes names it in `from`. When the user turns one of these
+ideas down in the brainstorm, run `wsh sessionideas drop <id>` so the scan and the Brief stop offering it.
+
 **On an answer**, in that one write: append the exchange to `history` (with `n`, `q`, the question's `why`, `a`
 and `into`; when the question offered `options`, copy them into the entry, with the question's `judge`
 beside them when it has one, and set `picked` to the index of the one the user's answer is, to the

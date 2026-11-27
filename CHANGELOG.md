@@ -58,6 +58,10 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- Long chunk and initiative titles show in full. In the agent panel's Initiative tab, the title and the chunk the
+  agent is on take up to three lines, and the chunk under the cursor or with its menu open shows its whole title.
+  Plan to review, in Chat and in the panel, shows each proposed chunk whole.
+- A chunk's status menu in the Initiative tab closes when you click its row again or click outside the tab.
 - The To review sheet on Jarvis shows each proposal whole, with its initiative under it, and scrolls when the list is
   long. Before, a long list squeezed every row to fit and cut its text off.
 - A run on Codex or agy with no model picked shows its harness where it read "default": the plan review's stage line,
@@ -89,6 +93,8 @@ and a picture given to a line that is not big.
   them, and the Brief's Since you looked, a toast and a Waiting on you line after 7 days say when there is something to
   review. Storage's Sessions confirm says how many of the sessions it would move were never scanned, and offers Scan them
   first. `wsh sessionideas` lists, keeps and drops them. <!-- big --> <!-- shot: 1.11.0-session-ideas.webp -->
+- A brainstorm brings back the ideas from your earlier sessions in its project that are on its topic: each shows under
+  What the agent found, with what was said and when. One you turn down in the brainstorm leaves the Brief too.
 - Pin a project folder in the Agent tree (right-click it → Pin folder): it stays in the tree after its last agent and
   terminal close, faint and marked with a pin, so you can start the next agent there from its menu. Unpin folder lets it go.
 - With a Vietnamese (Telex) or other input method on, the chat box's `/` command menu and `@` list show while you type,

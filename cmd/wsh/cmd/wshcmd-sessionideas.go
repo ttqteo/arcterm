@@ -5,8 +5,11 @@ package cmd
 
 import (
 	"fmt"
+	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
 )
@@ -32,9 +35,30 @@ func sessionIdeaLine(i wshrpc.SessionIdea) string {
 	return fmt.Sprintf("%s\t%s\t%s\t%s", i.ID, i.State, i.Gist, target)
 }
 
+// ideasForProject is the ideas found in the sessions of the project that holds dir. An idea's ProjectPath is its
+// project's main checkout, so dir folds to its own first: a linked worktree or a subfolder still finds its project's
+// ideas.
+func ideasForProject(ideas []wshrpc.SessionIdea, dir string) []wshrpc.SessionIdea {
+	root := jarvis.MainCheckout(dir)
+	out := []wshrpc.SessionIdea{}
+	for _, i := range ideas {
+		if i.ProjectPath != "" && sameDir(i.ProjectPath, root) {
+			out = append(out, i)
+		}
+	}
+	return out
+}
+
+func sameDir(a, b string) bool {
+	return strings.EqualFold(filepath.ToSlash(filepath.Clean(a)), filepath.ToSlash(filepath.Clean(b)))
+}
+
 var sessionIdeasListCmd = &cobra.Command{
-	Use:     "list",
-	Short:   "list every idea: id, state (review, kept or dropped), gist and the initiative it would go on",
+	Use:   "list [--project <dir>]",
+	Short: "list every idea: id, state (review, kept or dropped), gist and the initiative it would go on",
+	Long: `List the ideas a scan found. --project <dir> lists only those found in the sessions of the project that holds
+dir ("." for the current folder; a linked worktree or a subfolder finds its project's). --json prints each idea whole,
+with its quotes, why, source session and the day it was said.`,
 	Args:    cobra.NoArgs,
 	PreRunE: preRunSetupRpcClient,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -42,10 +66,18 @@ var sessionIdeasListCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if isJSON(cmd) {
-			return jsonOut(data.Ideas)
+		ideas := data.Ideas
+		if dir, _ := cmd.Flags().GetString("project"); dir != "" {
+			abs, err := filepath.Abs(dir)
+			if err != nil {
+				return err
+			}
+			ideas = ideasForProject(ideas, abs)
 		}
-		for _, i := range data.Ideas {
+		if isJSON(cmd) {
+			return jsonOut(ideas)
+		}
+		for _, i := range ideas {
 			fmt.Println(sessionIdeaLine(i))
 		}
 		return nil
@@ -88,6 +120,7 @@ var sessionIdeasDropCmd = &cobra.Command{
 
 func init() {
 	sessionIdeasListCmd.Flags().Bool("json", false, "JSON output")
+	sessionIdeasListCmd.Flags().String("project", "", "only the ideas of the project that holds this folder")
 	sessionIdeasKeepCmd.Flags().String("label", "", "name the chunk (or the new idea) this, instead of the idea's gist")
 	sessionIdeasCmd.AddCommand(sessionIdeasListCmd, sessionIdeasKeepCmd, sessionIdeasDropCmd)
 	rootCmd.AddCommand(sessionIdeasCmd)

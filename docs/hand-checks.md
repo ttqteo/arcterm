@@ -24,6 +24,13 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
 
 ## 2026-11-27
 
+- [ ] (arcterm) **Long chunk titles show whole** (`railinitiativepane.tsx`, `planreviewsection.tsx`). Typecheck only.
+  On an agent linked to an initiative with a long title and long chunk labels, open the Initiative tab (◇ or `i`): the
+  title and the "On N · …" line wrap to at most three lines, Open in Jarvis and Mark done stay on the first line; arrow
+  through Chunks: the cursor row wraps its whole label, Work on this sits beside its first line, the row before folds
+  back to one line without jumping the list oddly; click a row: it stays whole while its status menu is open. A Plan to
+  review card in Chat (and the panel's section) wraps each proposed chunk, its ✓ ✎ ✕ centered beside it. Click the
+  open row again: the menu closes; open it and click the terminal: it closes too.
 - [ ] (arcterm) **Quick note from the rail.** Click Note on the nav rail (above Translate), then press `Mod`+`Shift`+`N`
   from a focused agent terminal: each time Search opens on the Notes scope with the caret in an empty title; type a
   title, `Enter`, a body, `Ctrl`+`Enter` saves it and the Notes list selects it; `Esc` from an empty draft lands on the

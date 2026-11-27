@@ -244,10 +244,11 @@ export function PlanReviewSection({
                                             className="min-w-0 rounded-[5px] border border-edge-strong bg-surface-code px-[6px] py-[2px] text-[12.5px] font-medium text-primary outline-none focus:border-accent"
                                         />
                                     ) : (
+                                        // the whole title, over as many lines as it takes: a chunk is decided on what it says
                                         <span
-                                            title={r.label}
+                                            data-plan-row-label
                                             className={cn(
-                                                "truncate text-[12.5px] font-medium",
+                                                "break-words text-[12.5px] font-medium leading-[1.45]",
                                                 r.state === "dropped" ? "text-ink-faint line-through" : "text-primary"
                                             )}
                                         >
