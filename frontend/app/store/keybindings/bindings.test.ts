@@ -39,6 +39,7 @@ import {
     scanAtom,
     startCleanup,
 } from "@/app/view/agents/canvasgallerystore";
+import { NO_CONTEXT } from "@/app/view/agents/canvasmarks";
 import {
     attachCanvas,
     detachCanvas,
@@ -912,7 +913,10 @@ describe("brainstorm pane Escape", () => {
         openBrainstormBoard("a1", "Split.dc.html");
         setMarking("a1", true);
         expect(back().when!(nav)).toBe(true);
-        updateCanvas("a1", (s) => ({ ...s, marks: [{ x: 1, y: 1, w: 40, h: 40, note: "" }] }));
+        updateCanvas("a1", (s) => ({
+            ...s,
+            marks: [{ id: 1, x: 1, y: 1, w: 40, h: 40, note: "", ctx: NO_CONTEXT, shot: null }],
+        }));
         expect(back().when!(nav)).toBe(false);
         updateCanvas("a1", (s) => ({ ...s, marks: [] }));
         expect(back().when!(nav)).toBe(true);
@@ -2200,7 +2204,7 @@ describe("agent canvas mode keys", () => {
     });
 
     describe("Ctrl+Enter sends the marks", () => {
-        const MARK = { x: 0, y: 0, w: 20, h: 20, note: "" };
+        const MARK = { id: 1, x: 0, y: 0, w: 20, h: 20, note: "", ctx: NO_CONTEXT, shot: null };
         afterEach(() => vi.unstubAllGlobals());
 
         it("only while marking with at least one mark", () => {
@@ -2541,7 +2545,10 @@ describe("Agent centre modes", () => {
         const model = focusedWithCanvas();
         setAgentView("a1", "canvas", 1);
         setMarking("a1", true);
-        updateCanvas("a1", (s) => ({ ...s, marks: [{ x: 0, y: 0, w: 20, h: 20, note: "" }] }));
+        updateCanvas("a1", (s) => ({
+            ...s,
+            marks: [{ id: 1, x: 0, y: 0, w: 20, h: 20, note: "", ctx: NO_CONTEXT, shot: null }],
+        }));
         const send = find("agent:canvas-send", model);
         expect(send.when!(typing)).toBe(true);
         for (const mode of CENTER_MODES) {

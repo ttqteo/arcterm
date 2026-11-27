@@ -3,7 +3,7 @@
 
 import { atom } from "jotai";
 import { afterEach, describe, expect, it } from "vitest";
-import type { Mark } from "./canvasmarks";
+import { NO_CONTEXT, type Mark } from "./canvasmarks";
 import { isUnseen } from "./canvasmodel";
 import {
     attachCanvas,
@@ -23,7 +23,7 @@ import {
 
 const IDS = ["a1", "a2"];
 const A = { topic: "t", dir: "/p/.superpowers/design/t", projectDir: "/p" };
-const MARK: Mark = { x: 0, y: 0, w: 20, h: 20, note: "n" };
+const MARK: Mark = { id: 1, x: 0, y: 0, w: 20, h: 20, note: "n", ctx: NO_CONTEXT, shot: null };
 const BASE = "http://127.0.0.1:5005/canvas/tok";
 const BOARDS = [
     { name: "Main.dc.html", x: 0, y: 0, w: 1440, h: 900 },
@@ -202,12 +202,38 @@ describe("board switches", () => {
 });
 
 describe("marking", () => {
-    it("drops the marks when marking ends", () => {
+    // Try mode: the board runs again, and the marks wait for the next Mark or a Send
+    it("keeps the marks when marking ends", () => {
         attachCanvas("a1", A);
         withMarks("a1");
         setMarking("a1", false);
         expect(getCanvas("a1").marking).toBe(false);
+        expect(getCanvas("a1").marks).toEqual([MARK]);
+    });
+
+    it("keeps the marks when marking starts again", () => {
+        attachCanvas("a1", A);
+        withMarks("a1");
+        setMarking("a1", false);
+        setMarking("a1", true);
+        expect(getCanvas("a1")).toMatchObject({ marking: true, marks: [MARK] });
+    });
+
+    it("still drops marks kept through Try when the board is switched or the canvas is left", () => {
+        attachCanvas("a1", A);
+        setCanvasMode("a1", "canvas", 1);
+        withMarks("a1");
+        setMarking("a1", false);
+        selectCanvasBoard("a1", "States.dc.html");
         expect(getCanvas("a1").marks).toEqual([]);
+        withMarks("a1");
+        setMarking("a1", false);
+        stepCanvasBoard("a1", 1);
+        expect(getCanvas("a1").marks).toEqual([]);
+        withMarks("a1");
+        setMarking("a1", false);
+        setCanvasMode("a1", "terminal", 2);
+        expect(getCanvas("a1")).toMatchObject({ marking: false, marks: [] });
     });
 
     it("clears the marks and keeps marking on", () => {

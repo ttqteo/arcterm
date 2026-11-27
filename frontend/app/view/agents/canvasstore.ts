@@ -109,7 +109,7 @@ export function setCanvasMode(agentId: string, mode: "terminal" | "canvas", now:
     );
 }
 
-// marks are drawn over one board where it sits on screen, so any board or view switch drops them
+// marks are drawn over one board where it sits on screen, so any board or view switch drops them (marking off does not)
 function withTab(s: CanvasState, tab: string | null): CanvasState {
     return tab === ALL_TAB ? { ...s, all: true, marks: [] } : { ...s, all: false, board: tab ?? s.board, marks: [] };
 }
@@ -129,8 +129,11 @@ export function selectCanvasBoard(agentId: string, board: string): void {
     updateCanvas(agentId, (s) => ({ ...s, board, marks: [] }));
 }
 
+// Turning marking off is Try mode on a clickable board: the unsent marks stay for the next Mark and for a Send. The
+// switches above (and leaving the canvas) still drop them, since a mark's picture and place belong to the board it was
+// drawn on
 export function setMarking(agentId: string, on: boolean): void {
-    updateCanvas(agentId, (s) => ({ ...s, marking: on, marks: on ? s.marks : [] }));
+    updateCanvas(agentId, (s) => ({ ...s, marking: on }));
 }
 
 export function clearMarks(agentId: string): void {
