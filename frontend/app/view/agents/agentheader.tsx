@@ -39,6 +39,7 @@ import {
     Diamond,
     Ellipsis,
     FileCheck,
+    Focus,
     Folder,
     GitCommitHorizontal,
     GitFork,
@@ -63,12 +64,15 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { openBoardsAtom } from "../boards/boardentries";
 import { closeAgentChord, confirmCloseSession, interruptAgent } from "./agentactions";
 import { centerModeAtom, pairSelAtom, showTerminal } from "./agentcenter";
+import { pruneMissing } from "./agentgrid";
 import { contextLevel, contextTokens } from "./agentrailmodel";
 import { openRailInitiative } from "./agentrailstore";
 import type { AgentsViewModel } from "./agents";
 import { askingLabel, askSentKey, formatTokens, projectOf, type AgentVM } from "./agentsviewmodel";
 import { setAgentView, type AgentView } from "./agentview";
 import { backgroundActivity, launchedServers, shownState, type ShownState } from "./bgactivity";
+import { boardFocusTarget } from "./boardfocus";
+import { boardFocusedAtom, toggleBoardFocus } from "./boardfocusstore";
 import { brainstormTabDot } from "./brainstormband";
 import { waitsOnUser } from "./brainstormmodel";
 import { closeBrainstorm } from "./brainstormsend";
@@ -87,7 +91,15 @@ import { DONE_TITLE, doneSuggestion, ORIGIN_DONE_TITLE, startedRunLanded } from 
 import { fallAsleepLabel, useFallingAsleep } from "./fallasleepstore";
 import { isFinalStageId } from "./finalstage";
 import { floatModeAtom, toggleFloat } from "./floatstore";
-import { agentGridAtom, currentGrid, gridEligibility, gridProjects, openInSplit, removeFromGrid } from "./gridstore";
+import {
+    agentGridAtom,
+    currentGrid,
+    gridEligibility,
+    gridProjects,
+    openInSplit,
+    projectGridsAtom,
+    removeFromGrid,
+} from "./gridstore";
 import { canHandToPhone, isHandedOver } from "./handtophone";
 import { inHeader } from "./headerbuttons";
 import { headerButtonsAtom } from "./headerbuttonsstore";
@@ -598,6 +610,11 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     const cellCount = gridState.ids.includes(agent.id) ? gridState.ids.filter((id) => cellIds.has(id)).length : 1;
     const splitShown = cellCount > 1;
     const canSplit = blockId != null && !ended;
+    // Focus board (boardfocus.ts): shown only while the grid on screen is a board split, and acts on that split
+    const gridsProject = useAtomValue(projectGridsAtom).project ?? "";
+    const focusTarget = splitShown && !fullscreen ? boardFocusTarget(pruneMissing(gridState, cellIds)) : null;
+    const boardFocused = useAtomValue(boardFocusedAtom);
+    const boardFocusOn = focusTarget != null && boardFocused(gridsProject, focusTarget);
 
     // The header's width level (headermodel.headerWidth), read from its own width: a 2x2 split's cell is narrow. Every
     // cluster stays; their words shorten, and Split, Float and Fullscreen fold into More.
@@ -1169,6 +1186,23 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                     >
                         <Columns2 size={15} strokeWidth={1.8} aria-hidden />
                         {splitShown ? <span className="tabular-nums">{cellCount}</span> : null}
+                    </button>
+                ) : null}
+                {focusTarget != null ? (
+                    <button
+                        type="button"
+                        data-board-focus={boardFocusOn ? "on" : "off"}
+                        aria-pressed={boardFocusOn}
+                        aria-label={boardFocusOn ? "Restore layout" : "Focus board"}
+                        onClick={() => toggleBoardFocus(gridsProject, focusTarget)}
+                        title={
+                            boardFocusOn
+                                ? "Restore layout: the sidebar, the rail and the split as they were"
+                                : "Focus board: fold the sidebar, hide the rail, chat 3 : board 7"
+                        }
+                        className={cn(ICON_BTN, boardFocusOn && ICON_BTN_ON)}
+                    >
+                        <Focus size={15} strokeWidth={1.8} aria-hidden />
                     </button>
                 ) : null}
                 {blockId != null ? (

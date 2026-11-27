@@ -45,6 +45,14 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
   only. On a build with this `wsh`, Fork a Claude agent from Chat (or a session from the palette) and send nothing:
   the new row reads "Fork: <title>", loses "resuming…" within a few seconds of the TUI loading, and shows in
   `wsh agents list`. Fork that fork: its name is still one "Fork: ".
+- [ ] (arcterm) **Focus board in the agent header** (`boardfocusstore.ts`, `agentheader.tsx`). Typecheck, unit tests and
+  a new step 7b in `task verify:ui -- boards-chat`, not run live. Open a board beside an agent (the board card's Open):
+  a ⛶ Focus board button shows in the header left of More; with no board split it is gone. Press it: the agent tree
+  folds on its slide, the rail goes, the chat takes 3 parts of 10 and the board 7 (the split's line jumps, as a sash
+  drag does), the button lights. Press again: tree, rail and split come back as they were. Drag the sash or press `d`
+  while focused: the button goes unlit, and a press focuses again. Press twice fast mid-fold: the tree ends folded or
+  open, never stuck half-way.
+
 - [ ] (arcterm) **Long chunk titles show whole** (`railinitiativepane.tsx`, `planreviewsection.tsx`). Typecheck only.
   On an agent linked to an initiative with a long title and long chunk labels, open the Initiative tab (◇ or `i`): the
   title and the "On N · …" line wrap to at most three lines, Open in Jarvis and Mark done stay on the first line; arrow
