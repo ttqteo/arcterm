@@ -542,14 +542,20 @@ export function InitiativeDetail({
                     </button>
                 </div>
                 <Menu open={menu === menuId} className="right-1 top-[calc(100%+2px)] w-[184px]">
-                    {/* the level decides which chunk opens next; a section at the top, as Status below it is */}
-                    <MenuHead>Priority</MenuHead>
-                    {CHUNK_PRIORITIES.map((p) => (
-                        <PriorityItem key={p} value={p} current={level} onPick={pickPriority} />
-                    ))}
-                    <MenuRule />
-                    <PriorityItem value="" current={level} onPick={pickPriority} />
-                    <MenuRule />
+                    {later ? null : (
+                        // the level decides which chunk opens next; a section at the top, as Status below it is. A chunk
+                        // saved for later has no place in the order of work (Builder's call 16), so its menu has no
+                        // level to set, as it has no moves; "Not later" brings the section back with the chunk.
+                        <>
+                            <MenuHead>Priority</MenuHead>
+                            {CHUNK_PRIORITIES.map((p) => (
+                                <PriorityItem key={p} value={p} current={level} onPick={pickPriority} />
+                            ))}
+                            <MenuRule />
+                            <PriorityItem value="" current={level} onPick={pickPriority} />
+                            <MenuRule />
+                        </>
+                    )}
                     <MenuHead>Status</MenuHead>
                     {STATUSES.map((s) => (
                         <MenuItem
