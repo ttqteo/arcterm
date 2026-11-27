@@ -15,10 +15,55 @@ Decide per question, not per session: would the user understand this better by s
 reading it? Layouts, visual options side by side, states of a screen, polish: draw it. This holds
 in a plain chat as much as in a brainstorm. Whenever you are about to draw a UI mockup, or ask the
 user to choose between options that differ in UI (a layout, where something sits, a click flow),
-draw boards, one per option (**Options**, below), never ASCII boxes in your reply. A small mockup
+draw boards (**Options**, below), never ASCII boxes in your reply. A small mockup
 that fits in a few lines (a status line, one button, a label) is the exception: first ask "draw a
 board, or keep it as text?". Scope, trade-offs and conceptual choices with no layout stay in the
 terminal: a question about a UI topic is not automatically a visual question.
+
+## Clickable or static
+
+Once you draw, decide per question whether the person should be able to click through it:
+
+- **A flow, a state or an interaction** (a menu that opens, steps in order, a toggle or tab that
+  changes what the screen shows): draw a **clickable prototype**. The person tries it in the pane
+  (**Try**) and leaves feedback on the live screen (**Mark**); a flow shown as separate frames has
+  to be imagined.
+- **Layout or look** (where things sit, density, hierarchy, color, type): static boards.
+- A prototype costs several times a static board (a four- or five-screen flow is roughly 20–30k
+  tokens of output, written once), so draw one for a question that is about the flow, not to dress
+  up a layout choice.
+- **The person may ask for one.** When they ask to try it, or for a clickable version, draw the
+  prototype on the same canvas even where you chose static boards.
+
+A prototype is stateful screens: menus, tabs, toggles and inputs work and change state, and screens
+link to each other. It has no motion between states and no reactive fake data (add, delete, typing
+that updates a list); a change whose motion matters gets a board of its own that plays it
+(`reference/craft.md`, Motion). It is a main board plus one child file per screen;
+`reference/format.md` ("Prototypes and variant slots") has the rules and the full markup. A small
+one, three files:
+
+```
+project/
+  Main.dc.html     state: screen; mounts each screen in its own <sc-if>, passes go="{{ go }}"
+  Inbox.dc.html    root: data-dc-screen="Inbox"; a button calls this.props.go?.('snoozed')
+  Snoozed.dc.html  root: data-dc-screen="Snoozed"; holds the slot data-dc-slot="list", variants A and B
+```
+
+and their entries in `canvas.json` (`boards` and `order`):
+
+```json
+{
+  "boards": {
+    "Main.dc.html": {"x":0,"y":0,"w":880,"h":560,"title":"Inbox flow, clickable","is_interactive":true},
+    "Inbox.dc.html": {"x":960,"y":0,"w":880,"h":560,"title":"Inbox screen","part_of":"Main.dc.html"},
+    "Snoozed.dc.html": {"x":1920,"y":0,"w":880,"h":560,"title":"Snoozed screen","part_of":"Main.dc.html"}
+  },
+  "order": ["Main.dc.html","Inbox.dc.html","Snoozed.dc.html"]
+}
+```
+
+Arc shows that as one board: a `part_of` file is no tab, no gallery board and no option of a
+question. In your reply say that the board is clickable and name its screens.
 
 ## Starting a canvas
 
@@ -58,28 +103,44 @@ terminal: a question about a UI topic is not automatically a visual question.
    derive the state list from the component and its stores, not the brief, and map each state to
    the artboard that draws it; name any state left undrawn. End your turn.
 4. On feedback, read the files you will change, edit them in place, and go back to step 2. Small
-   requested changes stay small.
+   requested changes stay small. A mark line from a prototype names a screen and each slot's letter
+   (`screen "Snoozed", slot list = B`): the screen is its `data-dc-screen` value, so search `project/`
+   for it to find the file, and change that screen's file, not the whole prototype.
 
 Hand over and stop. Render, screenshot or re-read the files only when the user asks.
 
 ## Options
 
-When a choice is between options that differ in UI:
+When a choice is between options that differ in UI, take the path that fits how much they differ:
 
-- One artboard per option, named by its label: `A-<slug>.dc.html`, `B-<slug>.dc.html`, …, `title`
-  `Option A: <what it is>`, and in that order in `canvas.json`'s `order`, so the labels, the files
-  and the order agree. The options lead the canvas; they need no `Main.dc.html`.
-- Every option draws the same content: they differ in layout and treatment only (**Designing well**).
+- **They differ in one region of a screen** (a list, a header, a card): ONE board, with a variant slot
+  on that region and one variant per option, in the order of the options (`data-dc-variant` `A`, `B`,
+  `C`…; syntax in `reference/format.md`, "Variant slots"). Arc puts an A/B/C chip on the region, so the
+  person flips between the options in place and keeps their spot in the screen. Name the file for
+  what it shows (`Inbox.dc.html`; a prototype's main board is `Main.dc.html`), give it a `title`
+  that says the region and the letters (`Inbox: the list, options A–C`), and put it first in
+  `order`. In a prototype, open the main board on the screen that holds the slot. Draw no chip or
+  switch of your own.
+- **They differ in the whole screen**: one artboard per option, named by its label: `A-<slug>.dc.html`,
+  `B-<slug>.dc.html`, …, `title` `Option A: <what it is>`, and in that order in `canvas.json`'s `order`,
+  so the labels, the files and the order agree. The options lead the canvas; they need no
+  `Main.dc.html`.
+- Either way, every option draws the same content: they differ in layout and treatment only
+  (**Designing well**).
 - In a plain session, `<topic>` names the feature under discussion (`council-rooms`), not the
   question; a later question about the same feature adds its boards to the same canvas.
 - Draw, run `wsh ui reveal canvas:<topic>` as **The loop** says, then ask the question in your reply,
-  one line per option led by its label, and end the turn. The user answers with the label.
-- Once the user picks, move the boards of the options not chosen to
+  one line per option led by its label (its letter on a slot), and end the turn. The user answers
+  with the label.
+- Once the user picks, on the board-per-option path move the boards of the options not chosen to
   `.superpowers/design/<topic>/unchosen/`, beside `project/`, and drop their entries from
   `canvas.json` (`boards` and `order`). The files stay on disk but leave the Canvas gallery, and no
-  run reads them as its spec (**The canvas as a spec**).
-- In an `arc:brainstorm`, its **Mockups** rule also lists the boards on the question's part, in the
-  order of the question's options.
+  run reads them as its spec (**The canvas as a spec**). On the slot path rewrite the board without
+  the slot instead: keep the picked variant's markup, delete the other variants and drop the
+  `data-dc-slot` and `data-dc-variant` attributes.
+- In an `arc:brainstorm`, its **Options as boards** rule lists the board or boards on the question's
+  part: one board per option in the options' order, or the one board with the slot, whose id the
+  question names in `question.slot`.
 
 ## Cleaning up
 
@@ -94,9 +155,10 @@ they can also clean up in arcterm's Agent → Canvas gallery. A canvas is never 
 A canvas can settle a run's design: Build this… on the canvas, or a plan's `**Prototype:**` line,
 makes the plan reviewer read it as the spec and the final verifier check the built UI against
 every board; the reviewer wants a scenario step for every `.dc.html` in `project/`, whatever its
-title. So before a canvas becomes a spec, move the boards of the options not chosen to
-`unchosen/` and drop them from `canvas.json` (**Options**): each board left in `project/` then
-shows one screen or state the built UI can reach, and its `title` says which.
+title, except a screen file (its entry has `part_of`), which its prototype's step covers. So before
+a canvas becomes a spec, move the boards of the options not chosen to `unchosen/` and drop them
+from `canvas.json`, and collapse a slot to the picked variant (**Options**): each board left in
+`project/` then shows one screen or state the built UI can reach, and its `title` says which.
 
 ## The design system
 
@@ -115,10 +177,12 @@ accents sharing chroma and lightness. State the look you chose in a line.
   `{"v":3,"createdOnFiles":{"v":1,"at":"<now, RFC 3339>"},"title":"<canvas name>","replaces":"<older topic, if it redraws one>","notreplaces":[],"launch":{"view":"canvas"},"pages":[],"boards":{"Main.dc.html":{"x":0,"y":0,"w":1440,"h":900,"title":"<what it shows>"}},"order":["Main.dc.html"],"notes":{},"designSystems":[]}`.
   One `boards` entry and one `order` slot per artboard, `Main.dc.html` first. `x`,`y`,`w`,`h` are
   the frame in CSS px: 80 px between frames in a row, 120 between rows. Add `"is_interactive":
-  true` to an artboard with working controls, and `"expand": "fill"` to a fluid one. Arc reads
-  the frame, `title`, `order`, `createdOnFiles.at`, `replaces` and `notreplaces`; the other keys
-  take effect when the canvas is imported into claude.ai Design. `at` is when the canvas was
-  made (Arc orders versions by it): set it once, never on a rewrite. Leave `replaces` out unless
+  true` to an artboard with working controls (a prototype's main board), `"part_of": "<main board
+  file>"` to a prototype's screen file, and `"expand": "fill"` to a fluid one. Arc reads the frame,
+  `title`, `order`, `is_interactive`, `part_of`, `createdOnFiles.at`, `replaces` and `notreplaces`;
+  the other keys take effect when the canvas is imported into claude.ai Design. A prototype's screens
+  follow their main board in `boards` and `order`. `at` is when the canvas was made (Arc orders
+  versions by it): set it once, never on a rewrite. Leave `replaces` out unless
   the canvas redraws an older one (**Starting a canvas**); `notreplaces` lists the topics the
   person said are not older versions of this canvas: Arc writes it, you keep it. When revising,
   keep every key you are not changing, those two included: the gallery's Link and × write them
@@ -182,8 +246,9 @@ Rules that bite (each fails silently):
 - Network: only a Google Fonts `css2` `<link>` in `<helmet>`. Icons: inline stroke SVG.
 - No `<iframe>`, `<object>`, `<embed>` or global keydown handlers.
 
-Events, state, repeats, branches, child components and links between artboards
-(`<a href="Other.dc.html">`): `reference/format.md`. Read it before a first artboard.
+Events, state, repeats, branches, child components, links between artboards
+(`<a href="Other.dc.html">`), prototype screens and variant slots: `reference/format.md`. Read it
+before a first artboard.
 
 ## Designing well
 

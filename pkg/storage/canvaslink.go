@@ -135,7 +135,8 @@ type canvasFrame struct {
 // the folder's), not now: a canvas that gets its first canvas.json today must not turn into the newest of its project,
 // which would flip its pair's older / newer direction.
 func minimalCanvasIndex(dir string) map[string]json.RawMessage {
-	boards, mod := canvasBoards(dir, []string{"Main" + canvasBoardExt})
+	// there is no index to say which files are a prototype's screens, so every .dc.html on disk is a board here
+	boards, mod := canvasBoards(dir, []string{"Main" + canvasBoardExt}, nil)
 	if mod == 0 {
 		mod = modMs(dir)
 	}

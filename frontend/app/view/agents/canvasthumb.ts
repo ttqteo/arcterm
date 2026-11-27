@@ -12,6 +12,7 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { previewStale } from "./canvasgallery";
 import { visibleRect, type DOMRectLike } from "./canvasmarks";
 import { tauriSendIO } from "./canvassend";
+import { withOverlaysHidden } from "./protocapture";
 
 export const THUMB_W = 480;
 // how long a board stays loaded before it counts as settled: its own scripts and fonts finish by then
@@ -22,6 +23,10 @@ export type ThumbIO = {
     thumbTime(path: string): Promise<number>;
     // the part of the board inside its scroll pane, in CSS px; null when it is not on screen
     boardRect(el: HTMLElement): DOMRectLike | null;
+    // runs fn (the window capture) with Arc's own overlays hidden from the board's frame, as the A/B/C chips are, so the
+    // picture holds none of them (protocapture.ts withOverlaysHidden). A member of the io so a suite without a window can
+    // pass fn straight through
+    hideOverlays<T>(frameEl: HTMLElement, fn: () => Promise<T>): Promise<T>;
     capture(): Promise<Blob>;
     crop(png: Blob, rect: DOMRectLike): Promise<Blob>;
     scale(png: Blob, width: number): Promise<Blob>;
@@ -55,7 +60,9 @@ export async function maybeCaptureThumb(
         if (rect == null || rect.width < 1 || rect.height < 1) {
             return;
         }
-        const png = await io.scale(await io.crop(await io.capture(), rect), THUMB_W);
+        // the chips come back before the picture is scaled and written: only the window capture needs them gone
+        const shot = await io.hideOverlays(a.boardEl, async () => io.crop(await io.capture(), rect));
+        const png = await io.scale(shot, THUMB_W);
         await io.write(path, new Uint8Array(await png.arrayBuffer()));
         done.add(a.topicDir);
     } catch (e) {
@@ -76,6 +83,7 @@ export const tauriThumbIO: ThumbIO = {
         const clip = el.closest("[data-canvas-scroll], [data-canvas-viewer-scroll]");
         return clip == null ? null : visibleRect(el.getBoundingClientRect(), clip.getBoundingClientRect());
     },
+    hideOverlays: withOverlaysHidden,
     capture: tauriSendIO.capture,
     crop: tauriSendIO.crop,
     // never up: a capture narrower than the card needs no blur

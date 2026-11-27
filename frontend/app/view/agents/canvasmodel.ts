@@ -17,7 +17,8 @@ export const ALL_TAB = "all";
 const MAIN_BOARD = "Main.dc.html";
 
 // x/y/w/h are the board's frame on the canvas, in CSS px, as canvas.json lays it out; modifiedMs is the board file's
-// Last-Modified as the poller last read it (absent until it has, or when the server sent none)
+// Last-Modified as the poller last read it (absent until it has, or when the server sent none); interactive is
+// canvas.json's is_interactive being true: a board that is a clickable prototype, whose screens are other files
 export type CanvasBoard = {
     name: string;
     x: number;
@@ -25,6 +26,7 @@ export type CanvasBoard = {
     w: number;
     h: number;
     title?: string;
+    interactive?: true;
     modifiedMs?: number;
 };
 
@@ -52,6 +54,7 @@ function placeBoards(entries: { name: string; entry: unknown }[]): CanvasBoard[]
         const y = finite(entry, "y");
         const right = boards.reduce((m, b) => Math.max(m, b.x + b.w + BOARD_GAP), 0);
         const title = isRecord(entry) && typeof entry.title === "string" && entry.title ? entry.title : undefined;
+        const interactive = isRecord(entry) && entry.is_interactive === true;
         boards.push({
             name,
             x: x != null && y != null ? x : right,
@@ -59,20 +62,29 @@ function placeBoards(entries: { name: string; entry: unknown }[]): CanvasBoard[]
             w: boardSide(entry, "w") ?? DEFAULT_BOARD_W,
             h: boardSide(entry, "h") ?? DEFAULT_BOARD_H,
             ...(title != null ? { title } : {}),
+            ...(interactive ? { interactive: true as const } : {}),
         });
     }
     return boards;
 }
 
+// A screen of a clickable prototype: its canvas.json entry has a part_of naming the main board it belongs to. A screen
+// is drawn inside that board's page (a dc-import), so it is never a board of its own. A part_of that is not a
+// non-empty string reads as no part_of, and the file stays a board.
+function isPart(entry: unknown): boolean {
+    return isRecord(entry) && typeof entry.part_of === "string" && entry.part_of !== "";
+}
+
 // canvas.json is written by the design-local skill, not by arcterm, so anything malformed reads as the one board
-// every canvas has rather than as an error
+// every canvas has rather than as an error. A screen file (part_of) is not a board, whether or not order names it.
 export function boardsFromCanvasJson(json: unknown): CanvasBoard[] {
     const fallback = [MAIN_FALLBACK];
     if (!isRecord(json) || !isRecord(json.boards)) {
         return fallback;
     }
     const boards = json.boards;
-    const known = (n: unknown): n is string => typeof n === "string" && n.endsWith(BOARD_EXT) && n in boards;
+    const known = (n: unknown): n is string =>
+        typeof n === "string" && n.endsWith(BOARD_EXT) && n in boards && !isPart(boards[n]);
     let names = Array.isArray(json.order) ? json.order.filter(known) : [];
     if (names.length === 0) {
         names = Object.keys(boards).filter(known);
@@ -82,6 +94,16 @@ export function boardsFromCanvasJson(json: unknown): CanvasBoard[] {
         return fallback;
     }
     return placeBoards(names.map((name) => ({ name, entry: boards[name] })));
+}
+
+// the screen files boardsFromCanvasJson dropped, in canvas.json's key order. They are served beside the boards and
+// are never listed, but the poller reads their Last-Modified so that editing only a screen still reloads its prototype.
+export function partsFromCanvasJson(json: unknown): string[] {
+    if (!isRecord(json) || !isRecord(json.boards)) {
+        return [];
+    }
+    const boards = json.boards;
+    return Object.keys(boards).filter((n) => n.endsWith(BOARD_EXT) && isPart(boards[n]));
 }
 
 // the selected board: the one marks, Open in browser and the tabs act on. A name that isn't in the list (a

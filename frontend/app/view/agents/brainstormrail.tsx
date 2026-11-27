@@ -8,17 +8,17 @@
 // none) as a scaled live tile
 // headed by its option, tied to that option by optionHoverAtom. Clicking a tile opens that one board large, from the
 // agent's canvas state, in a dialog over the brainstorm pane (the question and the rail keep their widths under it); the
-// canvas's own marking works there, and a board tied to an option offers that option's pick under it.
+// canvas's own marking works there (a clickable prototype also runs there, Try | Mark), and a board tied to an option, or a
+// prototype whose slot the question names, offers that option's pick under it.
 
 import { modalBackdrop, modalPanel } from "@/app/element/motiontokens";
 import { useDimensionsWithCallbackRef } from "@/app/hook/useDimensions";
 import { getApi } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
-import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { atom, useAtom, useAtomValue, type PrimitiveAtom } from "jotai";
 import { atomFamily } from "jotai/utils";
-import { SquareCheck, SquareDashed, X } from "lucide-react";
+import { X } from "lucide-react";
 import { AnimatePresence, motion, MotionConfig } from "motion/react";
 import {
     createContext,
@@ -47,16 +47,18 @@ import {
     railReadout,
     railStacks,
     railTabs,
+    slotOptionFor,
     spikeUrl,
     type BoardPick,
     type BrainstormFile,
+    type BrainstormQuestion,
     type RailBoardHead,
     type RailGroup,
     type RailTab,
 } from "./brainstormmodel";
 import { sendBrainstorm } from "./brainstormsend";
 import { openBrainstormBoard, railBoardsAtom, type BrainstormState } from "./brainstormstore";
-import { MarkLayer, MarkTray } from "./canvasmarking";
+import { MarkLayer, MarkTray, ModeToggle } from "./canvasmarking";
 import {
     boardLabel,
     boardUrl,
@@ -69,8 +71,10 @@ import {
     withContentHeights,
 } from "./canvasmodel";
 import { BoardFrameView, CANVAS_TOP_PAD, ServerDown, useContentHeights, useSteadyFitWidth } from "./canvaspane";
-import { attachCanvas, canvasStateAtom, setMarking, type CanvasState } from "./canvasstore";
-import { SWAP_BTN, SWAP_BTN_ON, SWAP_PRIMARY_BTN } from "./swapbar";
+import { attachCanvas, canvasStateAtom, clearMarks, setMarking, type CanvasState } from "./canvasstore";
+import { boardPicksKey, markContext, type ProtoReport } from "./protomodel";
+import { slotPicksAtom } from "./protostore";
+import { SWAP_BTN, SWAP_PRIMARY_BTN } from "./swapbar";
 
 // The option index hovered or ticked in the question, or null. The options set it (and clear it), and so does a board's
 // tile in the rail: the option lights up beside the board it is tied to, and the board beside its option.
@@ -668,11 +672,52 @@ function RailSpikes({ base, canvas, spikes }: { base: string; canvas: string; sp
     );
 }
 
+// A chip pick on the question's slot previews its option: the option's row lights, as it does for the board's tile under
+// the pointer (optionHoverAtom). The pick is read off the board's stored picks (protostore), the one place a chip click
+// lands, so a pick stored before the board opened previews nothing until the person picks again. The answer is still
+// given by picking the option, so this only lights it. A letter with no option puts the row back, as does closing the board.
+function useSlotPreview(agentId: string, q: BrainstormQuestion | null, src: string | null): void {
+    const slot = q?.slot;
+    const key = src != null ? boardPicksKey(src) : "";
+    const letter = useAtomValue(slotPicksAtom(key))[slot ?? ""];
+    const seen = useRef({ key, letter });
+    const lit = useRef(false);
+    useEffect(() => {
+        // another board starts from its own picks, which are not a pick made now
+        if (seen.current.key !== key || seen.current.letter === letter) {
+            seen.current = { key, letter };
+            return;
+        }
+        seen.current = { key, letter };
+        const option = slot != null && letter != null ? slotOptionFor(q, slot, letter) : null;
+        if (option != null) {
+            lit.current = true;
+            globalStore.set(optionHoverAtom(agentId), option);
+        } else if (lit.current) {
+            lit.current = false;
+            globalStore.set(optionHoverAtom(agentId), null);
+        }
+    }, [key, letter]);
+    useEffect(
+        () => () => {
+            if (lit.current) {
+                globalStore.set(optionHoverAtom(agentId), null);
+            }
+        },
+        [agentId]
+    );
+}
+
 // The board the agent's canvas has selected, so [ and ] stepping it moves this view. It sits alone in the element
 // sendCanvasMarks reads for its picture (data-canvas-scroll around one data-canvas-board). The canvas poller fills the
 // state a beat after the tile's click, so the brainstorm's own board list and base stand in until it has. A board tied
 // to an option of the question on screen offers that option's pick under it (boardPick), sent as the option's row sends
-// it; the dialog closes once it is sent.
+// it; the dialog closes once it is sent. A prototype whose slot the question names offers the option whose letter the
+// slot's chip shows, and a chip pick there lights that option's row (useSlotPreview).
+//
+// A clickable prototype (board.interactive) opens in Try: nothing covers it, so it runs; Mark freezes it and draws boxes
+// (ModeToggle), and the marks stay across Try, each with the screen and variants it was drawn on (the board's report).
+// Closing the dialog drops them and the marking. A static board keeps its click-to-close cover.
 function WidenedBoard({
     agent,
     s,
@@ -693,44 +738,52 @@ function WidenedBoard({
     const [measureRef, , rect] = useDimensionsWithCallbackRef<HTMLDivElement>();
     const fitWidth = useSteadyFitWidth(rect?.width ?? 0);
     const [heights, reportHeight] = useContentHeights(`${cs.topic}:${cs.reloadKey}`);
-    // marks are drawn over the board on screen, so leaving it drops them and the marking mode with them
-    useEffect(() => () => setMarking(agent.id, false), [agent.id]);
+    // marks are drawn over the board on screen, so closing the dialog drops them and the marking mode with them. Marking
+    // off alone keeps them (Try), so this is the one place they go when the board is left
+    useEffect(
+        () => () => {
+            setMarking(agent.id, false);
+            clearMarks(agent.id);
+        },
+        [agent.id]
+    );
     const base = cs.base ?? s.base;
     const seen: CanvasState = cs.boards.length > 0 ? cs : { ...cs, boards: s.boards };
     const pane = cs.status === "probing" && base != null ? "board" : paneState(cs);
     const board = shownBoard(seen);
     const frame = canvasLayout(withContentHeights([board], heights), fitWidth).frames[0];
     const marking = cs.marking && pane === "board";
+    const interactive = board.interactive === true;
+    // what the board's page last reported of its screen and slots. A reloaded page (a new key: topic, reload and board)
+    // has reported nothing yet, so a report from the page before is not the one on screen. A static board reports none
+    const pageKey = `${cs.topic}:${cs.reloadKey}:${board.name}`;
+    const [proto, setProto] = useState<{ key: string; report: ProtoReport } | null>(null);
+    const report = proto != null && proto.key === pageKey ? proto.report : null;
+    const ctx = markContext(report);
+    const src = pane === "board" && base != null ? boardUrl(base, cs.topic, board.name) : null;
+    useSlotPreview(agent.id, question ? f.question : null, src);
     const shown = head(board.name) ?? {
         name: board.name,
         letter: null,
         label: board.title ?? boardLabel(board.name),
         option: null,
     };
-    const offer = boardPick(f, shown, question);
+    const offer = boardPick(f, shown, question, report);
+    // the tray holds the marks while marking and while any is unsent (Try keeps them), in the pick's place
+    const tray = marking || cs.marks.length > 0;
     return (
         <div data-brainstorm-rail-widened className="flex h-full min-h-0 flex-col">
             <div className="flex flex-none items-center gap-[8px] border-b border-border px-[16px] py-[8px]">
                 <div className="min-w-0 flex-1">
                     <BoardHead head={shown} letterClass="text-muted" />
                 </div>
-                <button
-                    type="button"
-                    data-brainstorm-rail-mark
-                    title={`Mark parts of the board (${formatChordString("m")})`}
-                    aria-pressed={marking}
+                <ModeToggle
+                    agentId={agent.id}
+                    marking={marking}
+                    interactive={interactive}
                     disabled={pane !== "board"}
-                    onClick={() => setMarking(agent.id, !cs.marking)}
-                    className={cn(SWAP_BTN, marking && SWAP_BTN_ON)}
-                >
-                    {/* on, the toggle reads as a ticked box, so it no longer looks like the same button turned orange */}
-                    {marking ? (
-                        <SquareCheck size={14} strokeWidth={1.8} aria-hidden />
-                    ) : (
-                        <SquareDashed size={14} strokeWidth={1.8} aria-hidden />
-                    )}
-                    Mark
-                </button>
+                    markProps={{ "data-brainstorm-rail-mark": "" }}
+                />
                 <button
                     type="button"
                     data-brainstorm-rail-close
@@ -762,14 +815,16 @@ function WidenedBoard({
                             frame={frame}
                             selected
                             tile={false}
-                            src={pane === "board" && base != null ? boardUrl(base, cs.topic, board.name) : null}
+                            src={src}
                             reloadKey={cs.reloadKey}
                             onOpen={onClose}
                             onContentHeight={(h) => reportHeight(board.name, h)}
+                            onProtoReport={(r) => setProto({ key: pageKey, report: r })}
                         >
                             {marking ? (
-                                <MarkLayer agentId={agent.id} marks={cs.marks} />
-                            ) : (
+                                <MarkLayer agentId={agent.id} marks={cs.marks} ctx={ctx} />
+                            ) : interactive ? null : (
+                                // a static board is closed by a click on it; a prototype in Try is run by one
                                 <button
                                     type="button"
                                     data-brainstorm-rail-unwiden
@@ -783,8 +838,8 @@ function WidenedBoard({
                     </div>
                 </div>
             )}
-            {marking ? (
-                <MarkTray agent={agent} marks={cs.marks} />
+            {tray ? (
+                <MarkTray agent={agent} marks={cs.marks} ctx={ctx} />
             ) : offer != null ? (
                 <BoardPickBar agent={agent} offer={offer} onSent={onClose} />
             ) : null}
@@ -792,8 +847,8 @@ function WidenedBoard({
     );
 }
 
-// under a board tied to an option: that option's pick, the one send the dialog offers. Marking replaces it with the
-// marks' tray, so the bottom of the dialog holds one send at a time
+// under a board tied to an option: that option's pick, the one send the dialog offers. The marks' tray replaces it while
+// marking and while any mark is unsent, so the bottom of the dialog holds one send at a time
 function BoardPickBar({ agent, offer, onSent }: { agent: AgentVM; offer: BoardPick; onSent: () => void }) {
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);

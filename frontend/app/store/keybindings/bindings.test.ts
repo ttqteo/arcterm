@@ -39,6 +39,7 @@ import {
     scanAtom,
     startCleanup,
 } from "@/app/view/agents/canvasgallerystore";
+import { NO_CONTEXT } from "@/app/view/agents/canvasmarks";
 import {
     attachCanvas,
     detachCanvas,
@@ -912,10 +913,32 @@ describe("brainstorm pane Escape", () => {
         openBrainstormBoard("a1", "Split.dc.html");
         setMarking("a1", true);
         expect(back().when!(nav)).toBe(true);
-        updateCanvas("a1", (s) => ({ ...s, marks: [{ x: 1, y: 1, w: 40, h: 40, note: "" }] }));
+        updateCanvas("a1", (s) => ({
+            ...s,
+            marks: [{ id: 1, x: 1, y: 1, w: 40, h: 40, note: "", ctx: NO_CONTEXT, shot: null }],
+        }));
         expect(back().when!(nav)).toBe(false);
         updateCanvas("a1", (s) => ({ ...s, marks: [] }));
         expect(back().when!(nav)).toBe(true);
+    });
+
+    it("in Try mode a drawn mark no longer holds Esc: it closes the opened board, which drops the marks with it", () => {
+        attachCanvas("a1", { topic: "oncall", dir: "C:\\p\\d", projectDir: "C:\\p", board: "Split.dc.html" });
+        openBrainstormBoard("a1", "Split.dc.html");
+        setMarking("a1", true);
+        updateCanvas("a1", (s) => ({
+            ...s,
+            marks: [{ id: 1, x: 1, y: 1, w: 40, h: 40, note: "", ctx: NO_CONTEXT, shot: null }],
+        }));
+        // marking with a mark: its note owns Esc
+        expect(back().when!(nav)).toBe(false);
+        // Try keeps the mark (marking off no longer drops it) and Esc is the board's again
+        setMarking("a1", false);
+        expect(getCanvas("a1")!.marks).toHaveLength(1);
+        expect(back().when!(nav)).toBe(true);
+        expect(claiming()).toEqual(["agent:brainstorm-back"]);
+        back().run(nav);
+        expect(pane()).toEqual({ board: null, designOpen: false });
     });
 
     it("on a board widened in the rail [ ] and ← → step its boards, never the surfaces or the agents", () => {
@@ -2200,16 +2223,22 @@ describe("agent canvas mode keys", () => {
     });
 
     describe("Ctrl+Enter sends the marks", () => {
-        const MARK = { x: 0, y: 0, w: 20, h: 20, note: "" };
+        const MARK = { id: 1, x: 0, y: 0, w: 20, h: 20, note: "", ctx: NO_CONTEXT, shot: null };
         afterEach(() => vi.unstubAllGlobals());
 
-        it("only while marking with at least one mark", () => {
+        it("only with at least one unsent mark, in Try as well as while marking", () => {
             setCanvasMode("a1", "canvas", 1);
             expect(active("agent:canvas-send")).toBe(false);
             setMarking("a1", true);
             expect(active("agent:canvas-send")).toBe(false);
             updateCanvas("a1", (s) => ({ ...s, marks: [MARK] }));
             expect(active("agent:canvas-send")).toBe(true);
+            // Try keeps the marks, and the tray (with its Send) stays on screen, so the key stays live
+            setMarking("a1", false);
+            expect(getCanvas("a1")!.marks).toHaveLength(1);
+            expect(active("agent:canvas-send")).toBe(true);
+            updateCanvas("a1", (s) => ({ ...s, marks: [] }));
+            expect(active("agent:canvas-send")).toBe(false);
         });
 
         it("stays live in a note input, and yields to a modal and other surfaces", () => {
@@ -2541,7 +2570,10 @@ describe("Agent centre modes", () => {
         const model = focusedWithCanvas();
         setAgentView("a1", "canvas", 1);
         setMarking("a1", true);
-        updateCanvas("a1", (s) => ({ ...s, marks: [{ x: 0, y: 0, w: 20, h: 20, note: "" }] }));
+        updateCanvas("a1", (s) => ({
+            ...s,
+            marks: [{ id: 1, x: 0, y: 0, w: 20, h: 20, note: "", ctx: NO_CONTEXT, shot: null }],
+        }));
         const send = find("agent:canvas-send", model);
         expect(send.when!(typing)).toBe(true);
         for (const mode of CENTER_MODES) {

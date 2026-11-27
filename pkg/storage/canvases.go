@@ -79,7 +79,7 @@ func ListCanvases(projects []string) []StorageCanvas {
 			dir := filepath.Join(design, topic)
 			meta := readCanvasMeta(canvasIndexPath(dir))
 			c := StorageCanvas{Topic: topic, Project: project, ProjectName: filepath.Base(project), DesignDir: design, Dir: dir, Bytes: dirSize(dir)}
-			c.Boards, c.ModTs = canvasBoards(dir, meta.Order)
+			c.Boards, c.ModTs = canvasBoards(dir, meta.Order, meta.Parts)
 			if c.ModTs == 0 {
 				c.ModTs = modMs(dir)
 			}
@@ -119,9 +119,11 @@ func canvasTopics(design string) []string {
 	return topics
 }
 
-// canvasBoards is the topic's board names (project/*.dc.html, extension stripped) and the newest board's mtime in
-// ms. order is canvas.json's "order", which comes first, for the boards that exist; the rest follow by name.
-func canvasBoards(topicDir string, order []string) ([]string, int64) {
+// canvasBoards is the topic's board names (project/*.dc.html, extension stripped) and the newest file's mtime in ms.
+// order is canvas.json's "order", which comes first, for the boards that exist; the rest follow by name. parts is
+// the files of a clickable prototype's screens (canvasMeta.Parts, nil when there is no canvas.json to say): a screen
+// is not a board, so it is left out of the names, but a change to it is a change to its canvas, so its mtime counts.
+func canvasBoards(topicDir string, order []string, parts map[string]bool) ([]string, int64) {
 	root := filepath.Join(topicDir, "project")
 	entries, _ := os.ReadDir(root)
 	found := map[string]bool{}
@@ -131,9 +133,11 @@ func canvasBoards(topicDir string, order []string) ([]string, int64) {
 		if !ok || name == "" || !e.Type().IsRegular() {
 			continue
 		}
-		found[name] = true
 		if info, err := e.Info(); err == nil {
 			newest = max(newest, info.ModTime().UnixMilli())
+		}
+		if !parts[e.Name()] {
+			found[name] = true
 		}
 	}
 	boards := make([]string, 0, len(found))
@@ -188,7 +192,8 @@ func loadCanvasIndex(path string) (map[string]json.RawMessage, canvasIndexState)
 
 // canvasMeta is what Arc reads from a canvas.json, in one parse.
 type canvasMeta struct {
-	Order       []string // "order": board files, with .dc.html
+	Order       []string        // "order": board files, with .dc.html
+	Parts       map[string]bool // files whose "boards" entry has a "part_of" string: a prototype's screens, never boards
 	Title       string
 	CreatedTs   int64 // createdOnFiles.at in unix ms; 0 when it is missing or does not parse
 	Replaces    string
@@ -204,6 +209,7 @@ func readCanvasMeta(path string) canvasMeta {
 	}
 	m := canvasMeta{
 		Order:       canvasKey[[]string](obj, "order"),
+		Parts:       canvasParts(obj),
 		Title:       canvasKey[string](obj, "title"),
 		Replaces:    canvasKey[string](obj, "replaces"),
 		NotReplaces: canvasKey[[]string](obj, "notreplaces"),
@@ -215,6 +221,27 @@ func readCanvasMeta(path string) canvasMeta {
 		m.CreatedTs = at.UnixMilli()
 	}
 	return m
+}
+
+// canvasParts is the files in canvas.json's "boards" whose entry has a "part_of" naming the board it belongs to: the
+// screens of a clickable prototype (the frontend's boardsFromCanvasJson drops the same entries). A "part_of" that is
+// not a non-empty string, an entry that is not an object, and a "boards" of the wrong type all read as no screen, so
+// the file stays a board. nil when there are none.
+func canvasParts(obj map[string]json.RawMessage) map[string]bool {
+	var parts map[string]bool
+	for file, raw := range canvasKey[map[string]json.RawMessage](obj, "boards") {
+		var entry struct {
+			PartOf string `json:"part_of"`
+		}
+		if json.Unmarshal(raw, &entry) != nil || entry.PartOf == "" {
+			continue
+		}
+		if parts == nil {
+			parts = map[string]bool{}
+		}
+		parts[file] = true
+	}
+	return parts
 }
 
 // canvasKey decodes one key: the zero value when it is absent or not the type asked for (Unmarshal fills what it can

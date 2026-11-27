@@ -16,6 +16,7 @@ import { centerModeAtom } from "@/app/view/agents/agentcenter";
 import { setAgentView } from "@/app/view/agents/agentview";
 import { attachBrainstorm, detachBrainstorm, openBrainstormBoard } from "@/app/view/agents/brainstormstore";
 import { canvasGalleryAtom } from "@/app/view/agents/canvasgallerystore";
+import { NO_CONTEXT } from "@/app/view/agents/canvasmarks";
 import { attachCanvas, detachCanvas, setCanvasMode, setMarking, updateCanvas } from "@/app/view/agents/canvasstore";
 import type { OpenTarget } from "@/app/view/jarvis/address";
 import { libraryConvViewAtom, libraryTabAtom } from "@/app/view/library/librarystore";
@@ -122,7 +123,10 @@ describe("agent canvas mode chips", () => {
     it("marking with a mark puts send first", () => {
         setCanvasMode("a1", "canvas", 1);
         setMarking("a1", true);
-        updateCanvas("a1", (s) => ({ ...s, marks: [{ x: 0, y: 0, w: 20, h: 20, note: "" }] }));
+        updateCanvas("a1", (s) => ({
+            ...s,
+            marks: [{ id: 1, x: 0, y: 0, w: 20, h: 20, note: "", ctx: NO_CONTEXT, shot: null }],
+        }));
         expect(chips()).toEqual([
             "Alt:c switch view",
             "Ctrl:Tab switch",
@@ -145,7 +149,10 @@ describe("agent canvas mode chips", () => {
             expect(chips()).toEqual(["Escape terminal", "Ctrl:Tab switch", ...globals()]);
             setCanvasMode("a1", "canvas", 1);
             setMarking("a1", true);
-            updateCanvas("a1", (s) => ({ ...s, marks: [{ x: 0, y: 0, w: 20, h: 20, note: "" }] }));
+            updateCanvas("a1", (s) => ({
+                ...s,
+                marks: [{ id: 1, x: 0, y: 0, w: 20, h: 20, note: "", ctx: NO_CONTEXT, shot: null }],
+            }));
             expect(chips()).toEqual(["Escape terminal", "Ctrl:Tab switch", ...globals()]);
             setMarking("a1", false);
             setCanvasMode("a1", "terminal", 2);

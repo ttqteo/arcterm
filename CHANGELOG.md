@@ -32,6 +32,15 @@ and a picture given to a line that is not big.
 
 ## Unreleased
 
+### Added
+
+- **Clickable prototypes**: a board the agent draws as a prototype now runs where you open it large: click through its
+  screens, and swap A/B/C on one part of a screen from the chip sitting on that part, with the rest of the screen left
+  as it was. In the Canvas, Try | Mark switches between clicking through and drawing marks (`m` toggles), and the header
+  names the screen and the option you are on. Marks keep the screen and the options they were drawn on, stay when you go
+  back to Try, and one Send saves a picture per screen and tells the agent which screen and option each mark is on. A
+  prototype's screen files no longer show up as boards of their own. <!-- big -->
+  <!-- shot: 1.13.0-proto-pane.webp -->
 ### Changed
 
 - Settings → Storage lists build output at once and sizes a project when you open its row, or all of them with Size all.

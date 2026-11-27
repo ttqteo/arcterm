@@ -4,15 +4,32 @@ import { maybeCaptureThumb, THUMB_W, thumbPath, type ThumbIO } from "./canvasthu
 const EL = {} as HTMLElement;
 const RECT = { left: 10, top: 20, width: 600, height: 375 };
 
-type Fake = ThumbIO & { calls: string[]; written: { path: string; bytes: number[] }[]; scaled: number[] };
+type Fake = ThumbIO & {
+    calls: string[];
+    written: { path: string; bytes: number[] }[];
+    scaled: number[];
+    // the frames hideOverlays was asked to hide the overlays of
+    hidden: HTMLElement[];
+};
 
 function fakeIO(over: Partial<ThumbIO> = {}): Fake {
     const io: Fake = {
         calls: [],
         written: [],
         scaled: [],
+        hidden: [],
         thumbTime: async () => 0,
         boardRect: () => RECT,
+        // as withOverlaysHidden runs fn between hiding and showing the overlays, without needing a frame to wait for
+        hideOverlays: async (el, fn) => {
+            io.calls.push("hide");
+            io.hidden.push(el);
+            try {
+                return await fn();
+            } finally {
+                io.calls.push("show");
+            }
+        },
         capture: async () => {
             io.calls.push("capture");
             return new Blob([new Uint8Array([1])], { type: "image/png" });
@@ -57,9 +74,29 @@ describe("maybeCaptureThumb", () => {
         const io = fakeIO();
         const dir = topicDir();
         await maybeCaptureThumb(io, { topicDir: dir, boardEl: EL, modts: 1000 });
-        expect(io.calls).toEqual(["capture", "crop", "scale", "write"]);
+        expect(io.calls).toEqual(["hide", "capture", "crop", "show", "scale", "write"]);
         expect(io.scaled).toEqual([THUMB_W]);
         expect(io.written).toEqual([{ path: `${dir}/thumb.png`, bytes: [7, 8, 9] }]);
+    });
+
+    it("takes the window capture with the board's overlays (the A/B/C chips) hidden, and shows them before it writes", async () => {
+        const io = fakeIO();
+        await maybeCaptureThumb(io, { topicDir: topicDir(), boardEl: EL, modts: 1000 });
+        expect(io.hidden).toEqual([EL]);
+        expect(io.calls.indexOf("hide")).toBeLessThan(io.calls.indexOf("capture"));
+        expect(io.calls.indexOf("crop")).toBeLessThan(io.calls.indexOf("show"));
+        expect(io.calls.indexOf("show")).toBeLessThan(io.calls.indexOf("write"));
+    });
+
+    it("shows the overlays again when the capture throws", async () => {
+        const io = fakeIO({
+            capture: async () => {
+                throw new Error("minimised");
+            },
+        });
+        await maybeCaptureThumb(io, { topicDir: topicDir(), boardEl: EL, modts: 1000 });
+        expect(io.calls).toEqual(["hide", "show"]);
+        expect(io.written).toEqual([]);
     });
 
     it("writes it when the board changed after the preview", async () => {

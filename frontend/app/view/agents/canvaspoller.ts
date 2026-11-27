@@ -18,6 +18,7 @@ import {
     CANVAS_POLL_MS,
     canvasDesignDir,
     canvasProjectDir,
+    partsFromCanvasJson,
     type CanvasBoard,
 } from "./canvasmodel";
 import { canvasStateAtom, updateCanvas, type CanvasState } from "./canvasstore";
@@ -47,12 +48,18 @@ async function readServer(s: CanvasState, io: CanvasIO, base: string): Promise<S
     if (res.status === "error") {
         return null;
     }
-    const boards = boardsFromCanvasJson(res.status === HTTP_OK ? res.json : undefined);
-    const heads = await Promise.all(boards.map((b) => io.head(boardUrl(base, s.topic, b.name))));
-    if (heads.some((h) => h.status === "error")) {
+    const json = res.status === HTTP_OK ? res.json : undefined;
+    const boards = boardsFromCanvasJson(json);
+    // a prototype's screen files are never boards, but a change to one reloads its prototype like a board's would
+    const parts = partsFromCanvasJson(json);
+    const [heads, partHeads] = await Promise.all([
+        Promise.all(boards.map((b) => io.head(boardUrl(base, s.topic, b.name)))),
+        Promise.all(parts.map((p) => io.head(boardUrl(base, s.topic, p)))),
+    ]);
+    if (heads.some((h) => h.status === "error") || partHeads.some((h) => h.status === "error")) {
         return null;
     }
-    const lastModifiedMs = heads.reduce((m, h) => newest(m, h.lastModified), res.lastModified);
+    const lastModifiedMs = [...heads, ...partHeads].reduce((m, h) => newest(m, h.lastModified), res.lastModified);
     // each board keeps its own time too: the quick pick card takes the newer of two boards with one letter
     const dated = boards.map((b, i) => {
         const ms = heads[i].lastModified;

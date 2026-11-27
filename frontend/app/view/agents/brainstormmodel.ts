@@ -8,6 +8,7 @@ import type { NewRunPrefill } from "@/app/view/jarvis/newrun";
 import { sameRepoPath } from "@/util/paths";
 import type { AgentVM } from "./agentsviewmodel";
 import { canvasDir, canvasProjectDir, join, type CanvasBoard } from "./canvasmodel";
+import { shownLetter, type ProtoReport } from "./protomodel";
 import type { RunShape } from "./runconfig";
 import { entryAfter, isBlockedEntry } from "./runqueuemodel";
 
@@ -44,13 +45,16 @@ export type JudgeRecord =
     | { kind: "weighed"; added: string[]; dropped: { name: string; reason: string }[] }
     | { kind: "failed"; reason: string };
 // read is the one-line comparison of the options: the judge's on a weighed question, else the agent's. multi says
-// the user may take more than one option together
+// the user may take more than one option together. slot is the id of the variant slot (data-dc-slot) of the part's one
+// prototype board that the options are the variants of: option i is the slot's letter i. Left out when the options are
+// a board each
 export type BrainstormQuestion = {
     n: number;
     text: string;
     part: string;
     why?: string;
     read?: string;
+    slot?: string;
     options?: AnswerOption[];
     multi?: true;
     approaches?: Approach[];
@@ -224,6 +228,8 @@ function parseQuestion(raw: unknown): BrainstormQuestion | null {
         part: str(raw.part) ?? "",
         ...(str(raw.why) ? { why: str(raw.why) } : {}),
         ...(str(raw.read) ? { read: str(raw.read) } : {}),
+        // a slot id is matched against the board's own ids as written, so it is kept as is; an empty one names nothing
+        ...(str(raw.slot) ? { slot: str(raw.slot) } : {}),
         ...(options.length > 0 ? { options } : {}),
         ...(raw.multi === true ? { multi: true as const } : {}),
         ...(approaches.length > 0 ? { approaches } : {}),
@@ -781,23 +787,41 @@ export function railBoardHeads(f: BrainstormFile, partId: string, boards: Canvas
     });
 }
 
+// The option a chip letter stands for: the question names the chip's slot, and option i is letter i (optionLetter), so a
+// letter past the options is none. A slot the question does not name maps to no option, whatever its letter
+export function slotOptionFor(q: BrainstormQuestion | null, slotId: string, letter: string): number | null {
+    if (q?.slot == null || q.slot !== slotId) {
+        return null;
+    }
+    const i = (q.options ?? []).findIndex((_, j) => optionLetter(j) === letter);
+    return i < 0 ? null : i;
+}
+
 // The answer a board opened large offers under it: the option the board shows, while the question is on screen (an
 // open question in the design is answered from the question, so the design's board offers none). label is what the pick
-// sends, as the option's row does; leaning names whose pick the option is, as the row's tag does, or is null
+// sends, as the option's row does; leaning names whose pick the option is, as the row's tag does, or is null.
+//
+// A question that names a slot (question.slot) is about one prototype board, whose chip letters are the options. With
+// that slot in the board's report (the opened board's latest), the offer is the option whose letter the chip shows
+// (shownLetter, never the stored pick); without it, the screen showing has no such slot, so the board's own option decides,
+// as for a board per option
 export type BoardPick = { option: number; letter: string; label: string; leaning: string | null };
 
 export function boardPick(
     f: BrainstormFile,
     head: { option: number | null },
-    questionShown: boolean
+    questionShown: boolean,
+    report: ProtoReport | null = null
 ): BoardPick | null {
     const q = f.question;
-    const o = head.option != null ? q?.options?.[head.option] : undefined;
-    if (!questionShown || q == null || head.option == null || o == null) {
+    const slot = q?.slot != null ? report?.slots.find((s) => s.id === q.slot) : undefined;
+    const option = slot != null ? slotOptionFor(q, slot.id, shownLetter(slot)) : head.option;
+    const o = option != null ? q?.options?.[option] : undefined;
+    if (!questionShown || q == null || option == null || o == null) {
         return null;
     }
     const leaning = o.pick ? (judgeWork(q)?.judged ? "Judge’s pick" : "Agent’s pick") : null;
-    return { option: head.option, letter: optionLetter(head.option), label: o.label, leaning };
+    return { option, letter: optionLetter(option), label: o.label, leaning };
 }
 
 // a part's boards and spikes as the rail lists them: the spikes are links under the group's boards

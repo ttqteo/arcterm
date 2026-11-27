@@ -187,4 +187,80 @@ describe("pollCanvasOnce", () => {
         expect(io.serves).toEqual([]);
         expect(io.urls.every((u) => u.startsWith(`${BASE}/`))).toBe(true);
     });
+
+    describe("a prototype's screen files", () => {
+        // Main is the prototype (interactive) and Later one of its screens; order names both
+        const JSON_PROTO = {
+            order: ["Main.dc.html", "Later.dc.html"],
+            boards: {
+                "Main.dc.html": { x: 0, y: 0, is_interactive: true },
+                "Later.dc.html": { x: 1520, y: 0, part_of: "Main.dc.html" },
+            },
+        };
+        const MAIN_ONLY = { name: "Main.dc.html", x: 0, y: 0, w: 1440, h: 900, interactive: true };
+
+        it("are never boards, but their Last-Modified counts toward the canvas's", async () => {
+            const io = fakeIO({
+                files: { "Main.dc.html": 1000, "Later.dc.html": 4000, "canvas.json": 2000 },
+                json: JSON_PROTO,
+            });
+            expect(await pollCanvasOnce(state({ base: BASE }), io, NOW)).toEqual({
+                base: BASE,
+                status: "ready",
+                boards: [{ ...MAIN_ONLY, modifiedMs: 1000 }],
+                lastModifiedMs: 4000,
+                lastViewedMs: NOW,
+            });
+            expect(io.urls).toContain(`${BASE}/t/project/Later.dc.html`);
+        });
+
+        it("reload the prototype when only a screen file changed", async () => {
+            const io = fakeIO({
+                files: { "Main.dc.html": 1000, "Later.dc.html": 4000, "canvas.json": 2000 },
+                json: JSON_PROTO,
+            });
+            const before = state({ base: BASE, lastModifiedMs: 2000, reloadKey: 7 });
+            expect((await pollCanvasOnce(before, io, NOW)).reloadKey).toBe(8);
+            const settled = state({ base: BASE, lastModifiedMs: 4000, reloadKey: 7 });
+            expect((await pollCanvasOnce(settled, io, NOW)).reloadKey).toBeUndefined();
+        });
+
+        it("do not set the main board's own time: only the canvas's newest moves", async () => {
+            const files = { "Main.dc.html": 1000, "Later.dc.html": 9000, "canvas.json": 500 };
+            const io = fakeIO({ files, json: JSON_PROTO });
+            const patch = await pollCanvasOnce(state({ base: BASE }), io, NOW);
+            expect(patch.boards?.map((b) => b.modifiedMs)).toEqual([1000]);
+            expect(patch.lastModifiedMs).toBe(9000);
+        });
+
+        it("make the canvas server-down when one does not answer at all", async () => {
+            const files = { "Main.dc.html": 1000, "Later.dc.html": 4000, "canvas.json": 500 };
+            const io = fakeIO({ files, json: JSON_PROTO });
+            const partDown: CanvasIO = {
+                ...io,
+                head: async (url) =>
+                    url.endsWith("Later.dc.html") ? { status: "error", lastModified: null } : io.head(url),
+            };
+            expect(await pollCanvasOnce(state({ base: BASE }), partDown, NOW)).toEqual({
+                base: null,
+                status: "server-down",
+            });
+        });
+
+        it("add nothing when the file is not served (a 404 is no time), the boards' own times still count", async () => {
+            const io = fakeIO({ files: { "Main.dc.html": 1000, "canvas.json": 500 }, json: JSON_PROTO });
+            const patch = await pollCanvasOnce(state({ base: BASE }), io, NOW);
+            expect(patch.status).toBe("ready");
+            expect(patch.boards).toEqual([{ ...MAIN_ONLY, modifiedMs: 1000 }]);
+            expect(patch.lastModifiedMs).toBe(1000);
+        });
+
+        it("are not read when canvas.json is not served: that canvas is the one Main board", async () => {
+            const io = fakeIO({ files: { "Main.dc.html": 1000, "Later.dc.html": 4000 }, json: JSON_PROTO });
+            const notServed: CanvasIO = { ...io, get: async () => ({ status: 404, lastModified: null }) };
+            const patch = await pollCanvasOnce(state({ base: BASE }), notServed, NOW);
+            expect(patch.boards).toEqual([{ name: "Main.dc.html", x: 0, y: 0, w: 1440, h: 900, modifiedMs: 1000 }]);
+            expect(patch.lastModifiedMs).toBe(1000);
+        });
+    });
 });

@@ -438,7 +438,7 @@ worker's transcript each show one thing in place of the grid; the grid comes bac
 | `Alt`+`J` | Read the code and pick: when the agent's last message ends on a choice question (A or B?), Chat shows a suggested answer under it, and this starts a fresh sonnet session that reads the code without seeing the agent's lean (30–90 s; it may name a better option). After a failed run it is Retry. Works from the chat box too; with no Read the code and pick on the line, the key goes on to the terminal |
 | `[` / `]` or `←` / `→` | Previous / next board |
 | `m` | Mark parts of the board; in mark mode, stop marking |
-| `Mod`+`Enter` | Send the marks to the agent (from mark mode) |
+| `Mod`+`Enter` | Send the marks to the agent (while any mark is unsent, in Try mode too) |
 
 ### Agent: review mode
 

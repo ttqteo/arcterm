@@ -103,6 +103,145 @@ func TestListCanvasesKeepsABoardTheIndexDoesNotName(t *testing.T) {
 	}
 }
 
+// a clickable prototype's screens are files of the canvas listed in canvas.json with a part_of: parts of the board
+// they name, never boards of their own
+const protoIndex = `{"v":3,"boards":{"Main.dc.html":{"is_interactive":true},"Later.dc.html":{"part_of":"Main.dc.html"},` +
+	`"Done.dc.html":{"part_of":"Main.dc.html"},"States.dc.html":{}},` +
+	`"order":["Main.dc.html","Later.dc.html","States.dc.html","Done.dc.html"]}`
+
+func TestListCanvasesLeavesAScreenOutOfTheBoardsAndTheirCount(t *testing.T) {
+	a, topic := canvasProject(t, "proto", "Main", "Later", "Done", "States")
+	if err := os.WriteFile(filepath.Join(topic, "project", "canvas.json"), []byte(protoIndex), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := ListCanvases([]string{a})
+	if len(got) != 1 || !reflect.DeepEqual(got[0].Boards, []string{"Main", "States"}) {
+		t.Fatalf("got %+v, want the prototype and the static board: Later and Done are its screens", got)
+	}
+	rep := canvases{}.measure(context.Background(), canvasEnv(t, a))
+	if want := fmt.Sprintf("%s · 2 boards", filepath.Base(a)); len(rep.Items) != 1 || rep.Items[0].Detail != want {
+		t.Fatalf("got %+v, want the card to count 2 boards, not the 4 files", rep.Items)
+	}
+}
+
+func TestListCanvasesCountsAScreensMtimeInModTs(t *testing.T) {
+	a, topic := canvasProject(t, "proto", "Main", "Later", "States")
+	index := `{"boards":{"Main.dc.html":{"is_interactive":true},"Later.dc.html":{"part_of":"Main.dc.html"},"States.dc.html":{}}}`
+	if err := os.WriteFile(filepath.Join(topic, "project", "canvas.json"), []byte(index), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	set := func(board string, ms int64) {
+		t.Helper()
+		p := filepath.Join(topic, "project", board+".dc.html")
+		if err := os.Chtimes(p, time.UnixMilli(ms), time.UnixMilli(ms)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	set("Main", 1_700_000_100_000)
+	set("States", 1_700_000_200_000)
+	set("Later", 1_700_000_700_000) // only a screen was edited last
+	got := ListCanvases([]string{a})
+	if len(got) != 1 || got[0].ModTs != 1_700_000_700_000 {
+		t.Fatalf("got %+v, want modts to be the screen's, the newest file of the canvas", got)
+	}
+	if !reflect.DeepEqual(got[0].Boards, []string{"Main", "States"}) {
+		t.Fatalf("boards = %v, want the screen left out though its time counts", got[0].Boards)
+	}
+}
+
+func TestListCanvasesTakesTheTimeFromScreensWhenTheyAreAllThereIs(t *testing.T) {
+	a, topic := canvasProject(t, "proto", "Later")
+	index := `{"boards":{"Later.dc.html":{"part_of":"Main.dc.html"}}}`
+	if err := os.WriteFile(filepath.Join(topic, "project", "canvas.json"), []byte(index), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ts := time.UnixMilli(1_700_000_300_000)
+	if err := os.Chtimes(filepath.Join(topic, "project", "Later.dc.html"), ts, ts); err != nil {
+		t.Fatal(err)
+	}
+	got := ListCanvases([]string{a})
+	if len(got) != 1 || len(got[0].Boards) != 0 || got[0].ModTs != ts.UnixMilli() {
+		t.Fatalf("got %+v, want no boards and the screen's time", got)
+	}
+	if raw, err := json.Marshal(got); err != nil || !strings.Contains(string(raw), `"boards":[]`) {
+		t.Fatalf("marshals to %s (%v), want \"boards\":[] and not null", raw, err)
+	}
+}
+
+// SetCanvasLink rewrites canvas.json: a prototype's part_of and is_interactive must come through it untouched, so the
+// screens stay out of the boards after a version link is set
+func TestSetCanvasLinkKeepsAPrototypesScreensParts(t *testing.T) {
+	a, topic := canvasProject(t, "proto", "Main", "Later", "Done", "States")
+	writeFile(t, filepath.Join(a, ".superpowers", "design", "older", "project", "Main.dc.html"), 10)
+	if err := os.WriteFile(filepath.Join(topic, "project", "canvas.json"), []byte(protoIndex), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetCanvasLink([]string{a}, topic, "older", nil); err != nil {
+		t.Fatal(err)
+	}
+	var proto StorageCanvas
+	for _, c := range ListCanvases([]string{a}) {
+		if c.Topic == "proto" {
+			proto = c
+		}
+	}
+	if proto.Replaces != "older" || !reflect.DeepEqual(proto.Boards, []string{"Main", "States"}) {
+		t.Fatalf("got %+v, want the link set and the screens still parts", proto)
+	}
+}
+
+func TestListCanvasesIgnoresAMalformedPartOf(t *testing.T) {
+	// a part_of that is not a non-empty string, and an entry that is not an object, leave the file a board
+	for name, entry := range map[string]string{
+		"a number":     `{"part_of":5}`,
+		"empty":        `{"part_of":""}`,
+		"null":         `{"part_of":null}`,
+		"a list":       `{"part_of":["Main.dc.html"]}`,
+		"an object":    `{"part_of":{"file":"Main.dc.html"}}`,
+		"a bool":       `{"part_of":true}`,
+		"not an entry": `"Main.dc.html"`,
+		"no entry":     `null`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			a, topic := canvasProject(t, "t", "Main", "Later")
+			index := `{"boards":{"Main.dc.html":{},"Later.dc.html":` + entry + `},"order":["Main.dc.html","Later.dc.html"]}`
+			if err := os.WriteFile(filepath.Join(topic, "project", "canvas.json"), []byte(index), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			got := ListCanvases([]string{a})
+			if len(got) != 1 || !reflect.DeepEqual(got[0].Boards, []string{"Main", "Later"}) {
+				t.Fatalf("got %+v, want Later still a board", got)
+			}
+		})
+	}
+}
+
+func TestListCanvasesIgnoresAMalformedBoardsKeyWhenLookingForScreens(t *testing.T) {
+	// "boards" of the wrong type reads as no screens, and one bad key does not hide the rest
+	a, topic := canvasProject(t, "t", "Main", "Later")
+	index := `{"boards":["Later.dc.html"],"title":"T","order":["Main.dc.html","Later.dc.html"]}`
+	if err := os.WriteFile(filepath.Join(topic, "project", "canvas.json"), []byte(index), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := ListCanvases([]string{a})
+	if len(got) != 1 || !reflect.DeepEqual(got[0].Boards, []string{"Main", "Later"}) || got[0].Title != "T" {
+		t.Fatalf("got %+v, want both files as boards and the title still read", got)
+	}
+}
+
+func TestListCanvasesKeepsAScreenTheIndexDoesNotListAsABoard(t *testing.T) {
+	// only canvas.json says what is a screen: a file it does not list at all is a board, as before
+	a, topic := canvasProject(t, "t", "Main", "Stray")
+	index := `{"boards":{"Main.dc.html":{"is_interactive":true}},"order":["Main.dc.html"]}`
+	if err := os.WriteFile(filepath.Join(topic, "project", "canvas.json"), []byte(index), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := ListCanvases([]string{a})
+	if len(got) != 1 || !reflect.DeepEqual(got[0].Boards, []string{"Main", "Stray"}) {
+		t.Fatalf("got %+v, want Stray listed", got)
+	}
+}
+
 func TestListCanvasesIgnoresAMalformedIndex(t *testing.T) {
 	a, topic := canvasProject(t, "t", "B", "A")
 	if err := os.WriteFile(filepath.Join(topic, "project", "canvas.json"), []byte(`{not json`), 0o644); err != nil {
