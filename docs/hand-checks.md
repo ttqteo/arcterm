@@ -25,8 +25,8 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
 ## 2026-11-27
 
 - [ ] (arcterm) **A sleeping agent's question and permission in Chat** (`sleepheldview.tsx`, `permissioncard.tsx`,
-  `permissionrow.tsx`, task 2 of the sleep-keeps-ask run). Vitest and typecheck only; the end state is
-  `task verify:ui -- sleep-keeps-ask` on the merged tree, never run here, and no motion was watched. With the build
+  `permissionrow.tsx`, the sleep-keeps-ask run). The run's Final passed `sleep-keeps-ask` on a fixture tab (end state
+  only); no real agent was slept while asking, and no motion was watched. With the build
   installed, let a Claude agent ask you something (AskUserQuestion, arc mod on) and Sleep it from its row menu: Chat
   should keep the question beside "Asleep since …" and Wake. Pick an option: the question card goes and your answer
   grows in under the conversation with "Goes in when <name> wakes" (a spring open, no jump; at once under reduced
