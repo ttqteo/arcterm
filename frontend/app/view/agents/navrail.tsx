@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { digitHintAtom } from "@/app/cockpit/digithints";
+import { openNewNote } from "@/app/cockpit/quicknote";
 import { JarvisReactor } from "@/app/element/jarvisicon";
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { globalStore } from "@/app/store/jotaiStore";
@@ -19,6 +20,7 @@ import {
     Languages,
     LayoutDashboard,
     Library,
+    NotebookPen,
     Settings,
     type LucideIcon,
 } from "lucide-react";
@@ -208,6 +210,7 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
     const appId = useAtomValue(appSurfaceIdAtom);
     const translateOpen = useAtomValue(translateOpenAtom);
     const translateKeys = useBindingKeys("translate");
+    const noteKeys = useBindingKeys("new-note");
     // Setup counts the projects whose memory has a change to review (Setup → Memory clears it)
     const memoryToReview = useAtomValue(memoryToReviewAtom);
     useEffect(() => {
@@ -309,6 +312,22 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
                 </>
             ) : null}
             <div className="flex-1" />
+            {/* not a surface either: a new note in the search palette's editor (quicknote.ts), so it has no pressed or
+                active state, and CDP's surface helpers skip it by data-nav-note */}
+            <button
+                type="button"
+                data-nav-note
+                onClick={() => openNewNote(model)}
+                aria-label="New note"
+                title={noteKeys != null ? `New note (${formatChordString(noteKeys)})` : "New note"}
+                className="relative mx-2 flex cursor-pointer flex-col items-center gap-[5px] rounded-[10px] border-0 bg-transparent py-[8px] text-muted hover:text-muted-foreground"
+            >
+                <span className="relative">
+                    <NotebookPen size={16} strokeWidth={1.8} />
+                    <RailSantaHat iconSize={16} />
+                </span>
+                {narrow ? null : <span className="text-[10px] font-semibold">Note</span>}
+            </button>
             {/* not a surface: it opens the Translate panel over the current one (translatepanel.tsx), so it takes the
                 grey pressed state, never the surfaces' accent, and CDP's surface helpers skip it by data-nav-translate */}
             <button

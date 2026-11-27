@@ -24,6 +24,10 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
 
 ## 2026-11-27
 
+- [ ] (arcterm) **Quick note from the rail.** Click Note on the nav rail (above Translate), then press `Mod`+`Shift`+`N`
+  from a focused agent terminal: each time Search opens on the Notes scope with the caret in an empty title; type a
+  title, `Enter`, a body, `Ctrl`+`Enter` saves it and the Notes list selects it; `Esc` from an empty draft lands on the
+  Notes list, twice with text typed. On a narrow window the rail shows the icon alone, its tooltip naming the chord.
 - [ ] (arcterm) **Account name always beside the model.** With every open Claude agent on one account: the chat box's
   footer reads the account (its label, or the /login email for Default) left of the model, and each Claude row in the
   sidebar names it before the model; a long name truncates, the row does not wrap. `d13f49b5e`

@@ -178,6 +178,7 @@ import {
     type NavState,
     type ScopeId,
 } from "./palette-scope";
+import { paletteNewNoteAtom } from "./quicknote";
 import { usePaletteBrainstorms } from "./use-palette-brainstorms";
 
 type CommandRow = PaletteItem & { group: string };
@@ -411,10 +412,14 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
         }
         const seed = globalStore.get(model.paletteSeedAtom);
         globalStore.set(model.paletteSeedAtom, null);
-        setNav({ ...initialNav(globalStore.get(model.surfaceAtom)), query: seed ?? "" });
+        // the rail's Note button and Mod+Shift+N open straight into a new note, over the Notes list (quicknote.ts)
+        const newNote = globalStore.get(paletteNewNoteAtom);
+        globalStore.set(paletteNewNoteAtom, false);
+        const nav0 = { ...initialNav(globalStore.get(model.surfaceAtom)), query: seed ?? "" };
+        setNav(newNote ? pickScope(nav0, "notes") : nav0);
         setSymbolOpen(seed === "@");
         setOpenGen((g) => g + 1);
-        setDraft(null);
+        setDraft(newNote ? newDraft("") : null);
         setArmed(null);
         const raf = requestAnimationFrame(() => inputRef.current?.focus());
         return () => cancelAnimationFrame(raf);

@@ -274,7 +274,7 @@ const surfaceSmoke = {
         await settleMs(700);
         const hints = await h.ev(`(() => {
             const out = {};
-            for (const b of document.querySelectorAll('nav button:not([data-nav-app]):not([data-nav-translate])')) {
+            for (const b of document.querySelectorAll('nav button:not([data-nav-app]):not([data-nav-translate]):not([data-nav-note])')) {
                 out[b.getAttribute('aria-label')] = b.querySelector('[data-digit-hint]')?.getAttribute('data-digit-hint') ?? null;
             }
             return out;
@@ -39138,7 +39138,7 @@ const agentRailTabs = {
         );
 
         // 10. the nav
-        const nav = await h.ev(`[...document.querySelectorAll("nav button:not([data-nav-app]):not([data-nav-translate])")].map((b) => ({ label: b.getAttribute("aria-label"), h: Math.round(b.getBoundingClientRect().height) }))`);
+        const nav = await h.ev(`[...document.querySelectorAll("nav button:not([data-nav-app]):not([data-nav-translate]):not([data-nav-note])")].map((b) => ({ label: b.getAttribute("aria-label"), h: Math.round(b.getBoundingClientRect().height) }))`);
         const divider = await h.ev(`!!document.querySelector("nav [data-nav-divider]")`);
         const height = (label) => nav.find((n) => n.label === label)?.h ?? 0;
         await h.ev(`document.activeElement?.blur?.()`);
