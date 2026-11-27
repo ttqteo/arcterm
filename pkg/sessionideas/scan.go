@@ -284,8 +284,9 @@ type sessionResult struct {
 }
 
 // scanSession reads one session. The error it returns stops the scan: a model error, a cancelled ctx or a store that
-// cannot be read. A session that cannot be read, or whose reply is not a list, is logged and left unmarked instead, so
-// one bad transcript does not hold up the rest.
+// cannot be read. A session that cannot be read is logged and left unmarked instead, so one bad transcript does not
+// hold up the rest. A reply that is not a list is asked for once more; when the second is not one either, the session
+// is marked unreadable, so no later scan pays for it again (one that grows sends its new turns only).
 func scanSession(ctx context.Context, s *Store, deps Deps, c agentsessions.DigestSession, days int, marks map[string]wshrpc.SessionIdeaMark, projects map[string]ProjectContext) (sessionResult, error) {
 	dg, err := deps.Read(c.Path)
 	if err != nil {
@@ -337,15 +338,27 @@ func scanSession(ctx context.Context, s *Store, deps Deps, c agentsessions.Diges
 	}
 	pc.Known = KnownGists(stored.Ideas, projectPath)
 
-	reply, tokens, err := deps.Run(ctx, Prompt(info.Task, turns, grown, pc))
+	prompt := Prompt(info.Task, turns, grown, pc)
+	reply, tokens, err := deps.Run(ctx, prompt)
 	res := sessionResult{tokens: tokens}
 	if err != nil {
 		return res, err
 	}
 	raws, err := ParseReply(reply)
 	if err != nil {
-		log.Printf("sessionideas: the reply for %s is unusable, not scanned: %v", c.Path, err)
-		return res, nil
+		// once more, then never again: a session left unmarked would be read, and paid for, by every scan after this one
+		log.Printf("sessionideas: the reply for %s is unusable, asking once more: %v", c.Path, err)
+		reply, tokens, err = deps.Run(ctx, prompt)
+		res.tokens += tokens
+		if err != nil {
+			return res, err
+		}
+		if raws, err = ParseReply(reply); err != nil {
+			log.Printf("sessionideas: the reply for %s is unusable again, marked unreadable: %v", c.Path, err)
+			mark.Outcome = wshrpc.SessionIdeaOutcome_Unreadable
+			res.mark = &mark
+			return res, nil
+		}
 	}
 	res.mark = &mark
 	for _, r := range raws {

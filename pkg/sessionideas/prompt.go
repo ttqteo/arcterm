@@ -252,8 +252,13 @@ func truncateRunes(s string, n int) string {
 // oneLine folds whitespace, so a title or label cannot break the list it sits in.
 func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
 
-// ParseReply reads the model's answer: a JSON array of ideas, in a code fence or not. Anything else is an error, with
-// the head of the reply so the log says what came back.
+// maxListStarts is how many "[" of a reply ParseReply tries a list at, past the plain reading: a model that wrote prose
+// first puts its list after a sentence or two, not after dozens of brackets.
+const maxListStarts = 20
+
+// ParseReply reads the model's answer: a JSON array of ideas, in a code fence or not. A reply with prose around its list
+// ("Looking at this conversation… ```json [...] ``` …") is read too: the first "[" a list of ideas decodes from, up to
+// maxListStarts of them. Anything else is an error, with the head of the reply so the log says what came back.
 func ParseReply(s string) ([]RawIdea, error) {
 	body := strings.TrimSpace(s)
 	if inFence, ok := strings.CutPrefix(body, "```"); ok {
@@ -263,12 +268,37 @@ func ParseReply(s string) ([]RawIdea, error) {
 		}
 		body = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(body), "```"))
 	}
-	if !strings.HasPrefix(body, "[") {
-		return nil, fmt.Errorf("the reply is not a JSON array: %q", truncateRunes(body, 120))
-	}
-	var out []RawIdea
-	if err := json.Unmarshal([]byte(body), &out); err != nil {
+	if strings.HasPrefix(body, "[") {
+		var out []RawIdea
+		err := json.Unmarshal([]byte(body), &out)
+		if err == nil {
+			return out, nil
+		}
+		if list, ok := listInProse(s); ok {
+			return list, nil
+		}
 		return nil, errors.Join(errors.New("the reply is not a list of ideas"), err)
 	}
-	return out, nil
+	if list, ok := listInProse(s); ok {
+		return list, nil
+	}
+	return nil, fmt.Errorf("the reply is not a JSON array: %q", truncateRunes(body, 120))
+}
+
+// listInProse is the first list of ideas a "[" of s decodes from, whatever follows it (a closing fence, more prose).
+func listInProse(s string) ([]RawIdea, bool) {
+	from := 0
+	for range maxListStarts {
+		i := strings.IndexByte(s[from:], '[')
+		if i < 0 {
+			return nil, false
+		}
+		at := from + i
+		var out []RawIdea
+		if json.NewDecoder(strings.NewReader(s[at:])).Decode(&out) == nil {
+			return out, true
+		}
+		from = at + 1
+	}
+	return nil, false
 }

@@ -18,20 +18,25 @@ const (
 
 // What a scanned session gave. skipped is a session read and passed over without a model call (a decide agent's, a digest
 // with no user turn): it counts as scanned everywhere, so it is never forced, counted unscanned or offered again.
+// unreadable is a session the model answered twice with no list of ideas: it counts as scanned too, so no scan pays for
+// it again, and its row says so.
 const (
-	SessionIdeaOutcome_Ideas   = "ideas"
-	SessionIdeaOutcome_Nothing = "nothing"
-	SessionIdeaOutcome_Skipped = "skipped"
+	SessionIdeaOutcome_Ideas      = "ideas"
+	SessionIdeaOutcome_Nothing    = "nothing"
+	SessionIdeaOutcome_Skipped    = "skipped"
+	SessionIdeaOutcome_Unreadable = "unreadable"
 )
 
 // What a row of the session list says. not-scanned is quiet (no write for 2 days) and unscanned, so the next scan the
 // person starts reads it; waiting is unscanned and still being written. kept is a session all of whose ideas were kept.
+// unreadable is a session with an unreadable mark.
 const (
 	SessionIdeasSession_Ideas      = "ideas"
 	SessionIdeasSession_Kept       = "kept"
 	SessionIdeasSession_Nothing    = "nothing"
 	SessionIdeasSession_NotScanned = "not-scanned"
 	SessionIdeasSession_Waiting    = "waiting"
+	SessionIdeasSession_Unreadable = "unreadable"
 )
 
 // SessionIdeaQuote is one line the idea was floated in. Who is "you" or "agent"; the text is verbatim, in any language.
@@ -74,7 +79,7 @@ type SessionIdeaMark struct {
 	ScannedTs      int64  `json:"scannedts"`
 	LastTurnTs     int64  `json:"lastturnts"`
 	Ideas          int    `json:"ideas"`
-	Outcome        string `json:"outcome"` // ideas | nothing | skipped
+	Outcome        string `json:"outcome"` // ideas | nothing | skipped | unreadable
 }
 
 // SessionIdeasScan is the scan that runs or ran last. Error and StoppedAt are set when it stopped part way (the next
@@ -107,7 +112,7 @@ type SessionIdeasSession struct {
 	Size           int64  `json:"size"`
 	LastWriteTs    int64  `json:"lastwritets"`
 	DeletesTs      int64  `json:"deletests"`
-	Outcome        string `json:"outcome"` // ideas | kept | nothing | not-scanned | waiting
+	Outcome        string `json:"outcome"` // ideas | kept | nothing | unreadable | not-scanned | waiting
 	Ideas          int    `json:"ideas"`
 }
 

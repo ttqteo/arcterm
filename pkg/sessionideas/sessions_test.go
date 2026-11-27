@@ -47,10 +47,13 @@ func TestSessionsEmpty(t *testing.T) {
 func TestSessionsSaysWhatIsLeftOfEachSession(t *testing.T) {
 	var cands []agentsessions.DigestSession
 	var marks []wshrpc.SessionIdeaMark
-	for i, name := range []string{"waiting", "kept", "dropped", "empty", "mixed"} {
+	for i, name := range []string{"waiting", "kept", "dropped", "empty", "mixed", "unreadable", "unreadable-grown"} {
 		c, m := onDisk(name, float64(10+i), wshrpc.SessionIdeaOutcome_Ideas)
-		if name == "empty" {
+		switch name {
+		case "empty":
 			m.Outcome = wshrpc.SessionIdeaOutcome_Nothing
+		case "unreadable", "unreadable-grown":
+			m.Outcome = wshrpc.SessionIdeaOutcome_Unreadable
 		}
 		cands, marks = append(cands, c), append(marks, m)
 	}
@@ -65,11 +68,12 @@ func TestSessionsSaysWhatIsLeftOfEachSession(t *testing.T) {
 			idea("6", "id-mixed", wshrpc.SessionIdeaState_Kept),
 			idea("7", "id-mixed", wshrpc.SessionIdeaState_Kept),
 			idea("8", "id-mixed", wshrpc.SessionIdeaState_Dropped),
+			idea("9", "id-unreadable-grown", wshrpc.SessionIdeaState_Review), // found by a read before it grew
 		},
 	}
 	rows, scanned, notYet, leaving := Sessions(d, cands, 90, scanNow)
-	if scanned != 5 || len(rows) != 5 || notYet != 0 || leaving != 0 {
-		t.Fatalf("five matching marks are five scanned sessions, got scanned=%d notYet=%d leaving=%d rows=%d", scanned, notYet, leaving, len(rows))
+	if scanned != 7 || len(rows) != 7 || notYet != 0 || leaving != 0 {
+		t.Fatalf("seven matching marks are seven scanned sessions, got scanned=%d notYet=%d leaving=%d rows=%d", scanned, notYet, leaving, len(rows))
 	}
 	for _, c := range []struct {
 		session, outcome string
@@ -80,6 +84,8 @@ func TestSessionsSaysWhatIsLeftOfEachSession(t *testing.T) {
 		{"id-dropped", wshrpc.SessionIdeasSession_Nothing, 0}, // nothing left open
 		{"id-empty", wshrpc.SessionIdeasSession_Nothing, 0},
 		{"id-mixed", wshrpc.SessionIdeasSession_Kept, 2},
+		{"id-unreadable", wshrpc.SessionIdeasSession_Unreadable, 0}, // counted scanned, and says why it holds nothing
+		{"id-unreadable-grown", wshrpc.SessionIdeasSession_Ideas, 1},
 	} {
 		r := rowFor(t, rows, c.session)
 		if r.Outcome != c.outcome || r.Ideas != c.ideas {

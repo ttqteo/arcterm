@@ -1595,6 +1595,7 @@ describe("From your sessions", () => {
                     session({ sessionid: "n1", title: "Newest", lastwritets: NOW - DAY, outcome: "ideas", ideas: 2 }),
                     session({ sessionid: "n2", title: "Older", lastwritets: NOW - 5 * DAY, outcome: "kept", ideas: 1 }),
                     session({ sessionid: "n3", title: "Oldest", lastwritets: NOW - 9 * DAY }),
+                    session({ sessionid: "n4", title: "Garbled", lastwritets: NOW - 10 * DAY, outcome: "unreadable" }),
                     session({
                         sessionid: "u1",
                         title: "Leaves later",
@@ -1620,6 +1621,7 @@ describe("From your sessions", () => {
             ["n1", "2 ideas · above", "ideas"],
             ["n2", "1 idea · kept", "kept"],
             ["n3", "nothing left open", "nothing"],
+            ["n4", "reply unreadable", "nothing"],
         ]);
         expect(rows[0]).toMatchObject({ title: "u2", meta: "arcterm · Aug 15 · deleted Nov 3" });
     });

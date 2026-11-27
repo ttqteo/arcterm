@@ -97,6 +97,9 @@ func Sessions(d wshrpc.SessionIdeasData, candidates []agentsessions.DigestSessio
 			}
 			row.SessionID = firstNonEmpty(m.SessionID, c.Stem) // the id its ideas were stored under
 			row.Outcome = wshrpc.SessionIdeasSession_Nothing
+			if m.Outcome == wshrpc.SessionIdeaOutcome_Unreadable {
+				row.Outcome = wshrpc.SessionIdeasSession_Unreadable // ideas an earlier read of it found still say ideas
+			}
 			if t := bySession[row.SessionID]; t != nil {
 				switch {
 				case t.review > 0:

@@ -547,30 +547,93 @@ func TestScanNowDedupesAgainstKnownIdeas(t *testing.T) {
 	}
 }
 
-func TestScanNowAnUnusableReplyLeavesTheSessionUnmarkedAndGoesOn(t *testing.T) {
+func TestScanNowAnUnusableReplyIsAskedOnceMore(t *testing.T) {
+	s, _ := newTestStore(t)
+	logs := captureLog(t)
+	w := newWorld()
+	c := w.add("one", 30, 100, userTurn("one", 100))
+	w.reply = func(call int, _ string) (string, int64, error) {
+		if call == 1 {
+			return "Sure! Here are the ideas: none.", 70, nil
+		}
+		return oneIdea("Idea one"), 30, nil
+	}
+	if err := ScanNow(context.Background(), s, w.deps(), ScanOpts{}); err != nil {
+		t.Fatalf("a bad reply does not stop the scan: %v", err)
+	}
+	d := loadStore(t, s)
+	if w.runs != 2 || w.prompts[0] != w.prompts[1] {
+		t.Fatalf("the same prompt is asked once more: %d calls", w.runs)
+	}
+	if m := markFor(t, d, c.Path); m.Outcome != wshrpc.SessionIdeaOutcome_Ideas || m.Ideas != 1 || len(d.Ideas) != 1 {
+		t.Fatalf("the second reply's ideas are stored and the session marked: %+v, %+v", m, d.Ideas)
+	}
+	if d.Scan.Tokens != 100 || d.Scan.Done != 1 || d.Scan.Error != "" {
+		t.Errorf("both calls' tokens count: %+v", d.Scan)
+	}
+	if !strings.Contains(logs.String(), c.Path) || !strings.Contains(logs.String(), "asking once more") {
+		t.Errorf("the bad reply is logged: %q", logs.String())
+	}
+}
+
+func TestScanNowTwoUnusableRepliesMarkTheSessionUnreadableAndGoOn(t *testing.T) {
 	s, _ := newTestStore(t)
 	logs := captureLog(t)
 	w := newWorld()
 	bad := w.add("bad", 30, 100, userTurn("one", 100))
 	good := w.add("good", 20, 100, userTurn("two", 100))
 	w.reply = func(call int, _ string) (string, int64, error) {
-		if call == 1 {
+		if call <= 2 {
 			return "Sure! Here are the ideas: none.", 70, nil
 		}
 		return oneIdea("Idea two"), 30, nil
 	}
 	if err := ScanNow(context.Background(), s, w.deps(), ScanOpts{}); err != nil {
-		t.Fatalf("one bad reply does not stop the scan: %v", err)
+		t.Fatalf("bad replies do not stop the scan: %v", err)
 	}
 	d := loadStore(t, s)
-	if len(d.Marks) != 1 || d.Marks[0].TranscriptPath != good.Path || len(d.Ideas) != 1 {
-		t.Fatalf("the unusable session stays unmarked so the next scan tries it again: %+v", d.Marks)
+	if m := markFor(t, d, bad.Path); m.Outcome != wshrpc.SessionIdeaOutcome_Unreadable || m.Ideas != 0 || m.LastTurnTs != 100 {
+		t.Fatalf("the session is marked unreadable, at its last turn: %+v", m)
 	}
-	if d.Scan.Tokens != 100 || d.Scan.Done != 2 || d.Scan.Error != "" {
-		t.Errorf("its tokens still count: %+v", d.Scan)
+	if m := markFor(t, d, good.Path); m.Outcome != wshrpc.SessionIdeaOutcome_Ideas || len(d.Ideas) != 1 {
+		t.Fatalf("the scan goes on to the next session: %+v", d.Marks)
 	}
-	if !strings.Contains(logs.String(), bad.Path) || !strings.Contains(logs.String(), "unusable") {
-		t.Errorf("the reply that was lost is logged: %q", logs.String())
+	if w.runs != 3 || d.Scan.Tokens != 170 || d.Scan.Done != 2 || d.Scan.Error != "" {
+		t.Errorf("two calls for the bad session, one for the good, all counted: %d calls, %+v", w.runs, d.Scan)
+	}
+	if !strings.Contains(logs.String(), "marked unreadable") {
+		t.Errorf("the session given up on is logged: %q", logs.String())
+	}
+	// no later scan pays for it again
+	if err := ScanNow(context.Background(), s, w.deps(), ScanOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	if w.runs != 3 {
+		t.Fatalf("an unreadable session is not read again while it stands: %d calls", w.runs)
+	}
+}
+
+func TestScanNowAModelErrorOnTheSecondAskStopsTheScan(t *testing.T) {
+	s, _ := newTestStore(t)
+	w := newWorld()
+	c := w.add("one", 30, 100, userTurn("one", 100))
+	w.reply = func(call int, _ string) (string, int64, error) {
+		if call == 1 {
+			return "not a list", 70, nil
+		}
+		return "", 5, errors.New("haiku returned 529")
+	}
+	if err := ScanNow(context.Background(), s, w.deps(), ScanOpts{}); err == nil {
+		t.Fatal("a model error stops the scan, on the second ask too")
+	}
+	d := loadStore(t, s)
+	for _, m := range d.Marks {
+		if m.TranscriptPath == c.Path {
+			t.Fatalf("a session whose second ask failed is left for the next scan: %+v", m)
+		}
+	}
+	if d.Scan.Tokens != 75 || !strings.Contains(d.Scan.Error, "529") {
+		t.Errorf("the error and both calls' tokens are recorded: %+v", d.Scan)
 	}
 }
 
