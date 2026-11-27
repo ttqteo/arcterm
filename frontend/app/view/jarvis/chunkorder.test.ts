@@ -1,7 +1,36 @@
 import { describe, expect, it } from "vitest";
 // The Go twin (pkg/waveobj/chunkorder.go) reads this same file: the two rules are checked against one table.
 import shared from "../../../../pkg/waveobj/testdata/chunkorder-cases.json";
-import { CHUNK_PRIORITIES, chunkRank, orderOfWork, priorityBadge } from "./chunkorder";
+import { CHUNK_PRIORITIES, chunkRank, openPriorityCounts, orderOfWork, priorityBadge } from "./chunkorder";
+
+describe("openPriorityCounts", () => {
+    it("counts the open chunks per level, highest first, and leaves out the levels with none", () => {
+        const chunks = [
+            { status: "pending", priority: "high" },
+            { status: "active", priority: "critical" },
+            { status: "blocked", priority: "high" },
+            { status: "deferred", priority: "low" },
+            { status: "pending", priority: "high" },
+        ];
+        expect(openPriorityCounts(chunks)).toEqual([
+            { level: "critical", n: 1 },
+            { level: "high", n: 3 },
+            { level: "low", n: 1 },
+        ]);
+    });
+
+    it("skips closed, proposed and later chunks, and those with no level or an unknown one", () => {
+        const chunks = [
+            { status: "done", priority: "critical" },
+            { status: "skipped", priority: "critical" },
+            { status: "proposed", priority: "critical" },
+            { status: "pending", priority: "critical", later: true },
+            { status: "pending" },
+            { status: "pending", priority: "urgent" },
+        ];
+        expect(openPriorityCounts(chunks)).toEqual([]);
+    });
+});
 
 type SharedChunk = { status: string; priority?: string };
 

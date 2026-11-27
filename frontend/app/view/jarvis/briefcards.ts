@@ -11,6 +11,7 @@
 import { formatAge } from "@/app/view/agents/agentsviewmodel";
 import { capRegion, type CappedRows } from "./briefingmodel";
 import { initiativeLine, isIdea, type BriefLine, type NestedCard } from "./briefrows";
+import type { PriorityCount } from "./chunkorder";
 import type { ChunkTone, EffortCardModel } from "./effortmodel";
 import { shortDate, type InitiativeResume } from "./initiativework";
 
@@ -130,6 +131,8 @@ export type InitiativeFace = {
     total: number;
     pct: string;
     segments: ChunkTone[];
+    // the open chunks per level, highest first: "1 critical · 4 high" without opening the initiative
+    priorities: PriorityCount[];
     // false for a topic with no chunks of its own: the count and the bar are left out rather than drawn 0/0
     hasProgress: boolean;
     status: StatusCell;
@@ -194,6 +197,7 @@ function face(card: EffortCardModel, meta: string, depth: number, subCount: numb
         total: p.total,
         pct: `${p.pct}%`,
         segments: card.segments,
+        priorities: card.priorities ?? [],
         hasProgress: line.progress != null,
         status: statusCell(card, input),
         ...(line.noteLabel != null ? { noteLabel: line.noteLabel } : {}),

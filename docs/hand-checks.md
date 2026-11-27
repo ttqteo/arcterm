@@ -24,6 +24,13 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
 
 ## 2026-11-27
 
+- [ ] (arcterm) **Priority badges and recent-project buttons on Jarvis initiatives.** In the dev app open Jarvis with
+  an initiative whose open chunks have levels set (`wsh effort chunk priority …`): its card shows pills like
+  "1 critical" (red) "4 high" right of the `n/m %` count, and its row in All initiatives shows them after the title; at
+  a narrow window the row keeps a few words of the title and the pills clip, never the reverse. With more than seven
+  projects, three project buttons sit left of the `project ▾` menu (the last launched-into, sorted by name); a press
+  filters to it and shows it pressed, a second press goes back to all. Not seen in the running app: no dev app was up.
+
 - [ ] (arcterm) **`wsh jobslot forget` drops a bad peak.** After a build with it installed, in the arcterm checkout run
   `wsh jobslot forget scripts/verify.mjs`: it should print `dropped 10.6 GB` (the 21:42 run of 2026-11-27), the four
   kept peaks, and `admitted on 4.8 GB`; the next queued verify.mjs row in the Jobs popover reads about 4.8 GB, and

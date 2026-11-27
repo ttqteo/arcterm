@@ -36,7 +36,7 @@ import { channelsAtom, loadChannels, runAtom } from "@/app/view/agents/channelss
 import { useCouncils } from "@/app/view/agents/councilstore";
 import { clearLaterMark, laterMarksAtom } from "@/app/view/agents/laterstore";
 import { openLauncher } from "@/app/view/agents/launcherstore";
-import { projectsAtom } from "@/app/view/agents/projectsstore";
+import { projectsAtom, recentProjectsAtom } from "@/app/view/agents/projectsstore";
 import { RollingCount } from "@/app/view/agents/rollingcount";
 import { resumePausedRun, resumingRunIdsAtom } from "@/app/view/agents/runactions";
 import { leadAsker } from "@/app/view/agents/runmodel";
@@ -151,6 +151,7 @@ import {
     projectName,
     queueLine,
     quietCount,
+    recentProjectChips,
     RECORDS_SUMMARY_ID,
     runRowFace,
     sessionLine,
@@ -304,8 +305,30 @@ const EMPTY_ACT =
 
 // A few choices sit as a line of chips, where they never squeeze the heading; past FILTER_LINE_MAX they become one
 // menu, which a long project list cannot wrap.
+// A menu can lead with a few chips (spec.quick: the recent projects), so the usual picks stay one press away.
 function filterNode<T>(spec: FilterSpec<T>): ReactNode {
-    return filterAsMenu(spec.options.length) ? <FilterMenu {...spec} /> : <FilterLine {...spec} />;
+    if (!filterAsMenu(spec.options.length)) {
+        return <FilterLine {...spec} />;
+    }
+    const quick = (spec.quick ?? [])
+        .map((v) => spec.options.find((o) => o.value === v))
+        .filter((o): o is FilterSpec<T>["options"][number] => o != null);
+    if (quick.length === 0) {
+        return <FilterMenu {...spec} />;
+    }
+    return (
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+            <FilterLine
+                {...spec}
+                label={`${spec.label}: recent`}
+                tag={`${spec.tag}-quick`}
+                options={quick}
+                // a pressed chip unpicks itself back to every project, as the menu's all would
+                onChange={(v) => spec.onChange(v === spec.value ? spec.options[0].value : v)}
+            />
+            <FilterMenu {...spec} />
+        </div>
+    );
 }
 
 function FilterLine<T>({ label, tag, options, value, onChange }: FilterSpec<T>) {
@@ -772,6 +795,11 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
     );
     const projectOptions = useMemo(() => initiativeProjects(projectCards), [projectCards]);
     const perProject = useMemo(() => projectCounts(projectCards), [projectCards]);
+    const recentProjects = useAtomValue(recentProjectsAtom);
+    const quickProjects = useMemo(
+        () => recentProjectChips(projectOptions, recentProjects, projectCards),
+        [projectOptions, recentProjects, projectCards]
+    );
     // a pick whose last initiative went away reads as every project rather than an empty region
     const project = pickedProject != null && projectOptions.includes(pickedProject) ? pickedProject : null;
     const archivedShown = useMemo(
@@ -2145,6 +2173,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                                                       ],
                                                                       value: project,
                                                                       onChange: setPickedProject,
+                                                                      quick: quickProjects,
                                                                   })
                                                                 : undefined
                                                         }

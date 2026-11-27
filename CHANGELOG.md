@@ -37,6 +37,10 @@ and a picture given to a line that is not big.
 - `wsh jobslot forget <command>` drops the largest RAM peak measured for a command in the current project, so one
   bad measurement no longer makes the heavy-job queue hold that command back for its next five runs. `--all` drops
   every measured peak.
+- Jarvis initiative cards and rows show how many open chunks carry each priority ("1 critical", "4 high"), so you see
+  the urgent work without opening the initiative.
+- When All initiatives has many projects, the three you used last sit as buttons left of the project menu: one press
+  shows that project, a second press shows every project again.
 
 ### Fixed
 

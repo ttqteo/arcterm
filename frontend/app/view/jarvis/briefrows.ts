@@ -549,6 +549,31 @@ export function initiativeProjects(cards: { project?: string }[]): string[] {
     return names.sort((a, b) => (a === "" ? 1 : b === "" ? -1 : a.localeCompare(b)));
 }
 
+// the project chips beside the Initiatives filter's menu
+export const RECENT_PROJECT_CHIPS = 3;
+
+// The few projects a long filter offers as chips left of its menu, so the usual ones are one press away. The projects
+// launched into or run in most recently (recentProjectsAtom) come first, then those of the initiatives that moved last;
+// only projects the filter offers, never "no project". The chips sort by name, so a launch that changes which are recent
+// does not shuffle the ones that stay.
+export function recentProjectChips(
+    options: string[],
+    recent: string[],
+    cards: { project?: string; updatedts: number }[],
+    n = RECENT_PROJECT_CHIPS
+): string[] {
+    const offered = new Set(options.filter((p) => p !== ""));
+    const picked: string[] = [];
+    const take = (p: string | undefined) => {
+        if (picked.length < n && p != null && offered.has(p) && !picked.includes(p)) {
+            picked.push(p);
+        }
+    };
+    (recent ?? []).forEach(take);
+    [...cards].sort((a, b) => b.updatedts - a.updatedts).forEach((c) => take(c.project));
+    return picked.sort((a, b) => a.localeCompare(b));
+}
+
 export function keepsProject(filter: string | null, project: string | undefined): boolean {
     return filter == null || (project ?? "") === filter;
 }
