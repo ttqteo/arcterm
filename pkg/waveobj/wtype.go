@@ -1054,6 +1054,10 @@ type UserNote struct {
 	Title string `json:"title"`
 	Body  string `json:"body,omitempty"` // markdown
 	Day   string `json:"day"`            // the day it was added, YYYY-MM-DD
+	// where it was written, from the file's frontmatter: the project's name and the agent conversation's id (the
+	// Claude session id a `session:<id>` address reopens). Empty for a note written by hand or by `wsh note add`.
+	Project string `json:"project,omitempty"`
+	Session string `json:"session,omitempty"`
 }
 
 func (t *Tab) GetBlockORefs() []ORef {

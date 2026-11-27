@@ -24,6 +24,15 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
 
 ## 2026-11-27
 
+- [ ] (arcterm) **A Chat note keeps its project and conversation** (`palette-notesview.tsx`, notestore frontmatter).
+  In a real Claude agent's Chat select a sentence, right-click → Add note, then open the toast's Open: the note's row
+  shows its project as a small badge before the day, and above the note a badge and `Open conversation ↗`; the body's
+  first line reads `From agent "<name>", <day>` (no `agent:` address). Open conversation closes the palette and lands
+  on that agent's tab ("is already open" toast); close the tab, do it again: the conversation opens in a new tab. Edit
+  the note (`Ctrl`+`Enter`), save: badge and link stay. The vault file starts with `project:` / `session:` frontmatter.
+  A note made before this change shows no header. Not run live: `task verify:ui -- chat-quote` step 11 covers the end
+  state, never run here.
+
 - [ ] (arcterm) **Allow and Deny on an agent's sidebar row** (`permissionrow.tsx`, branch of the sidebar-permission-row
   run). Vitest and typecheck only; the end state is `task verify:ui -- sidebar-permission-row`, never run here (a run
   agent runs no CDP). With a real Claude agent outside a run, have it run a Bash command that asks permission: its row's

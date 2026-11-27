@@ -53,12 +53,14 @@ export function ChatQuoteMenu({
     agentId,
     name,
     project,
+    session,
     model,
     rootRef,
 }: {
     agentId: string;
     name: string;
     project?: string;
+    session?: string;
     model?: AgentsViewModel;
     rootRef: RefObject<HTMLElement>;
 }) {
@@ -73,8 +75,8 @@ export function ChatQuoteMenu({
         [agentId]
     );
     const save = useMemo<SaveTarget>(
-        () => ({ from: { agentId, name }, project, model }),
-        [agentId, name, project, model]
+        () => ({ from: { agentId, name }, project, session, model }),
+        [agentId, name, project, session, model]
     );
     return <QuoteMenu rootRef={rootRef} target={target} save={save} />;
 }
@@ -83,6 +85,8 @@ export function ChatQuoteMenu({
 export interface SaveTarget {
     from: SavedFrom;
     project?: string;
+    // the conversation's id (its transcript's stem): a note keeps it, so Notes can open the conversation again
+    session?: string;
     model?: AgentsViewModel;
 }
 
@@ -114,13 +118,18 @@ async function saveIdea(text: string, save: SaveTarget) {
     }
 }
 
-// a note in the palette's Notes, the same title and body. Its Open shows the Notes list, the new note first (the
-// router's "note" is a vault memory note, openref.ts loadNote, not one of these)
+// a note in the palette's Notes, the same title and body, its project and conversation in its frontmatter (Notes shows
+// them as a badge and an Open conversation link). Its Open shows the Notes list, the new note first (the router's
+// "note" is a vault memory note, openref.ts loadNote, not one of these)
 async function saveNote(text: string, save: SaveTarget) {
     const title = selectionTitle(text);
     try {
-        const body = savedBody(text, save.from, new Date());
-        await saveNoteDraft({ id: null, title, body, saved: { title: "", body: "" } });
+        // with no conversation id to keep, the tab's address is the only way back, so the body keeps it
+        const body = savedBody(text, save.from, new Date(), !save.session);
+        await saveNoteDraft(
+            { id: null, title, body, saved: { title: "", body: "" } },
+            { project: save.project, session: save.session }
+        );
         const model = save.model;
         pushToast({
             title: "Added to Notes",

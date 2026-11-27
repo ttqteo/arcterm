@@ -28,10 +28,21 @@ async function reloadAfter<T>(write: () => Promise<T>): Promise<T> {
     }
 }
 
-export function saveNoteDraft(d: NoteDraft): Promise<string> {
+/** Where a new note was written (Chat's Add note): the file's frontmatter. An edit leaves it as it is. */
+export interface NoteSource {
+    project?: string;
+    session?: string;
+}
+
+export function saveNoteDraft(d: NoteDraft, source?: NoteSource): Promise<string> {
     return reloadAfter(async () => {
         if (d.id == null) {
-            const note = await RpcApi.NoteAddCommand(TabRpcClient, { title: d.title, body: d.body });
+            const note = await RpcApi.NoteAddCommand(TabRpcClient, {
+                title: d.title,
+                body: d.body,
+                ...(source?.project ? { project: source.project } : {}),
+                ...(source?.session ? { session: source.session } : {}),
+            });
             return note.id;
         }
         await RpcApi.NoteUpdateCommand(TabRpcClient, { id: d.id, title: d.title, body: d.body });
