@@ -228,7 +228,7 @@ const (
 )
 
 // sessionIdeasProjectContext is what the project of a session's folder already holds: its initiatives and ideas, the
-// names in its specs and plans folders, the headings of docs/deferred.md and its last 200 commit subjects. A session in a
+// names in its specs and plans folders, the headings of docs/deferred.md and its commit subjects of the search window. A session in a
 // linked worktree reads the main checkout's project. A part that cannot be read is left out and joined into the error
 // that comes back with the rest.
 func sessionIdeasProjectContext(ctx context.Context, cwd string) (sessionideas.ProjectContext, error) {
@@ -278,7 +278,7 @@ func sessionIdeasProjectContext(ctx context.Context, cwd string) (sessionideas.P
 type projectDocs struct {
 	specs, plans []string // file names, the newest maxDocNames
 	deferred     string   // docs/deferred.md
-	gitLog       string   // git log -200 --format=%s
+	gitLog       string   // the subjects of the search window's commits, at most sessionideas.MaxCommitsRead
 }
 
 // readProjectDocs reads the specs and plans folders, docs/deferred.md and the commit subjects of a project folder. What
@@ -314,7 +314,8 @@ func readProjectDocs(ctx context.Context, dir string) (projectDocs, error) {
 	if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
 		gctx, cancel := context.WithTimeout(ctx, projectDocTimeout)
 		defer cancel()
-		out, err := exec.CommandContext(gctx, "git", "-c", "core.quotePath=false", "-C", dir, "log", "-200", "--format=%s").Output()
+		out, err := exec.CommandContext(gctx, "git", "-c", "core.quotePath=false", "-C", dir, "log",
+			fmt.Sprintf("--since=%d.days", agentsessions.DigestWindowDays), fmt.Sprintf("-%d", sessionideas.MaxCommitsRead), "--format=%s").Output()
 		if err != nil {
 			errs = append(errs, fmt.Errorf("git log in %s: %w", dir, err))
 		}

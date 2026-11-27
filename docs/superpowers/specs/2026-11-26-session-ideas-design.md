@@ -55,7 +55,8 @@ looks (the Jarvis Brief, Sprout, a brainstorm on its topic), not in a store of i
   stays for the rest (`pkg/sessionideas/scope.go`). A scan of named paths (Storage's Scan them first, the schedule's due
   scans) changes neither.
 - **One haiku call per session**, through `pkg/consult` with no tools. Its prompt carries, for the session's project:
-  the open initiatives and their chunk labels, the existing ideas, spec and plan names, and `docs/deferred.md` headings.
+  the open initiatives and their chunk labels, the existing ideas, spec and plan names, `docs/deferred.md` headings and
+  the commit subjects that share words with the conversation.
   It answers with JSON: for each idea floated and not decided, a one-line English gist, the initiative it belongs to (or
   none), the quoted lines (verbatim, any language), and why it stayed open. An idea that matches a chunk, an idea, a
   spec, a deferred line or a commit is left out.
@@ -142,7 +143,13 @@ Board `Nudges`.
   them its 61 open initiatives with up to 60 chunk labels each.
 - **Trimmed the same day:** the prompt lists every initiative by its title, with only the chunks that share an uncommon
   word with the conversation (40 at most in the project, each cut at 120 characters). Measured again: 5k–59k a call,
-  **~25k a session and ~37M for the whole first scan**; the offer's estimate is 25k a session.
+  **~25k a session and ~37M for the whole first scan**.
+- **Commits trimmed the same way:** the context holds the commit subjects of the 90-day search window (10,000 at most),
+  and the prompt lists the 40 that share the most uncommon words with the conversation, each cut at 120 characters (the
+  last 200 subjects were 18k characters in arcterm and covered two days, so an idea built a month after its session was
+  never seen as built). arcterm's context without a conversation goes 34k -> 16k characters, the median prompt 43k ->
+  29k. Four calls: 5k–54k tokens, fit ~4.7k fixed + 0.59 a character, **~22k a session and ~32M for the whole first
+  scan**; the offer's estimate is 22k a session.
 - Each Discuss or Go through is one ordinary sonnet session, not a fan-out.
 - The digest store grows if search goes to 90 days (below): measure its RAM and disk and log it in `docs/open-issues.md`'s
   RAM watch.

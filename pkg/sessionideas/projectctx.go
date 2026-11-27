@@ -11,8 +11,10 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
 
-// maxCommits is how many commit subjects the prompt carries: the project's last 200.
-const maxCommits = 200
+// MaxCommitsRead is how many commit subjects a project's context holds at most, newest first: the caller reads those of
+// the search window (agentsessions.DigestWindowDays), whose sessions are the ones a scan reads, and the prompt lists only
+// the few a conversation shares words with (maxCommitsListed).
+const MaxCommitsRead = 10000
 
 // Initiative is one initiative of the session's project as the prompt lists it: its OID (what an idea's effort names),
 // its title and its chunk labels.
@@ -33,7 +35,7 @@ type ProjectContext struct {
 	Specs       []string     // file names under docs/superpowers/specs
 	Plans       []string     // file names under docs/superpowers/plans
 	Deferred    []string     // the ## and ### headings of docs/deferred.md
-	Commits     []string     // the last 200 commit subjects
+	Commits     []string     // the commit subjects of the search window, newest first, at most MaxCommitsRead
 	Known       []string     // gists already in the store for this project, in any state; ScanNow fills it
 }
 
@@ -91,7 +93,7 @@ func DeferredHeadings(md string) []string {
 	return out
 }
 
-// CommitSubjects is the subject lines of `git log --format=%s` output, newest first, at most 200.
+// CommitSubjects is the subject lines of `git log --format=%s` output, newest first, at most MaxCommitsRead.
 func CommitSubjects(gitLog string) []string {
 	var out []string
 	for line := range strings.SplitSeq(gitLog, "\n") {
@@ -99,7 +101,7 @@ func CommitSubjects(gitLog string) []string {
 			continue
 		}
 		out = append(out, line)
-		if len(out) == maxCommits {
+		if len(out) == MaxCommitsRead {
 			break
 		}
 	}

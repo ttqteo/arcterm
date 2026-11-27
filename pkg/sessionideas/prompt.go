@@ -31,6 +31,10 @@ const (
 	maxChunksListed = 40
 	chunkCap        = 120
 	minWordRunes    = 4
+
+	// The commits go the same way (arcterm's last 200 subjects were 18k characters, and covered two days): the prompt lists
+	// the maxCommitsListed of the search window that share the most words with the conversation, each cut at chunkCap.
+	maxCommitsListed = 40
 )
 
 // RawIdea is one idea as the model answers it, before the scan checks it.
@@ -112,59 +116,87 @@ func writeProjectContext(b *strings.Builder, pc ProjectContext, said map[string]
 	section("Plans", pc.Plans)
 	section("Deferred", pc.Deferred)
 	section("Ideas already found", pc.Known)
-	section("Recent commits", pc.Commits)
+	if picked := relevantCommits(pc.Commits, said); len(picked) > 0 {
+		b.WriteString("\n## Commits that share words with the conversation (newest first)\n")
+		for _, i := range picked {
+			fmt.Fprintf(b, "- %s\n", truncateRunes(oneLine(pc.Commits[i]), chunkCap))
+		}
+	}
 }
 
 // relevantChunks is, for each initiative, the indexes of the chunks the prompt lists, in their own order: the chunks
-// that share a word with the conversation, the best maxChunksListed of the project. A shared word weighs more the fewer
-// chunks hold it (the log of all chunks over the chunks that hold it), so a word every chunk uses picks none; a tie
-// goes to the newer chunk.
+// that share a word with the conversation, the best maxChunksListed of the project (sharedScores); a tie goes to the
+// newer chunk.
 func relevantChunks(ins []Initiative, said map[string]bool) [][]int {
-	type scored struct {
-		in, chunk int
-		score     float64
-	}
-	words := make([][]map[string]bool, len(ins))
-	df := map[string]int{}
-	total := 0
+	type at struct{ in, chunk int }
+	var labels []string
+	var where []at
 	for i, in := range ins {
-		words[i] = make([]map[string]bool, len(in.Chunks))
 		for c, label := range in.Chunks {
-			words[i][c] = wordsOf(label)
-			for w := range words[i][c] {
-				df[w]++
-			}
-			total++
+			labels = append(labels, label)
+			where = append(where, at{i, c})
 		}
 	}
-	var all []scored
-	for i := range ins {
-		for c, ws := range words[i] {
-			score := 0.0
-			for w := range ws {
-				if said[w] {
-					score += math.Log(float64(total) / float64(df[w]))
-				}
-			}
-			if score > 0 {
-				all = append(all, scored{i, c, score})
-			}
+	scores := sharedScores(labels, said)
+	var all []int
+	for k, sc := range scores {
+		if sc > 0 {
+			all = append(all, k)
 		}
 	}
 	sort.SliceStable(all, func(a, b int) bool {
-		if all[a].score != all[b].score {
-			return all[a].score > all[b].score
+		if scores[all[a]] != scores[all[b]] {
+			return scores[all[a]] > scores[all[b]]
 		}
-		return all[a].chunk > all[b].chunk
+		return where[all[a]].chunk > where[all[b]].chunk
 	})
 	out := make([][]int, len(ins))
-	for _, s := range all[:min(len(all), maxChunksListed)] {
-		out[s.in] = append(out[s.in], s.chunk)
+	for _, k := range all[:min(len(all), maxChunksListed)] {
+		out[where[k].in] = append(out[where[k].in], where[k].chunk)
 	}
 	for i := range out {
 		sort.Ints(out[i])
 	}
 	return out
+}
+
+// relevantCommits is the indexes of the commits the prompt lists, newest first as the log has them: the best
+// maxCommitsListed that share a word with the conversation (sharedScores), the newer on a tie.
+func relevantCommits(commits []string, said map[string]bool) []int {
+	scores := sharedScores(commits, said)
+	var all []int
+	for k, sc := range scores {
+		if sc > 0 {
+			all = append(all, k)
+		}
+	}
+	sort.SliceStable(all, func(a, b int) bool { return scores[all[a]] > scores[all[b]] }) // stable: the newer first on a tie
+	all = all[:min(len(all), maxCommitsListed)]
+	sort.Ints(all)
+	return all
+}
+
+// sharedScores is, for each label, how much it shares with the conversation: each word it holds that the conversation
+// also holds weighs the log of all labels over the labels that hold that word, so a word every label uses counts for
+// nothing.
+func sharedScores(labels []string, said map[string]bool) []float64 {
+	words := make([]map[string]bool, len(labels))
+	df := map[string]int{}
+	for i, label := range labels {
+		words[i] = wordsOf(label)
+		for w := range words[i] {
+			df[w]++
+		}
+	}
+	scores := make([]float64, len(labels))
+	for i, ws := range words {
+		for w := range ws {
+			if said[w] {
+				scores[i] += math.Log(float64(len(labels)) / float64(df[w]))
+			}
+		}
+	}
+	return scores
 }
 
 // wordsOf is the words of s a chunk can share with a conversation: runs of letters and digits, lower case, of at least

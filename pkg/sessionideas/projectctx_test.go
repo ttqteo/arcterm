@@ -23,14 +23,14 @@ func TestDeferredHeadings(t *testing.T) {
 	}
 }
 
-func TestCommitSubjectsKeepsTheNewest200(t *testing.T) {
+func TestCommitSubjectsKeepsTheNewestMaxCommitsRead(t *testing.T) {
 	var lines []string
-	for i := range 250 {
+	for i := range MaxCommitsRead + 50 {
 		lines = append(lines, fmt.Sprintf("commit %d", i), "") // git log ends each subject with a newline; blanks are dropped
 	}
 	got := CommitSubjects(strings.Join(lines, "\n"))
-	if len(got) != 200 || got[0] != "commit 0" || got[199] != "commit 199" {
-		t.Fatalf("the first 200 subjects, newest first: %d, first %q, last %q", len(got), got[0], got[len(got)-1])
+	if last := fmt.Sprintf("commit %d", MaxCommitsRead-1); len(got) != MaxCommitsRead || got[0] != "commit 0" || got[len(got)-1] != last {
+		t.Fatalf("the first %d subjects, newest first: %d, first %q, last %q", MaxCommitsRead, len(got), got[0], got[len(got)-1])
 	}
 	if got := CommitSubjects("\n  \n"); len(got) != 0 {
 		t.Fatalf("blank lines are no subjects: %q", got)
