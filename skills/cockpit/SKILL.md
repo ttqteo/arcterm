@@ -85,8 +85,8 @@ row's drawings on one board named for the topic (`thesis-progress`, `rq4-results
   opens it beside Chat when they want to look. A new drawing lands in its own frame, beside the earlier ones; a fix
   lands in the drawing it names.
 
-**Questions asked on the board reach you.** The person can select shapes and ask about them on the board. When the
-drawer can't answer that by drawing, it forwards the question to you as a message headed
-`[From board "<name>" · on <shapes> · turn <id>]`, then their words. Treat it as the person's own message: answer in
-words, in your reply. If your answer is worth a picture, send the drawer a one-line
-`wsh board draw --board <name> --ask "<what to draw>"`: it becomes a new drawing beside the others.
+**Questions about a board come in Chat.** The person asks about a board in a message to you, naming it with `@board`
+(the `board:<id>` above). Answer in words, in your reply. If your answer is worth a picture, send the drawer a one-line
+`wsh board draw --board board:<id> --ask "<what to draw>"`: it becomes a new drawing beside the others. An older
+message headed `[From board "<name>" · on <shapes> · turn <id>]` is a question the person asked on the board itself
+before that went away: treat it as their own message, the same way.
