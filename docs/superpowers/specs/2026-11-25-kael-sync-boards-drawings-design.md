@@ -33,7 +33,7 @@ behaviour is written into main's files.
 | 46eecdf0e drawings row, follow | the row lists drawings (number, title; the one in view current; one that landed while you were on an earlier one marked new); a chip fits its drawing; the canvas wraps an old board on load and saves it; the view follows the newest drawing while it is the one in view; reopening a board left following fits its newest; an ask sends the drawing an Edit selection names, else the one in view | `boardstore.ts` (atoms, `following`), `boardcanvas.tsx`, `boardstrip.tsx`, `boardsplit.tsx`, `boardactions.ts`, `libraryboards.tsx` |
 | 996cbfb4a frame fits measured text | `applyAnswer` takes a measuring function and measures before the drawing lands, so an edited frame fits its text as measured | `boardmodel.ts`, `boardconvert.ts` |
 | 618c718ce empty copy | empty board and empty talk lines point at Edit | `boardsplit.tsx`, `boardturns.tsx`, `libraryboards.tsx` |
-| drawer prompt and skill text | one short idea per drawing; more becomes another drawing; an agent's request is always a new drawing | `pkg/boarddrawer/drawer-prompt.md`, `skills/cockpit/SKILL.md` (the fork's skill did not change; ours says the drawer may change any shape, which is no longer true for an agent's request) |
+| drawer prompt and skill text | one short idea per drawing; more becomes another drawing; an agent's request is a new drawing, or (since 2026-11-27) an edit or delete of the drawing it names | `pkg/boarddrawer/drawer-prompt.md`, `skills/cockpit/SKILL.md` (the fork's skill did not change; ours says the drawer may change any shape, which is no longer true for an agent's request) |
 
 ## What is not taken, and why
 
@@ -99,13 +99,18 @@ the canvas no longer feeds it frames: hand frames are drawings in the row instea
 
 ### The drawer
 
-- `ParseAnswer(reply, scene, drawing string)` keeps main's name and gains the frame id of the drawing in view.
+- `ParseAnswer(reply, scene, drawing string, pick bool)` keeps main's name and gains the frame id of the drawing in
+  view, and `pick` for the agent's request (2026-11-27, below).
 - **40 adds counts the drawer's entries, a chart as one**, checked before `expandCharts`: a chart lays out its bars and
   labels in Arc, and the limit is about what the drawer wrote. The 12-word limit applies to `text` and `label` of `add`
   entries and to `text`/`label` patches in `update`; a chart's `title` and data labels are not counted (Arc lays them
   out, and the prompt already keeps them short).
-- An agent's request has no drawing in view, so an `edit` answer to it is refused ("no drawing is in view"): a request
-  is always a new drawing.
+- An agent's request has no drawing in view. Its answer is a new drawing, or an `edit` that names the drawing it
+  changes with a `"drawing": "<frame id>"` key, any drawing on the board; an edit that names none is refused ("its
+  drawing key names none"). A person's ask ignores that key and edits only the drawing in view. (Until 2026-11-27 a
+  request was always a new drawing, so an agent asked to fix one drew a corrected copy beside it.)
+- An edit that puts its own frame's id in `remove`, with no `add` or `update`, deletes the whole drawing: `ParseAnswer`
+  expands `remove` to every shape of that frame, then the frame, and `Removed` counts the shapes.
 - The drawer prompt's "parts" paragraph (give each part a title at its top left, 120 between parts) becomes a shorter
   rule inside one drawing (one idea; at least 120 between groups, under 40 between shapes of one group): the frame now
   carries the title.

@@ -109,7 +109,7 @@ Fork: c38d5ce85 (Go side). Main's names differ: `ParseAnswer` (not `CheckAnswer`
 - `wshserver_board.go`: `BoardAskCommand` passes `data.DrawingId`; Draw instead and Send to agent copy `t.DrawingId`.
 - `drawer-prompt.md`: the fork's "One drawing at a time" section (new drawing: add only, own coordinates near 0,0, Arc
   frames, titles and places it; edit: `"edit": true`, only that drawing's shapes, board coordinates, never a frame;
-  an agent's request is always new; keep every drawing short, more becomes another drawing), the 40-adds and 12-words
+  an agent's request is new, or since 2026-11-27 an edit or delete of the drawing its `drawing` key names; keep every drawing short, more becomes another drawing), the 40-adds and 12-words
   limits in place of "at most 200 entries", drop "the whole board is shared" and "put a new drawing beside or under
   what is there", the edit example; main's parts paragraph becomes the spec's shorter in-drawing rule. Keep main's
   chart vocabulary.
