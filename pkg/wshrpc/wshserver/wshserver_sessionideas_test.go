@@ -354,6 +354,122 @@ func TestSessionIdeasKeepLeavesTheIdeaInReviewWhenTheInitiativeRefusesTheChunk(t
 	}
 }
 
+// a gist longer than an initiative title may be is cut to name the chunk and the new idea, and kept whole in the note
+func TestSessionIdeasKeepCutsALongGistToTheTitleCap(t *testing.T) {
+	store := keepFixture(t)
+	long := strings.Repeat("let the wall filter by project ", 12) // 360 bytes
+	oid := createTestEffort(t, "Sidecar", "existing chunk")
+	seedIdeas(t, store, floated("on", long, oid), floated("new", long, ""))
+	for _, id := range []string{"on", "new"} {
+		if err := keepIdea(id, ""); err != nil {
+			t.Fatalf("keep %s of a %d-byte gist: %v", id, len(long), err)
+		}
+	}
+	e, _ := effortstore.Get(context.Background(), oid)
+	var made *waveobj.Effort
+	for _, x := range allEfforts(t) {
+		if x.OID != oid {
+			made = x
+		}
+	}
+	if made == nil || len(e.Chunks) != 2 {
+		t.Fatalf("keep adds the chunk and makes the idea, got chunks %+v and %v", e.Chunks, made)
+	}
+	chunk := e.Chunks[1]
+	for what, name := range map[string]string{"the chunk": chunk.Label, "the new idea": made.Title} {
+		if len(name) > sessionideas.MaxLabel || !strings.HasSuffix(name, "…") || !strings.HasPrefix(long, strings.TrimSuffix(name, "…")) {
+			t.Fatalf("%s is named by the gist's head, at most %d bytes, got %d: %q", what, sessionideas.MaxLabel, len(name), name)
+		}
+	}
+	for what, note := range map[string]string{"the chunk": chunk.Notes[0].Text, "the new idea": made.Notes[0].Text} {
+		if !strings.HasPrefix(note, "Idea: "+strings.TrimSpace(long)+"\n\n") {
+			t.Fatalf("%s's note opens with the whole gist, got %q", what, note)
+		}
+	}
+	if got := ideaByID(t, store, "on"); got.KeptAs != "chunk:"+oid+":"+chunk.Label {
+		t.Fatalf("KeptAs names the chunk by its cut label, got %q", got.KeptAs)
+	}
+}
+
+// blockStoreWrites makes the ideas store's writes fail (its temp file's path is taken by a folder) while it can still
+// be read, and gives the writes back with the returned func (or at the test's end).
+func blockStoreWrites(t *testing.T, store *sessionideas.Store) func() {
+	t.Helper()
+	tmp := filepath.Join(store.Root, "state.json.tmp")
+	if err := os.MkdirAll(filepath.Join(tmp, "taken"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	unblock := func() { os.RemoveAll(tmp) }
+	t.Cleanup(unblock)
+	return unblock
+}
+
+// the initiative is written but the ideas store is not: the idea still waits for review, the error says Keep again,
+// and the next Keep marks it kept on what the first one wrote, without a second chunk or idea
+func TestSessionIdeasKeepAgainAfterTheStoreFailedFinishesWithoutWritingTwice(t *testing.T) {
+	store := keepFixture(t)
+	oid := createTestEffort(t, "Sidecar", "existing chunk")
+	seedIdeas(t, store, floated("on", "Let the wall filter by project", oid), floated("new", "Show the ask age on the card", ""))
+	log.SetOutput(&bytes.Buffer{})
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+
+	unblock := blockStoreWrites(t, store)
+	for _, id := range []string{"on", "new"} {
+		err := keepIdea(id, "")
+		if err == nil || !strings.Contains(err.Error(), "Keep it again") {
+			t.Fatalf("keep %s with the store unwritable must say to keep it again, got %v", id, err)
+		}
+		if got := ideaByID(t, store, id); got.State != wshrpc.SessionIdeaState_Review || got.KeptAs != "" {
+			t.Fatalf("a store that was not saved leaves %s in review, got %+v", id, got)
+		}
+	}
+	e, _ := effortstore.Get(context.Background(), oid)
+	if len(e.Chunks) != 2 || len(allEfforts(t)) != 2 {
+		t.Fatalf("the failed keeps did write the initiative side (one chunk, one idea), got %+v and %d efforts", e.Chunks, len(allEfforts(t)))
+	}
+
+	unblock()
+	for _, id := range []string{"on", "new"} {
+		if err := keepIdea(id, ""); err != nil {
+			t.Fatalf("keep %s again: %v", id, err)
+		}
+	}
+	e, _ = effortstore.Get(context.Background(), oid)
+	all := allEfforts(t)
+	if len(e.Chunks) != 2 || len(e.Chunks[1].Notes) != 1 || len(all) != 2 {
+		t.Fatalf("keeping again writes nothing twice, got chunks %+v and %d efforts", e.Chunks, len(all))
+	}
+	if got := ideaByID(t, store, "on"); got.State != wshrpc.SessionIdeaState_Kept || got.KeptAs != "chunk:"+oid+":Let the wall filter by project" {
+		t.Fatalf("the idea is kept as the chunk the failed keep wrote, got %+v", got)
+	}
+	idea := all[0]
+	if idea.OID == oid {
+		idea = all[1]
+	}
+	if got := ideaByID(t, store, "new"); got.State != wshrpc.SessionIdeaState_Kept || got.KeptAs != "effort:"+idea.OID {
+		t.Fatalf("the idea is kept as the idea the failed keep made, got %+v", got)
+	}
+}
+
+// a chunk of the same name that some other keep or person wrote is not taken for this idea's
+func TestSessionIdeasKeepDoesNotAdoptAChunkWithAnotherNote(t *testing.T) {
+	store := keepFixture(t)
+	gist := "Let the wall filter by project"
+	oid := createTestEffort(t, "Sidecar", "existing chunk")
+	other := floated("other", gist, oid)
+	other.SessionID = "another-session"
+	seedIdeas(t, store, other, floated("i1", gist, oid))
+	if err := keepIdea("other", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := keepIdea("i1", ""); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("a chunk of that name from another session is the initiative's refusal, not this idea's keep, got %v", err)
+	}
+	if got := ideaByID(t, store, "i1"); got.State != wshrpc.SessionIdeaState_Review {
+		t.Fatalf("the idea stays in review, got %+v", got)
+	}
+}
+
 func TestSessionIdeasMarkSeen(t *testing.T) {
 	store := emptySessionIdeas(t)
 	ws := &WshServer{}
