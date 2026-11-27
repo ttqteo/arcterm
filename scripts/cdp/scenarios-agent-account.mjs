@@ -1,11 +1,10 @@
-// agent-account: the Claude account word an agent shows while the open claude agents run on two accounts or more
-// (agentaccountbadge.ts, agentaccountstore.ts): [data-chat-account] left of the model under the chat box (chatfooter.tsx)
-// and [data-row-account] first on the agent's sidebar row meta line (agenttree.tsx ParentRow).
+// agent-account: the Claude account word every claude agent shows, on one account or more
+// (agentaccountbadge.ts, agentaccountstore.ts): [data-chat-account] left of the model under the chat box (chatfooter.tsx).
+// The sidebar rows never name the account ([data-row-account] stays absent).
 // The page's claudeIdentityAtom is set to the /login account plus a Work token account (a dev store holds no second
 // account), and a mock roster holds two claude agents: A, a real tab whose chat is open, on the /login account (its usage
-// names none), and B on Work. Steps: two accounts, both rows and A's footer name their account, the footer's word left of
-// the model chip, a long label truncated with its full name in the title; B moved to /login, every word goes; B back on
-// Work, they come back. The tree is opened for the run. Teardown puts the identity, the roster, the tree's fold and the
+// names none), and B on Work. Steps: two accounts, A's footer names its account left of the model chip and no row names
+// one; B moved to /login, A's word stays; B back on Work, it stays and still no row names one. The tree is opened for the run. Teardown puts the identity, the roster, the tree's fold and the
 // tab back.
 
 import * as AC from "./agent-page-fixtures.mjs";
@@ -14,7 +13,6 @@ const NAME = "agent-account";
 const PROJECT = "verify-agent-account";
 const LOGIN = "me@verify.test";
 const WORK = { id: "awork", label: "Work", email: "work@verify.test" };
-const LONG = "a-very-long-account-label-someone-typed-for-the-spare-subscription";
 const WAIT_MS = 10_000;
 
 const nap = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -63,7 +61,7 @@ export default function (kit) {
         },
     ];
 
-    // what the two rows and A's footer draw of the account, with where A's word and model chip sit
+    // what the two rows (nothing) and A's footer draw of the account, with where A's word and model chip sit
     const read = (h, a) =>
         h.ev(`(() => {
             const flat = (el) => (el?.textContent ?? "").replace(/\\s+/g, " ").trim();
@@ -120,11 +118,10 @@ export default function (kit) {
                 let got = await read(h, A);
                 await h.shot("cdp-shots/agent-account-1-two.png");
                 rec(
-                    `1. two accounts: A's row reads "${LOGIN}", B's row "Work", A's footer "${LOGIN}" titled "Claude account: ${LOGIN}", left of the model chip`,
+                    `1. two accounts: A's footer "${LOGIN}" titled "Claude account: ${LOGIN}", left of the model chip; no row names an account`,
                     up &&
-                        got.rowA?.text === LOGIN &&
-                        got.rowA?.title === `Claude account: ${LOGIN}` &&
-                        got.rowB?.text === "Work" &&
+                        got.rowA == null &&
+                        got.rowB == null &&
                         got.word?.text === LOGIN &&
                         got.word?.title === `Claude account: ${LOGIN}` &&
                         got.chip != null &&
@@ -132,27 +129,18 @@ export default function (kit) {
                     got
                 );
 
-                // 2. a long label: truncated in the footer and on the row, its full name in the title
-                await setIdentity(h, { loginEmail: LOGIN, accounts: [{ id: WORK.id, label: LONG, email: WORK.email }] });
-                await waitFor(h, `document.querySelector('[data-agent-row="fx-account-b"] [data-row-account]')?.textContent === ${JSON.stringify(LONG)}`);
-                await nap(400);
-                const rowB = await h.ev(`(() => { const el = document.querySelector('[data-agent-row="fx-account-b"] [data-row-account]'); const row = document.querySelector('[data-agent-row="fx-account-b"]'); if (!el || !row) return null; return { clipped: el.scrollWidth > el.clientWidth, title: el.getAttribute("title"), inside: el.getBoundingClientRect().right <= row.getBoundingClientRect().right }; })()`);
-                await h.shot("cdp-shots/agent-account-2-long.png");
-                rec(`2. a long label: B's row word is cut with an ellipsis, titled with the whole label, and stays inside its row`, rowB?.clipped === true && rowB?.title === `Claude account: ${LONG}` && rowB?.inside === true, rowB);
-                await setIdentity(h, { loginEmail: LOGIN, accounts: [{ id: WORK.id, label: WORK.label, email: WORK.email }] });
-
-                // 3. B moves to the /login account: one account in play, every word goes
+                // 2. B moves to the /login account: one account in play, A's footer still names it
                 await AC.setRoster(h, roster(ctx, null));
-                const gone = await waitFor(h, `!${sel} && !document.querySelector("[data-row-account]")`);
+                const kept = await waitFor(h, `!!${sel}`);
                 await nap(500);
                 got = await read(h, A);
-                await h.shot("cdp-shots/agent-account-3-one.png");
-                rec(`3. one account: no [data-chat-account], no [data-row-account], the footer still drawn`, gone && got.footer && got.word == null && got.rowA == null && got.rowB == null, got);
+                await h.shot("cdp-shots/agent-account-2-one.png");
+                rec(`2. one account: A's footer still reads "${LOGIN}", no row names an account`, kept && got.footer && got.word?.text === LOGIN && got.rowA == null && got.rowB == null, got);
 
-                // 4. B back on Work: the words come back
+                // 3. B back on Work: the footer word stays, still on no row
                 await AC.setRoster(h, roster(ctx, WORK.id));
-                const back = await waitFor(h, `!!${sel} && document.querySelectorAll("[data-row-account]").length === 2`);
-                rec(`4. back to two accounts: the footer word and both row words return`, back, await read(h, A));
+                const back = await waitFor(h, `!!${sel}`);
+                rec(`3. back to two accounts: the footer word stays, no row word`, back && !(await h.ev(`!!document.querySelector("[data-row-account]")`)), await read(h, A));
                 return steps;
             },
             async teardown(h, ctx) {

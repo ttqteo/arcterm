@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// The Claude account word of each open agent (agentaccountbadge.ts), read by the chat footer and the sidebar rows. It
+// The Claude account word of each open agent (agentaccountbadge.ts), read by the chat footer. It
 // reads the roster the sidebar draws (devRosterAtom: the live one, or a dev fixture standing in for it).
 
 import { atom, useAtomValue } from "jotai";

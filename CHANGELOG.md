@@ -41,8 +41,7 @@ and a picture given to a line that is not big.
   them right under the reply that proposed them. Accept, rename or drop each one, or Accept all and continue, without
   opening the rail. The card goes once you have decided them all and the agent moves on. <!-- big -->
   <!-- shot: 1.12.0-chat-plan-review.webp -->
-- Each Claude agent names the Claude account it runs on: left of the model under the chat box, and before the model
-  under its row in the sidebar.
+- Each Claude agent names the Claude account it runs on, left of the model under the chat box.
 - Right-click text you selected in Chat to keep it: Save as idea puts it on Jarvis's Ideas to plan later, Add note
   saves it as a note. Each is named by the passage's first sentence and keeps the passage with the agent it came from.
 - A Focus board button in the agent header while a board is split beside the agent: one press folds the sidebar, hides

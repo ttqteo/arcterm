@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// Pure: the Claude account word an agent shows beside its model, in the chat footer and under its sidebar row. Every
+// Pure: the Claude account word an agent shows beside its model, in the chat footer. Every
 // claude agent names its account, also while all of them run on one: the /login (Default) account and the active
 // account can differ, and the word is how the person sees which one an agent took.
 
