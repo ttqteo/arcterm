@@ -170,6 +170,61 @@ func TestEndedRunSettles(t *testing.T) {
 	}
 }
 
+// A done run whose land its failed final stage holds keeps the dag for the human's rerun: settled cancelled, the
+// rerun is refused and the land never lifts (portal run 8e459efd)
+func TestEndedRunSettlesKeepsAFinalHeldLandForItsRerun(t *testing.T) {
+	failed := &waveobj.FinalStage{Round: 1, State: FinalState_Failed}
+	cases := []struct {
+		name       string
+		landPath   string
+		final      *waveobj.FinalStage
+		land       *waveobj.RunLand
+		wantSettle bool
+	}{
+		{"land held on the failed final", "/tree", failed, &waveobj.RunLand{State: LandState_Held, Reason: finalFailedHold}, false},
+		{"land not yet tried", "/tree", failed, nil, false},
+		{"land queued behind another run", "/tree", failed, &waveobj.RunLand{State: LandState_Queued}, false},
+		{"land held on a dirty checkout first", "/tree", failed, &waveobj.RunLand{State: LandState_Held, Dirty: true}, false},
+		{"hold dismissed", "/tree", failed, &waveobj.RunLand{State: LandState_Held, Reason: finalFailedHold, Dismissed: true}, true},
+		{"landed anyway", "/tree", failed, &waveobj.RunLand{State: LandState_Landed}, true},
+		{"landed in the checkout", "", failed, nil, true},
+		{"blocked on a task, not the final", "/tree", nil, &waveobj.RunLand{State: LandState_Held}, true},
+	}
+	for _, c := range cases {
+		g := &waveobj.TaskGroup{Status: DagStatus_Blocked, Final: c.final}
+		owner := &waveobj.Run{Status: jarvis.RunStatus_Done, LandPath: c.landPath, Land: c.land}
+		if got := endedRunSettles(g, owner); got != c.wantSettle {
+			t.Errorf("%s: endedRunSettles = %v, want %v", c.name, got, c.wantSettle)
+		}
+	}
+}
+
+func TestAFinalHeldLandOfADoneRunCanBeRerun(t *testing.T) {
+	ctx := context.Background()
+	dagID, chID, ownerID := endedRunDag(t, "ended-final-held",
+		&waveobj.FinalStage{Round: 1, State: FinalState_Failed, Detail: "Check failed: postgres is not running"},
+		&waveobj.RunLand{State: LandState_Held, Reason: finalFailedHold})
+	if err := wstore.UpdateRun(ctx, chID, ownerID, func(r *waveobj.Run) error {
+		r.LandPath = t.TempDir()
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	watchdogTick(ctx)
+
+	if g, _ := wstore.GetDag(ctx, dagID); g.Status != DagStatus_Blocked {
+		t.Fatalf("dag = %q, want it kept blocked for the rerun", g.Status)
+	}
+	if err := RerunFinalStage(ctx, dagID); err != nil {
+		t.Fatalf("the rerun is refused: %v", err)
+	}
+	g, _ := wstore.GetDag(ctx, dagID)
+	if g.Status != DagStatus_Finalizing || g.Final.Round != 1 || g.Final.State != "" {
+		t.Fatalf("the stage starts over in round 1, got %s / %+v", g.Status, g.Final)
+	}
+}
+
 // endedRunDag stores a one-task dag whose task landed, with final as its final stage, owned by a done run whose land
 // is land. Returns the dag id and the owner's id.
 func endedRunDag(t *testing.T, name string, final *waveobj.FinalStage, land *waveobj.RunLand) (string, string, string) {

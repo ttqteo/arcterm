@@ -1459,6 +1459,13 @@ func TestShouldCloseOrchestratorLead(t *testing.T) {
 			want: false,
 		},
 		{
+			// the dag stays blocked for the human's rerun (awaitsFinalRerun), and a done run's lead reads no wake
+			name: "done run whose failed final holds its land closes",
+			run:  waveobj.Run{Mode: jarvis.RunMode_Orchestrator, Status: jarvis.RunStatus_Done, LandPath: "/tree", Land: &waveobj.RunLand{State: LandState_Held, Reason: finalFailedHold}},
+			dag:  waveobj.TaskGroup{Status: DagStatus_Blocked, Final: &waveobj.FinalStage{State: FinalState_Failed}, Tasks: []waveobj.TaskNode{{ID: "t-1", State: TaskState_Done}}},
+			want: true,
+		},
+		{
 			name: "done run not landed keeps the lead on a blocked dag",
 			run:  waveobj.Run{Mode: jarvis.RunMode_Orchestrator, Status: jarvis.RunStatus_Done},
 			dag:  waveobj.TaskGroup{Status: DagStatus_Blocked, Final: &waveobj.FinalStage{State: FinalState_Failed}, Tasks: []waveobj.TaskNode{{ID: "t-1", State: TaskState_Done}}},

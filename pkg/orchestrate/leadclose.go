@@ -129,8 +129,9 @@ func ShouldCloseOrchestratorLead(run *waveobj.Run, dag *waveobj.TaskGroup) bool 
 	// terminal dag statuses; blocked/awaiting-review still need the lead to
 	// triage the gate, so keep it — unless a human already landed the run past
 	// that gate (a failed final stage): the dag stays blocked on the failure, but
-	// the work is in its base and nothing is left to triage.
-	if dag.Status != DagStatus_Done && dag.Status != DagStatus_Cancelled && !landedRun(run) {
+	// the work is in its base and nothing is left to triage. Nor is there for a done run whose dag stays blocked only
+	// for the human's rerun of its failed final stage (awaitsFinalRerun).
+	if dag.Status != DagStatus_Done && dag.Status != DagStatus_Cancelled && !landedRun(run) && !awaitsFinalRerun(dag, run) {
 		return false
 	}
 	return allTasksTerminal(dag)
