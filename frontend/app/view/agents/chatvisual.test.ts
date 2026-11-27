@@ -3,7 +3,6 @@
 
 import { describe, expect, it } from "vitest";
 import {
-    FRAME_EXPANDED_MAX,
     FRAME_MAX,
     FRAME_MIN,
     PROMPT_GAP_MS,
@@ -28,8 +27,7 @@ describe("constants", () => {
         expect(PROMPT_MAX).toBe(4000);
         expect(PROMPT_GAP_MS).toBe(1500);
         expect(FRAME_MIN).toBe(120);
-        expect(FRAME_MAX).toBe(640);
-        expect(FRAME_EXPANDED_MAX).toBe(4000);
+        expect(FRAME_MAX).toBe(4000);
     });
 });
 
@@ -197,27 +195,26 @@ describe("promptAction", () => {
 
 describe("frameHeight", () => {
     it("is 160 until the page reports a height", () => {
-        expect(frameHeight(undefined, false)).toBe(160);
-        expect(frameHeight(undefined, true)).toBe(160);
+        expect(frameHeight(undefined)).toBe(160);
     });
     it("is 160 for a height that is not a finite number", () => {
-        expect(frameHeight(Number.NaN, false)).toBe(160);
-        expect(frameHeight(Number.POSITIVE_INFINITY, false)).toBe(160);
+        expect(frameHeight(Number.NaN)).toBe(160);
+        expect(frameHeight(Number.POSITIVE_INFINITY)).toBe(160);
     });
-    it("passes a height inside the range", () => {
-        expect(frameHeight(300, false)).toBe(300);
-        expect(frameHeight(FRAME_MIN, false)).toBe(FRAME_MIN);
-        expect(frameHeight(FRAME_MAX, false)).toBe(FRAME_MAX);
+    it("passes a height inside the range, a tall page's whole height included", () => {
+        expect(frameHeight(300)).toBe(300);
+        expect(frameHeight(FRAME_MIN)).toBe(FRAME_MIN);
+        expect(frameHeight(900)).toBe(900);
+        expect(frameHeight(2000)).toBe(2000);
+        expect(frameHeight(FRAME_MAX)).toBe(FRAME_MAX);
     });
     it("raises a short page to FRAME_MIN", () => {
-        expect(frameHeight(0, false)).toBe(FRAME_MIN);
-        expect(frameHeight(-50, false)).toBe(FRAME_MIN);
-        expect(frameHeight(FRAME_MIN - 1, true)).toBe(FRAME_MIN);
+        expect(frameHeight(0)).toBe(FRAME_MIN);
+        expect(frameHeight(-50)).toBe(FRAME_MIN);
+        expect(frameHeight(FRAME_MIN - 1)).toBe(FRAME_MIN);
     });
-    it("caps a tall page at FRAME_MAX, or FRAME_EXPANDED_MAX once expanded", () => {
-        expect(frameHeight(2000, false)).toBe(FRAME_MAX);
-        expect(frameHeight(2000, true)).toBe(2000);
-        expect(frameHeight(9000, true)).toBe(FRAME_EXPANDED_MAX);
+    it("stops a runaway height at FRAME_MAX", () => {
+        expect(frameHeight(9000)).toBe(FRAME_MAX);
     });
 });
 

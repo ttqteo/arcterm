@@ -324,9 +324,13 @@ export function stretchPictures(actions: readonly AgentActionEntry[], max: numbe
 export const succeeded = (a: AgentActionEntry) =>
     a.outcome !== "fail" && a.outcome !== "blocked" && a.verb !== "blocked";
 
+// a file in the visuals folder (chatvisual.ts visualsDirOf), slashes forward; any case, as on a Windows disk
+const VISUAL_PAGE = /(?:^|\/)\.arc\/visuals\//i;
+
 /** Pure: every file a turn's edits and creates changed, once each, in the order first touched, its lines summed over the
  *  turn: the card at a finished turn's end (chatturnfiles.tsx). A call that failed or was refused adds nothing, and so do
- *  reads, commands and other tools (a command that wrote a file is not seen). */
+ *  reads, commands and other tools (a command that wrote a file is not seen). A page written under ~/.arc/visuals is left
+ *  out: it is drawn in the reply as an inline visual, and is no change to the project. */
 export function turnFiles(parts: readonly AgentPart[]): TurnFile[] {
     const byPath = new Map<string, TurnFile>();
     for (const part of parts) {
@@ -342,6 +346,9 @@ export function turnFiles(parts: readonly AgentPart[]): TurnFile[] {
                     continue;
                 }
                 const key = f.path.replace(/\\/g, "/");
+                if (VISUAL_PAGE.test(key)) {
+                    continue;
+                }
                 const seen = byPath.get(key);
                 if (seen != null) {
                     seen.adds += f.adds;

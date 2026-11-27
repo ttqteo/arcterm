@@ -69,6 +69,8 @@ and a picture given to a line that is not big.
   it is told why and asked once more, so fewer drawings end in "Couldn't draw" and need the agent to ask again.
 - A board's drawer starts a fresh session once its talk has grown long, instead of re-reading the whole day's
   talk for every new drawing: a board drawn on all day stops costing more usage per drawing.
+- A visual in Chat shows at its whole height, so you scroll the chat past it rather than inside it; the icon row over
+  it and its Show all button are gone. The visual's HTML file no longer shows up in the turn's changed-files card.
 - Copy image on a diagram in Chat (its toolbar and the enlarged viewer) shows a camera, as Copy screenshot does
   elsewhere, so it no longer looks like copying the text.
 - The part stepper in a board's header (‹ 3/13 ›) stays in one place beside the header's buttons: stepping through
