@@ -34,6 +34,10 @@ and a picture given to a line that is not big.
 
 ### Added
 
+- Answer an agent's permission prompt from its sidebar row: the row says what the agent asks ("subagent · Update the
+  board scenarios", `$ npm test`) and holds Allow and Deny under it, so you no longer pick the agent or open its chat.
+  A prompt with choices of its own, such as a plan approval, offers Answer in chat instead. <!-- big -->
+  <!-- shot: none -->
 - A Note button on the nav rail, above Translate, and `Mod`+`Shift`+`N` open a new note straight away: you type its
   title and body and save it with `Ctrl`+`Enter`. Before, it took Search, the Notes scope and its New note row.
   <!-- try: new-note -->

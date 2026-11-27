@@ -13,12 +13,16 @@ import {
     moveChoice,
     permissionBoxKey,
     permissionChoices,
+    permissionRowLabel,
     permissionSummaryLine,
     permissionTitle,
     REFUSAL_MS,
     refusalClears,
     requestsGone,
+    rowPermission,
+    rowWaitLine,
     secondChoice,
+    transformMoves,
     waitingFor,
 } from "./permissionmodel";
 import { tuiPermissionOptions } from "./tuiscreen";
@@ -291,5 +295,132 @@ describe("the card's choices from the keyboard", () => {
         expect(permissionBoxKey(k("ArrowUp", { metaKey: true }), true)).toBeNull();
         expect(permissionBoxKey(k("Enter", { isComposing: true }), true)).toBeNull();
         expect(permissionBoxKey(k("1"), true)).toBeNull();
+    });
+});
+
+const req = (
+    toolname: string,
+    summary: string,
+    extra: Partial<AgentPermissionRequest> = {}
+): AgentPermissionRequest => ({
+    id: `${toolname}-1`,
+    toolname,
+    summary,
+    answerable: [
+        "Bash",
+        "Edit",
+        "Write",
+        "MultiEdit",
+        "NotebookEdit",
+        "WebFetch",
+        "WebSearch",
+        "Agent",
+        "Task",
+    ].includes(toolname),
+    ts: 0,
+    ...extra,
+});
+
+describe("rowPermission", () => {
+    const open = { shown: true, otherAsk: false, refused: false };
+
+    it("offers Allow and Deny for an answerable head", () => {
+        const bash = req("Bash", "ls");
+        expect(rowPermission([bash, req("Edit", "/a.ts")], open)).toEqual({
+            kind: "answer",
+            head: bash,
+            screen: false,
+        });
+    });
+
+    it("answers a ScreenPick head by picking its Yes off the screen", () => {
+        const art = req("Artifact", "delete https://claude.ai/artifact/x", { screenpick: true });
+        expect(rowPermission([art], open)).toEqual({ kind: "answer", head: art, screen: true });
+    });
+
+    it("sends a head it may not allow to the chat", () => {
+        const plan = req("ExitPlanMode", 'ExitPlanMode {"plan":"…"}');
+        expect(rowPermission([plan], open)).toEqual({ kind: "chat", head: plan });
+        expect(rowPermission([req("mcp__x__y", "mcp__x__y {}")], open)?.kind).toBe("chat");
+    });
+
+    it("leaves an AskUserQuestion head as it is, whatever waits behind it", () => {
+        expect(rowPermission([req("AskUserQuestion", "{}"), req("Bash", "ls")], open)).toBeNull();
+    });
+
+    it("shows nothing for a stale queue, or while another ask holds the row", () => {
+        expect(rowPermission([req("Bash", "ls")], { ...open, shown: false })).toBeNull();
+        expect(rowPermission([req("Bash", "ls")], { ...open, otherAsk: true })).toBeNull();
+        expect(rowPermission([], { ...open, refused: true, otherAsk: true })).toBeNull();
+    });
+
+    it("keeps the refusal line alone once the queue is empty", () => {
+        expect(rowPermission([], { ...open, refused: true })).toEqual({ kind: "refusal" });
+        expect(rowPermission([], open)).toBeNull();
+    });
+});
+
+describe("permissionRowLabel", () => {
+    it("reads a Bash command in mono, on one line", () => {
+        expect(permissionRowLabel(req("Bash", "task check:ts &&\n  npx vitest run"))).toEqual({
+            text: "$ task check:ts && npx vitest run",
+            mono: true,
+        });
+    });
+
+    it("reads a subagent's description without its type and model", () => {
+        expect(permissionRowLabel(req("Agent", "Update board CDP scenarios (Explore on haiku)")).text).toBe(
+            "subagent · Update board CDP scenarios"
+        );
+        expect(permissionRowLabel(req("Task", "Fix (the) race (general-purpose)")).text).toBe(
+            "subagent · Fix (the) race"
+        );
+    });
+
+    it("names the file of a file tool, the page of a fetch and the query of a search", () => {
+        expect(permissionRowLabel(req("Edit", "D:\\repo\\frontend\\app\\x.tsx")).text).toBe("edit x.tsx");
+        expect(permissionRowLabel(req("MultiEdit", "/repo/a/b.go")).text).toBe("edit b.go");
+        expect(permissionRowLabel(req("Write", "/repo/docs/new.md")).text).toBe("write new.md");
+        expect(permissionRowLabel(req("WebFetch", "https://example.com/docs")).text).toBe("fetch example.com/docs");
+        expect(permissionRowLabel(req("WebSearch", "tauri drag region")).text).toBe("search tauri drag region");
+    });
+
+    it("prefixes an artifact call and any other answerable tool with its name", () => {
+        const art = req("Artifact", "publish /s/a.html", { screenpick: true });
+        expect(permissionRowLabel(art).text).toBe("artifact · publish /s/a.html");
+        expect(permissionRowLabel(req("Other", "do it", { answerable: true })).text).toBe("Other · do it");
+    });
+
+    it("gives a head it may not allow a short name, never its input as JSON", () => {
+        expect(permissionRowLabel(req("ExitPlanMode", 'ExitPlanMode {"plan":"# Plan"}'))).toEqual({
+            text: "plan approval",
+            mono: false,
+        });
+        expect(permissionRowLabel(req("mcp__stitch__get_project", 'mcp__stitch__get_project {"id":1}')).text).toBe(
+            "mcp__stitch__get_project"
+        );
+    });
+
+    it("falls back to a short name when wavesrv had only the raw input", () => {
+        expect(permissionRowLabel(req("Agent", 'Agent {"prompt":"…"}')).text).toBe("subagent");
+        expect(permissionRowLabel(req("Bash", "Bash")).text).toBe("Bash");
+    });
+});
+
+describe("rowWaitLine", () => {
+    it("counts what waits behind the head, then how long it waited", () => {
+        expect(rowWaitLine(1, 0, 8_000)).toBe("+1 more · waiting 8s");
+        expect(rowWaitLine(0, 0, 60_000)).toBe("waiting 1m");
+    });
+});
+
+describe("transformMoves", () => {
+    it("reads a translate as moving and rest or a scale alone as still", () => {
+        expect(transformMoves("none")).toBe(false);
+        expect(transformMoves("matrix(1, 0, 0, 1, 0, 0)")).toBe(false);
+        expect(transformMoves("matrix(1.012, 0, 0, 1.012, 0, 0)")).toBe(false);
+        expect(transformMoves("matrix(1, 0, 0, 1, 0, -24.5)")).toBe(true);
+        expect(transformMoves("matrix(1, 0, 0, 1, 0.2, 0.3)")).toBe(false);
+        expect(transformMoves("matrix3d(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 12, 0, 1)")).toBe(true);
     });
 });

@@ -24,6 +24,14 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
 
 ## 2026-11-27
 
+- [ ] (arcterm) **Allow and Deny on an agent's sidebar row** (`permissionrow.tsx`, branch of the sidebar-permission-row
+  run). Vitest and typecheck only; the end state is `task verify:ui -- sidebar-permission-row`, never run here (a run
+  agent runs no CDP). With a real Claude agent outside a run, have it run a Bash command that asks permission: its row's
+  second line reads `$ <command>` in amber and a third line opens under it on the reveal (height and fade, no jump),
+  Allow and Deny on the left, `waiting 4s` on the right. Press Allow: both buttons dim at once, the command runs, the
+  third line closes on the same reveal and the row does not get selected or dragged. Have two agents ask at once and
+  answer one so the rows re-sort: a click on a button while its row slides does nothing. Then swap the changelog's
+  `<!-- shot: none -->` for the picture the scenario leaves (`public/whatsnew/<next minor>-sidebar-permission-row.webp`).
 - [ ] (arcterm) **An agent fixes or deletes a drawing in place** (`pkg/boarddrawer` answer.go `drawing` key, prompt).
   Go and vitest only, no real drawer run. On a board with two drawings, have an agent run
   `wsh board draw --board <name> --ask "in <title>, drop the long arrows"`: that drawing changes, no new frame appears.
