@@ -31,7 +31,7 @@ func useTempRoot(t *testing.T) string {
 func TestAddWritesAMarkdownFileAndPokesSync(t *testing.T) {
 	root := useTempRoot(t)
 	wavevault.PokedForTest()
-	note, err := Add("  Debug port: measurement steps ", "1. quit Arc\n2. relaunch\n")
+	note, err := Add("  Debug port: measurement steps ", "1. quit Arc\n2. relaunch\n", Source{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,11 +53,11 @@ func TestAddWritesAMarkdownFileAndPokesSync(t *testing.T) {
 
 func TestAddNumbersASecondNoteWithTheSameTitle(t *testing.T) {
 	useTempRoot(t)
-	first, err := Add("Steps", "one")
+	first, err := Add("Steps", "one", Source{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := Add("Steps", "two")
+	second, err := Add("Steps", "two", Source{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func TestAddNumbersASecondNoteWithTheSameTitle(t *testing.T) {
 func TestAddRejectsABadTitle(t *testing.T) {
 	useTempRoot(t)
 	for _, title := range []string{"", "   ", "two\nlines", strings.Repeat("x", maxTitleLen+1)} {
-		if _, err := Add(title, "body"); err == nil {
+		if _, err := Add(title, "body", Source{}); err == nil {
 			t.Errorf("title %q was accepted", title)
 		}
 	}
@@ -84,7 +84,7 @@ func TestAddRejectsABadTitle(t *testing.T) {
 
 func TestAddSlugsATitleWithNoLettersOrDigits(t *testing.T) {
 	useTempRoot(t)
-	note, err := Add("???", "")
+	note, err := Add("???", "", Source{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,14 +96,14 @@ func TestAddSlugsATitleWithNoLettersOrDigits(t *testing.T) {
 // a Vietnamese title keeps its words: the diacritics go, not the letters that carry them
 func TestAddSlugsAVietnameseTitleWithoutDroppingLetters(t *testing.T) {
 	useTempRoot(t)
-	note, err := Add("Council: ý cải tiến (từ council 04/11)", "")
+	note, err := Add("Council: ý cải tiến (từ council 04/11)", "", Source{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if want := testDay + "-council-y-cai-tien-tu-council-04-11"; note.ID != want {
 		t.Fatalf("id = %q, want %q", note.ID, want)
 	}
-	note, err = Add("Đường đi", "")
+	note, err = Add("Đường đi", "", Source{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func TestListIsNewestDayFirstAndSkipsOtherFiles(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := Add("New", "fresh"); err != nil {
+	if _, err := Add("New", "fresh", Source{}); err != nil {
 		t.Fatal(err)
 	}
 	notes, err := List()
@@ -195,7 +195,7 @@ func TestListOfAVaultWithNoNotesIsEmpty(t *testing.T) {
 
 func TestUpdateRewritesTitleAndBodyAndKeepsTheID(t *testing.T) {
 	useTempRoot(t)
-	note, err := Add("Draft", "old body")
+	note, err := Add("Draft", "old body", Source{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +230,7 @@ func TestUpdateAndDeleteOfAMissingNoteAreNotFound(t *testing.T) {
 // written back (ours has no baseRev: an Update overwrites, so the existence check is what the lock guards)
 func TestUpdateWaitingOnSyncSeesItsMerge(t *testing.T) {
 	root := useTempRoot(t)
-	note, err := Add("Shared", "first")
+	note, err := Add("Shared", "first", Source{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -263,7 +263,7 @@ func TestAddWaitingOnSyncSeesItsMerge(t *testing.T) {
 	}
 	done := make(chan added, 1)
 	go func() {
-		n, err := Add("Shared", "mine")
+		n, err := Add("Shared", "mine", Source{})
 		done <- added{n, err}
 	}()
 	time.Sleep(100 * time.Millisecond) // let Add reach the vault lock
@@ -289,7 +289,7 @@ func TestAddWaitingOnSyncSeesItsMerge(t *testing.T) {
 
 func TestDeleteRemovesTheFile(t *testing.T) {
 	useTempRoot(t)
-	note, err := Add("Gone", "")
+	note, err := Add("Gone", "", Source{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -328,7 +328,7 @@ func TestListSkipsTheScratchNote(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, NotesDir, "scratch.md"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Add("Real", ""); err != nil {
+	if _, err := Add("Real", "", Source{}); err != nil {
 		t.Fatal(err)
 	}
 	notes, err := List()
@@ -337,5 +337,82 @@ func TestListSkipsTheScratchNote(t *testing.T) {
 	}
 	if len(notes) != 1 || notes[0].Title != "Real" {
 		t.Fatalf("List() = %+v, want only the Real note", notes)
+	}
+}
+
+func TestAddWritesTheSourceAsFrontmatterAndListReadsItBack(t *testing.T) {
+	root := useTempRoot(t)
+	note, err := Add("Log audit", "> quote", Source{Project: " vndev ", Session: "3f2a-uuid"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(root, NotesDir, note.ID+".md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "---\nproject: vndev\nsession: 3f2a-uuid\n---\n# Log audit\n\n> quote\n"; string(b) != want {
+		t.Fatalf("file = %q, want %q", b, want)
+	}
+	if note.Project != "vndev" || note.Session != "3f2a-uuid" || note.Title != "Log audit" || note.Body != "> quote" {
+		t.Fatalf("note = %+v", note)
+	}
+	notes, err := List()
+	if err != nil || len(notes) != 1 || notes[0].Project != "vndev" || notes[0].Session != "3f2a-uuid" {
+		t.Fatalf("notes = %+v, err = %v", notes, err)
+	}
+}
+
+func TestAnEmptySourceWritesNoFrontmatter(t *testing.T) {
+	root := useTempRoot(t)
+	note, err := Add("Plain", "body", Source{Session: "  "})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(filepath.Join(root, NotesDir, note.ID+".md"))
+	if string(b) != "# Plain\n\nbody\n" {
+		t.Fatalf("file = %q", b)
+	}
+}
+
+func TestAProjectNameYAMLWouldMisreadIsQuotedAndReadsBack(t *testing.T) {
+	useTempRoot(t)
+	for _, name := range []string{"a: b", "#tag", "-dash", `say "hi": now`} {
+		note, err := Add("Q "+name, "", Source{Project: name})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if note.Project != name {
+			t.Fatalf("project %q read back as %q", name, note.Project)
+		}
+	}
+}
+
+func TestUpdateKeepsTheFrontmatterAsWritten(t *testing.T) {
+	root := useTempRoot(t)
+	path := filepath.Join(root, NotesDir, testDay+"-kept.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// written by hand in Obsidian: CRLF, a key the store does not know
+	if err := os.WriteFile(path, []byte("---\r\nproject: arcterm\r\ntags: [x]\r\nsession: s1\r\n---\r\n# Old\r\n\r\nold\r\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Update(testDay+"-kept", "New", "new body"); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(path)
+	if want := "---\nproject: arcterm\ntags: [x]\nsession: s1\n---\n# New\n\nnew body\n"; string(b) != want {
+		t.Fatalf("file = %q, want %q", b, want)
+	}
+	notes, _ := List()
+	if len(notes) != 1 || notes[0].Project != "arcterm" || notes[0].Session != "s1" || notes[0].Title != "New" {
+		t.Fatalf("notes = %+v", notes)
+	}
+}
+
+func TestAnUnclosedFenceIsBodyNotFrontmatter(t *testing.T) {
+	note := parse(testDay+"-x", []byte("---\nproject: p\nno closing fence"))
+	if note.Project != "" || note.Body != "---\nproject: p\nno closing fence" {
+		t.Fatalf("note = %+v", note)
 	}
 }

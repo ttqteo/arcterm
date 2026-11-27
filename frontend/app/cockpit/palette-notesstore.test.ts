@@ -48,6 +48,17 @@ describe("saveNoteDraft", () => {
         expect(RpcApi.NoteAddCommand).toHaveBeenCalledWith({}, { title: "T", body: "b" });
         expect(globalStore.get(paletteNotesAtom)).toEqual([n("new")]);
     });
+    it("adds a new note's source, and only the parts it has", async () => {
+        vi.mocked(RpcApi.NoteAddCommand).mockResolvedValue(n("new"));
+        vi.mocked(RpcApi.NoteListCommand).mockResolvedValue([n("new")]);
+        await saveNoteDraft(newDraft("T"), { project: "vndev", session: "s1" });
+        expect(RpcApi.NoteAddCommand).toHaveBeenLastCalledWith(
+            {},
+            { title: "T", body: "", project: "vndev", session: "s1" }
+        );
+        await saveNoteDraft(newDraft("T"), { project: "", session: "s1" });
+        expect(RpcApi.NoteAddCommand).toHaveBeenLastCalledWith({}, { title: "T", body: "", session: "s1" });
+    });
     it("updates a draft with an id and resolves that id", async () => {
         vi.mocked(RpcApi.NoteUpdateCommand).mockResolvedValue(undefined);
         vi.mocked(RpcApi.NoteListCommand).mockResolvedValue([n("a", "T2")]);

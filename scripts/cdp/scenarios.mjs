@@ -50093,6 +50093,8 @@ const CQ_REPLIES = [
 ];
 const CQ_PASSAGE = "Every number rests on it";
 const CQ_LINK = "https://example.com/oracle-check";
+// the fixture transcript's stem (quote-source.jsonl): the conversation id Add note keeps in the note's frontmatter
+const CQ_SESSION = "quote-source";
 
 function cqRoster(ctx) {
     const now = Date.now();
@@ -50131,7 +50133,7 @@ const chatQuote = {
                 lines.push(AC.userText(q, { ...o(i * 10), uuid: `u${i + 1}` }));
                 lines.push(AC.assistantText(CQ_REPLIES[i], { ...o(i * 10 + 2), uuid: `a${i + 1}` }));
             });
-            ctx.transcript = AC.writeTranscript(ctx.dir, "quote-source", lines);
+            ctx.transcript = AC.writeTranscript(ctx.dir, CQ_SESSION, lines);
             at = "resetting the grid";
             await h.ev(`localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))})`);
             await h.ev(`localStorage.removeItem("agent.chatmode")`);
@@ -50504,7 +50506,8 @@ const chatQuote = {
                 { sel10, up10, menu10, pressed10, toast10, open10, idea10 }
             );
 
-            // 11. Add note makes a note with the same title and body, and toasts it
+            // 11. Add note makes a note with the same title, its project and conversation in its frontmatter (the body
+            // then names the agent without its tab's address), and toasts it
             const sel11 = await select(prose(0), CQ_PASSAGE);
             const up11 = await openReply();
             const pressed11 = up11 && (await pressButton(`document.querySelector("[data-context-menu] [data-chat-add-note]")`));
@@ -50516,10 +50519,10 @@ const chatQuote = {
                 let got = null;
                 await until(async () => {
                     const notes = (await RpcApi.NoteListCommand(TabRpcClient)) ?? [];
-                    got = notes.find((n) => (n.body ?? "").includes(${JSON.stringify(`(agent:${A})`)})) ?? null;
+                    got = notes.find((n) => n.session === ${JSON.stringify(CQ_SESSION)}) ?? null;
                     return got != null;
                 });
-                return got && { id: got.id, title: got.title, body: got.body };`
+                return got && { id: got.id, title: got.title, body: got.body, project: got.project ?? "" };`
             );
             // the toast's Open shows the palette's Notes list, the new note its first row
             const opened11 = await h.ev(`(() => {
@@ -50533,6 +50536,16 @@ const chatQuote = {
             })()`);
             const listed11 =
                 opened11 && (await polishWaitFor(h, `document.querySelector("[data-palette-notes] [data-note-row]")?.getAttribute("data-note-row") === ${JSON.stringify(note11?.id ?? "")}`, 5000));
+            // the row and the preview carry its project as a badge, the preview an Open conversation link
+            const source11 = await h.ev(`(() => {
+                const row = document.querySelector("[data-palette-notes] [data-note-row]");
+                const head = document.querySelector("[data-note-preview] [data-note-source]");
+                return {
+                    row: row?.querySelector("[data-note-project]")?.textContent ?? null,
+                    badge: head?.querySelector("[data-note-project]")?.textContent ?? null,
+                    link: head?.querySelector("[data-note-open-session]")?.textContent.trim() ?? null,
+                };
+            })()`);
             await polishNap(300);
             await h.shot("cdp-shots/chat-quote-11-notes.png");
             if (await h.ev(`!!document.querySelector("[data-palette-notes]")`)) {
@@ -50540,15 +50553,19 @@ const chatQuote = {
                 await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
             }
             rec(
-                "11. Add note makes a note named by the passage whose body is where it was said, then the passage quoted; its toast's Open shows the Notes list with that note first",
+                "11. Add note makes a note named by the passage, in the agent's project and conversation, whose body is the agent and day, then the passage quoted; its toast's Open shows the Notes list with that note first, its project a badge on the row and above the note beside Open conversation",
                 sel11 &&
                     up11 &&
                     pressed11 &&
                     toast11 &&
                     note11?.title === CQ_PASSAGE &&
-                    wantBody(CQ_PASSAGE).test(note11?.body ?? "") &&
-                    listed11,
-                { sel11, up11, pressed11, toast11, note11, opened11, listed11 }
+                    note11?.project === "arcterm" &&
+                    new RegExp(`^From agent "${CQ_NAME}", \\d{4}-\\d{2}-\\d{2}\\n\\n> ${CQ_PASSAGE}$`).test(note11?.body ?? "") &&
+                    listed11 &&
+                    source11?.row === "arcterm" &&
+                    source11?.badge === "arcterm" &&
+                    source11?.link === "Open conversation",
+                { sel11, up11, pressed11, toast11, note11, opened11, listed11, source11 }
             );
         } catch (e) {
             rec("the scenario threw", false, String(e?.stack ?? e));
@@ -50580,7 +50597,7 @@ const chatQuote = {
                         }
                     }
                     for (const n of (await RpcApi.NoteListCommand(TabRpcClient)) ?? []) {
-                        if ((n.body ?? "").includes(${JSON.stringify(`(agent:${A})`)})) {
+                        if (n.session === ${JSON.stringify(CQ_SESSION)} || (n.body ?? "").includes(${JSON.stringify(`(agent:${A})`)})) {
                             await RpcApi.NoteDeleteCommand(TabRpcClient, { id: n.id });
                         }
                     }

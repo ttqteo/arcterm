@@ -79,6 +79,7 @@ import type { AgentsViewModel } from "./agents";
 import {
     conversationText,
     isNearBottom,
+    projectOf,
     type AgentEntry,
     type AgentVM,
     type BtwAnswer,
@@ -163,6 +164,7 @@ import { ChatVerdictCard } from "./chatverdictcard";
 import { CommandOutput, ShellCommand } from "./commandtext";
 import { CouncilText } from "./councilchat";
 import { firstExistingFile } from "./filetabload";
+import { sessionIdFromTranscript } from "./launch";
 import { CompactionDivider, InterruptedDivider, PromptImages, TaskNotificationRow } from "./narrationtimeline";
 import { placePairLists } from "./pairblocks";
 import { JudgeReplyMenu } from "./pairjudgemenu";
@@ -2283,7 +2285,8 @@ export function ChatConversation({
                 <ChatQuoteMenu
                     agentId={agent.id}
                     name={agent.name}
-                    project={agent.project}
+                    project={projectOf(agent) || undefined}
+                    session={sessionIdFromTranscript(agent.transcriptPath)}
                     model={model ?? undefined}
                     rootRef={rootRef}
                 />

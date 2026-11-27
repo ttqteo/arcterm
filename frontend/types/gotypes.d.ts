@@ -2668,6 +2668,8 @@ declare global {
     type CommandNoteAddData = {
         title: string;
         body?: string;
+        project?: string;
+        session?: string;
     };
 
     // wshrpc.CommandNoteDeleteData
@@ -6527,6 +6529,8 @@ declare global {
         title: string;
         body?: string;
         day: string;
+        project?: string;
+        session?: string;
     };
 
     // wshrpc.VaultStatusRtnData

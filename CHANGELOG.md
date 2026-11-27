@@ -57,6 +57,8 @@ and a picture given to a line that is not big.
 - Each Claude agent names the Claude account it runs on, left of the model under the chat box.
 - Right-click text you selected in Chat to keep it: Save as idea puts it on Jarvis's Ideas to plan later, Add note
   saves it as a note. Each is named by the passage's first sentence and keeps the passage with the agent it came from.
+  A note made this way shows its project as a badge in Notes, and Open conversation above it takes you back to the
+  conversation, even after its tab has closed.
 - A Focus board button in the agent header while a board is split beside the agent: one press folds the sidebar, hides
   the rail and gives the board 7 parts of 10 (chat 3 : board 7); a second press puts the layout back as it was.
 - Buttons on a board's strip, beside Edit: Copy view puts the board on the clipboard as a picture, just as it shows at

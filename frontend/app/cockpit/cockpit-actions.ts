@@ -343,7 +343,16 @@ export async function reopenSessionById(
     id: string
 ): Promise<{ tabId: string; title: string } | { error: string }> {
     await loadSessionsArchive();
-    const found = sessionById(globalStore.get(sessionsArchiveAtom), id);
+    let found = sessionById(globalStore.get(sessionsArchiveAtom), id);
+    if ("error" in found) {
+        // older than the archive's first page (a note keeps its conversation for good): asked for by its whole id. A
+        // prefix matches nothing there, so its error stays the archive's
+        const rtn = await RpcApi.GetSessionsActivityCommand(TabRpcClient, { ids: [id] }).catch((): null => null);
+        const older = sessionById(rtn?.sessions ?? null, id);
+        if (!("error" in older)) {
+            found = older;
+        }
+    }
     if ("error" in found) {
         return found;
     }
