@@ -121,7 +121,7 @@ func TestSessionIdeasMeasure(t *testing.T) {
 		for _, i := range pc.Initiatives {
 			in += utf8.RuneCountInString(i.Title) + utf8.RuneCountInString(strings.Join(i.Chunks[max(0, len(i.Chunks)-60):], "; ")) + 50
 		}
-		parts := fmt.Sprintf("initiatives %d (%d), ideas %d, specs %d, plans %d, deferred %d, commits %d", in, len(pc.Initiatives),
+		parts := fmt.Sprintf("initiatives, every chunk %d (%d), ideas %d, specs %d, plans %d, deferred %d, commits %d", in, len(pc.Initiatives),
 			lines(pc.Ideas), lines(pc.Specs), lines(pc.Plans), lines(pc.Deferred), lines(pc.Commits))
 		ctxs = append(ctxs, ctxSize{name: pc.Name, parts: parts, chars: utf8.RuneCountInString(sessionideas.Prompt("", nil, false, pc))})
 	}
