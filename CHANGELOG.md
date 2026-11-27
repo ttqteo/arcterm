@@ -30,6 +30,13 @@ in the dev app: `node scripts/whatsnew-shot.mjs <topic> [--selector <css>]` writ
 `whatsnew.test.ts` fails a big line with neither (in Unreleased and from 1.9.0 on), a missing file, one over 120 KB,
 and a picture given to a line that is not big.
 
+## Unreleased
+
+### Fixed
+
+- A question an agent in a paused run had open no longer disappears when the run pauses: you can answer it while the
+  run is paused, and the agent gets your answer when the run resumes.
+
 ## 1.12.0 — 2026-11-27
 
 ### Added

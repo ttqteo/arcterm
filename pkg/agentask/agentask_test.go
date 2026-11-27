@@ -150,3 +150,25 @@ func TestClaim_ConcurrentExactlyOneWinner(t *testing.T) {
 		t.Fatalf("concurrent Claim winners = %d, want exactly 1", wins)
 	}
 }
+
+func TestSuspendMarksOnlyThePendingAsk(t *testing.T) {
+	r := MakeRegistry()
+	if r.Suspend("block:none") {
+		t.Fatal("Suspend with nothing pending must report false")
+	}
+	r.Set("block:a", PendingAsk{AskId: "ask-1"})
+	if !r.Suspend("block:a") {
+		t.Fatal("Suspend must find the pending ask")
+	}
+	if !r.SuspendedAsk("block:a", "ask-1") {
+		t.Fatal("the pending ask must read suspended")
+	}
+	if r.SuspendedAsk("block:a", "ask-0") {
+		t.Fatal("another ask id is not the suspended ask")
+	}
+	// a new ask replaces the entry, and the mark with it
+	r.Set("block:a", PendingAsk{AskId: "ask-2"})
+	if r.SuspendedAsk("block:a", "ask-2") {
+		t.Fatal("a new ask must not inherit the mark")
+	}
+}

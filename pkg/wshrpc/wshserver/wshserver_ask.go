@@ -54,6 +54,11 @@ func (ws *WshServer) AskCommand(ctx context.Context, data wshrpc.CommandAskData)
 		return wshrpc.AskRtnData{AskId: askId, Answers: res.Answers, Cancelled: res.Cancelled}, nil
 	case <-ctx.Done():
 		agentask.GlobalRegistry.RemoveWaiter(askId)
+		// a pause ended the agent on purpose (agentask.Suspend): the question stays, with no waiter, for the person to
+		// answer while it is stopped; the answer is held for the reopened agent
+		if agentask.GlobalRegistry.SuspendedAsk(data.ORef, askId) {
+			return wshrpc.AskRtnData{}, ctx.Err()
+		}
 		// only this ask: a projection of other questions may have replaced it, and that one is still up. Dropping the
 		// block's entry took the newer ask out of the registry while the cockpit kept showing it
 		if _, claimed := agentask.GlobalRegistry.Claim(data.ORef, askId); claimed {
