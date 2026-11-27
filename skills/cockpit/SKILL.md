@@ -74,6 +74,11 @@ row's drawings on one board named for the topic (`thesis-progress`, `rq4-results
   `--ask "delete the drawing Part 2, fixed"` removes a whole drawing, its frame and title with it; one request can
   delete several (`--ask "delete the drawings Part 1 and Part 2, and the empty frames"`). A fix changes one drawing,
   so a fix and a delete are two requests. Fix in place rather than drawing a corrected copy beside the old one.
+- A box can link to another drawing: a press on it moves the board there, and the header's Back (or Backspace)
+  returns. For an overview with details, ask for the detail and the link in one request: `--ask "draw the detail of
+  '21/10 Design' as a new drawing, and link that box in 'Timeline' to it"`. To link drawings already there:
+  `--ask "in Timeline, link the box '21/10 Design' to the drawing 'Design 21/10'"`. No "back" box is needed, and don't
+  ask for "(click)" in a label: a linked box shows a link mark.
 - A board draws bar and line charts to scale, beside the boxes. For one, give the drawer the numbers themselves, with
   their labels and units, in the briefing or the `--ask` line ("add a bar chart of pass rate: baseline 0.42, LLM
   0.61, agent 0.70"); it never invents numbers. A chart of numbers on its own, with no drawing around it, reads better

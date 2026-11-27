@@ -38,6 +38,9 @@ and a picture given to a line that is not big.
   agent's Background tasks. On Windows an agent's RAM now counts what its commands run too, such as a build's compilers,
   which it used to leave out.
 
+- A box on a board can link to another drawing: press it and the board eases there, then Back in the header (or
+  Backspace) returns. Ask the agent for "the detail of this box, linked from it" and the drawer draws the detail and
+  sets the link in one go.
 - Answer an agent's permission prompt from its sidebar row: the row says what the agent asks ("subagent · Update the
   board scenarios", `$ npm test`) and holds Allow and Deny under it, so you no longer pick the agent or open its chat.
   A prompt with choices of its own, such as a plan approval, offers Answer in chat instead. <!-- big -->

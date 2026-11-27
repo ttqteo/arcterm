@@ -327,3 +327,55 @@ func TestParseAnswerRoutes(t *testing.T) {
 		}
 	}
 }
+
+// A link names a shape or a drawing on the board, or @new for the drawing the answer itself adds; setting one may touch
+// a shape of any drawing, so an overview box links to the detail drawn for it in the same turn.
+func TestParseAnswerLinks(t *testing.T) {
+	newWithLink := answerWith(`,"add":` + goodAdd + `,"update":[{"id":"box","link":"@new"}]`)
+	a, err := ParseAnswer(newWithLink, checkScene, "", true)
+	if err != nil || a.Edit || a.Added != 3 || a.Changed != 1 || !strings.Contains(a.Update, `"link":"@new"`) {
+		t.Fatalf("a new drawing linked from a box of f1: %+v %v", a, err)
+	}
+	// a link in add goes back to a drawing on the board
+	back := `[{"type":"rectangle","id":"back","x":0,"y":0,"width":10,"height":10,"label":{"text":"back"},"link":"f1"}]`
+	if _, err := ParseAnswer(answerWith(`,"add":`+back), checkScene, "", true); err != nil {
+		t.Errorf("an added box linking to f1: %v", err)
+	}
+	// an edit of f2 may link a box of f1 to f2
+	if _, err := ParseAnswer(answerWith(`,"edit":true,"drawing":"f2","update":[{"id":"other","x":1},{"id":"box","link":"f2"}]`), checkScene, "", true); err != nil {
+		t.Errorf("an edit linking a box of another drawing: %v", err)
+	}
+	// clearing a link
+	if _, err := ParseAnswer(answerWith(`,"edit":true,"drawing":"f1","update":[{"id":"box","link":""}]`), checkScene, "", true); err != nil {
+		t.Errorf("clearing a link: %v", err)
+	}
+	cases := []struct{ name, reply, wantErr string }{
+		{"to nothing on the board", answerWith(`,"add":` + goodAdd + `,"update":[{"id":"box","link":"nope"}]`), `"nope", which is not on the board`},
+		{"@new in an edit", answerWith(`,"edit":true,"drawing":"f1","update":[{"id":"box","link":"@new"}]`), "draws no new drawing"},
+		{"@new in an add with no drawing", answerWith(`,"update":[{"id":"box","link":"@new"}]`), "draws no new drawing"},
+		{"links alone as a new drawing", answerWith(`,"update":[{"id":"box","link":"f2"}]`), "only sets links, which is an edit"},
+		{"a move outside the drawing", answerWith(`,"edit":true,"drawing":"f2","update":[{"id":"box","link":"f2","x":5}]`), `"box", which is outside the drawing`},
+		{"a new drawing that moves a shape", answerWith(`,"add":` + goodAdd + `,"update":[{"id":"box","x":5}]`), "a new drawing only adds"},
+		{"a link that is not a string", answerWith(`,"add":` + goodAdd + `,"update":[{"id":"box","link":3}]`), `"link" is not a string`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if _, err := ParseAnswer(c.reply, checkScene, "", true); err == nil || !strings.Contains(err.Error(), c.wantErr) {
+				t.Fatalf("want error containing %q, got %v", c.wantErr, err)
+			}
+		})
+	}
+}
+
+func TestLinkTarget(t *testing.T) {
+	for link, want := range map[string]string{
+		"?element=f3":                       "f3",
+		"http://localhost:5174/?element=b1": "b1",
+		"https://example.com/page":          "",
+		"":                                  "",
+	} {
+		if got := LinkTarget(link); got != want {
+			t.Errorf("LinkTarget(%q) = %q, want %q", link, got, want)
+		}
+	}
+}

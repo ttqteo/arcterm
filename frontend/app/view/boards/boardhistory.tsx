@@ -6,15 +6,44 @@
 // drawn turn eases the canvas to its drawing, as its chip in the drawings row does, and closes the list; a row's tooltip
 // holds the whole request. It only reads: Stop and Retry are the status line's (boardstatus.tsx).
 
-import { popoverReveal } from "@/app/element/motiontokens";
+import { microFade, popoverReveal } from "@/app/element/motiontokens";
 import { globalStore } from "@/app/store/jotaiStore";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { History } from "lucide-react";
+import { ChevronLeft, History } from "lucide-react";
 import { AnimatePresence, motion, MotionConfig } from "motion/react";
 import { useMenu } from "./boardheader";
-import { boardDrawingsAtom, boardPickAtom } from "./boardstore";
+import { boardBackAtom, boardDrawingsAtom, boardPickAtom, goBack } from "./boardstore";
 import { historyRows, type TurnShown } from "./boardtalkmodel";
+
+// Back in a board's header: there while a followed link left a drawing to return to (boardBackAtom); a press, or
+// Backspace on the canvas, eases back to it
+export function BoardBack({ boardId }: { boardId: string }) {
+    const stack = useAtomValue(boardBackAtom(boardId));
+    return (
+        <MotionConfig reducedMotion="user">
+            <AnimatePresence initial={false}>
+                {stack.length > 0 ? (
+                    <motion.button
+                        key="back"
+                        type="button"
+                        data-board-back
+                        variants={microFade}
+                        initial="initial"
+                        animate="animate"
+                        exit="exit"
+                        title="Back to the drawing the link left (Backspace)"
+                        onClick={() => goBack(boardId)}
+                        className="flex h-[22px] flex-none cursor-pointer items-center gap-0.5 rounded-[6px] px-1.5 text-muted hover:bg-surface-hover hover:text-primary"
+                    >
+                        <ChevronLeft size={13} strokeWidth={2} aria-hidden />
+                        Back
+                    </motion.button>
+                ) : null}
+            </AnimatePresence>
+        </MotionConfig>
+    );
+}
 
 const TONE: Partial<Record<TurnShown, string>> = {
     drawn: "text-success",

@@ -54,6 +54,14 @@ its title and every shape in it. Removing only the shapes leaves an empty frame 
 empty drawing (a frame with nothing in it) is deleted the same way. To delete several drawings in one turn ("delete the
 empty frames"), put each one's frame id in `remove`. Do it only when the line asks for those drawings to go.
 
+A shape can link to another drawing or shape of the board: a press on it takes the person there, and Back returns.
+Give it `"link": "<an id from the board>"` (a drawing's frame id, or a shape's id), in `add` or as an `update` of its
+own. Use `"link": "@new"` to link to the drawing this answer adds: "draw the detail of the Design box, and link that
+box to it" is a new drawing whose `add` draws the detail and whose `update` is `{"id":"<the box>","link":"@new"}`. An
+`update` that only sets a link may name a shape of any drawing; any other change stays inside the drawing it edits.
+Links alone, with nothing added, are an edit: set `"edit": true` and name the drawing. `"link": ""` removes a link.
+Link only when the line asks for it. A box that links shows it on its own: don't write "(click)" or "→ see" in it.
+
 Keep every drawing short: one idea, a handful of boxes, a few words per box, no sentences or paragraphs on the
 canvas. When there is more to say, draw the core of it: the person asks for more, and that becomes another drawing,
 never a denser one.
@@ -65,7 +73,7 @@ never a denser one.
 - `add`: new Excalidraw element skeletons.
 - `update`: changes to shapes of the edited drawing, each `{"id":"<an id from the board>"}` plus any of `x`, `y`,
   `width`, `height` (numbers), `text` (a text element's words), `label` (a container's or an arrow's label, a
-  string), `strokeColor`, `backgroundColor`. Arrows bound to a shape you move follow it.
+  string), `strokeColor`, `backgroundColor`, `link` (see links above). Arrows bound to a shape you move follow it.
 - `remove`: ids of the edited drawing's shapes to delete, or its frame's id alone to delete the whole drawing.
 - At most 40 shapes in `add` (a `chart` counts as one), and at most 12 words in any text or label: Arc refuses an
   answer past either. A drawing changes at least one shape.

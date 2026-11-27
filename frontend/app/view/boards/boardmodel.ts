@@ -6,6 +6,7 @@
 
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import { drawingData, drawingNumber, isFrame } from "./boarddrawings";
+import { resolveLinks } from "./boardlinks";
 
 const FULL_OPACITY = 100;
 
@@ -168,6 +169,7 @@ interface AnswerUpdate {
     label?: string;
     strokeColor?: string;
     backgroundColor?: string;
+    link?: string; // the drawer's raw link: a target id, "@new", or "" to clear it (resolveLinks makes it a link)
 }
 
 const PATCHED_PROPS = ["x", "y", "width", "height", "strokeColor", "backgroundColor"] as const;
@@ -292,6 +294,9 @@ function applyUpdate(els: ExcalidrawElement[], i: number, u: AnswerUpdate, now: 
         if (points != null) {
             props.points = points;
         }
+    }
+    if (u.link != null) {
+        props.link = u.link.trim() === "" ? null : u.link.trim();
     }
     if (u.text != null && el.type === "text") {
         props.text = u.text;
@@ -579,8 +584,14 @@ export function applyAnswer(
         editing != null
             ? landEdit(measured, editing, addedIds, now)
             : landNew(measured, board.elements, addedIds, answer.title, now);
+    // the drawer's links (bare ids, "@new" for the drawing just landed) made links, on what it added and updated
+    const linked = resolveLinks(
+        landed.elements,
+        new Set([...addedIds, ...parseUpdates(answer.update).map((u) => u.id)]),
+        editing == null ? landed.drawingId : null
+    );
     return {
-        scene: { ...board, elements: landed.elements },
+        scene: { ...board, elements: linked },
         shapeIds: [...new Set(shapeIds)].filter((id) => liveAt(id) >= 0),
         textIds: changedText,
         drawingId: landed.drawingId,
