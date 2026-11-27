@@ -1555,7 +1555,7 @@ function ComposerBox({
                             </Fold>
                         ) : null}
                     </AnimatePresence>
-                    <ChatFooter agent={agent} />
+                    <ChatFooter agent={agent} entries={entries} />
                 </div>
             </MotionConfig>
         </div>

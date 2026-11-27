@@ -26,9 +26,9 @@ import { Check, ChevronRight } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState, type FocusEvent, type KeyboardEvent, type ReactNode } from "react";
 import { useAccountBadge } from "./agentaccountstore";
-import { contextLevel, contextNote, contextTokens } from "./agentrailmodel";
+import { contextLevel, contextNote, contextPctNow, contextTokens } from "./agentrailmodel";
 import { submitToAgent } from "./agentsubmit";
-import type { AgentVM } from "./agentsviewmodel";
+import type { AgentEntry, AgentVM } from "./agentsviewmodel";
 import {
     chipEffort,
     currentModelId,
@@ -656,7 +656,8 @@ function ContextRing({ pct, max, dim }: { pct: number; max?: number; dim: boolea
     );
 }
 
-export function ChatFooter({ agent }: { agent: AgentVM }) {
+// `entries`: the conversation, so a compaction no reply has followed yet shows what it left (contextPctNow)
+export function ChatFooter({ agent, entries }: { agent: AgentVM; entries?: AgentEntry[] }) {
     const asleep = agent.sleeping != null;
     const { mode, effort: seenEffort, setEffort, read } = useTuiMode(asleep ? undefined : agent.blockId);
     // the effort the hooks report inside each turn: a new report replaces what the screen showed or a pick set
@@ -741,7 +742,7 @@ export function ChatFooter({ agent }: { agent: AgentVM }) {
             }
         });
     };
-    const pct = agent.usage?.contextpct;
+    const pct = contextPctNow(agent.usage?.contextpct, agent.usage?.contextmax, entries);
     const hasModel = agent.model != null && agent.model !== "";
     // the Claude account it runs on, left of the model (agentaccountbadge.ts)
     const account = useAccountBadge(agent.id);

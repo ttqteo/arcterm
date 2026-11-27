@@ -24,6 +24,10 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
 
 ## 2026-11-27
 
+- [ ] (arcterm) **Context ring drops after /compact** (`chatfooter.tsx`, `agentrailmodel.ts contextPctNow`). Unit test
+  and typecheck only. In an agent's Chat with a large context, type `/compact`: once the Compacted divider shows
+  "N → M tokens", the ring under the input reads M's percent (hover: M tokens), not the old one; after the next reply
+  it follows the statusLine again.
 - [ ] (arcterm) **Long chunk titles show whole** (`railinitiativepane.tsx`, `planreviewsection.tsx`). Typecheck only.
   On an agent linked to an initiative with a long title and long chunk labels, open the Initiative tab (◇ or `i`): the
   title and the "On N · …" line wrap to at most three lines, Open in Jarvis and Mark done stay on the first line; arrow

@@ -4,7 +4,7 @@
 // Pure: what the Agent details rail says in its context row, its state line and action, its files summary and the
 // worktree line under its branch. No React.
 
-import { usageLevel, type AgentVM } from "./agentsviewmodel";
+import { usageLevel, type AgentEntry, type AgentVM } from "./agentsviewmodel";
 import type { ShownState } from "./bgactivity";
 
 function tokensLabel(n: number): string {
@@ -39,6 +39,29 @@ export function contextLevel(pct: number, max: number | undefined): Level {
     }
     const byTokens = tokenLevel((pct / 100) * max);
     return LEVEL_RANK[byTokens] > LEVEL_RANK[byFullness] ? byTokens : byFullness;
+}
+
+// contextPctNow is the context percent to show. Claude Code's statusLine keeps the last turn's reading through a
+// compaction until the next reply (a /compact of 455k left the ring at 45% of 1M), so while the conversation's last
+// compaction has no reply or tool call after it, the window holds what the compaction left: its postTokens.
+export function contextPctNow(
+    pct: number | undefined,
+    max: number | undefined,
+    entries: readonly AgentEntry[] | undefined
+): number | undefined {
+    if (pct == null || !max || entries == null) {
+        return pct;
+    }
+    for (let i = entries.length - 1; i >= 0; i--) {
+        const e = entries[i];
+        if (e.kind === "message" || e.kind === "action") {
+            return pct;
+        }
+        if (e.kind === "compaction") {
+            return e.postTokens != null ? Math.min(100, (e.postTokens / max) * 100) : pct;
+        }
+    }
+    return pct;
 }
 
 // contextTokens labels how many tokens are in context. Undefined when the window size is unknown.

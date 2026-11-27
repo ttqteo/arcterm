@@ -7,6 +7,7 @@ import {
     containingWorktree,
     contextLevel,
     contextNote,
+    contextPctNow,
     contextTokens,
     filesSummary,
     linkedWorktree,
@@ -16,6 +17,35 @@ import {
     shortIds,
     worktreeName,
 } from "./agentrailmodel";
+
+describe("contextPctNow", () => {
+    const compacted = { kind: "compaction" as const, trigger: "manual", preTokens: 455_000, postTokens: 14_000 };
+
+    it("reads what a compaction left while no reply came after it", () => {
+        expect(contextPctNow(45, 1_000_000, [{ kind: "message", text: "a" }, compacted])).toBeCloseTo(1.4);
+        // the /compact command row and a prompt still waiting on its reply come after it
+        expect(
+            contextPctNow(45, 1_000_000, [
+                compacted,
+                { kind: "command", name: "/compact" },
+                { kind: "user", text: "next" },
+            ])
+        ).toBeCloseTo(1.4);
+    });
+
+    it("keeps the statusLine reading once a reply or a tool call follows the compaction", () => {
+        expect(contextPctNow(3, 1_000_000, [compacted, { kind: "message", text: "b" }])).toBe(3);
+        expect(contextPctNow(3, 1_000_000, [compacted, { kind: "action", verb: "Read", target: "x" }])).toBe(3);
+    });
+
+    it("keeps the reading with no compaction, no token count, or no window size", () => {
+        expect(contextPctNow(45, 1_000_000, [{ kind: "message", text: "a" }])).toBe(45);
+        expect(contextPctNow(45, 1_000_000, [{ kind: "compaction", trigger: "auto" }])).toBe(45);
+        expect(contextPctNow(45, undefined, [compacted])).toBe(45);
+        expect(contextPctNow(undefined, 1_000_000, [compacted])).toBeUndefined();
+        expect(contextPctNow(45, 1_000_000, undefined)).toBe(45);
+    });
+});
 
 describe("contextLevel", () => {
     it("colors a big window by the tokens every turn re-reads, not by how full it is", () => {
