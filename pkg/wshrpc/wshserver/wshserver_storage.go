@@ -194,6 +194,22 @@ func (ws *WshServer) RescanStorageCommand(ctx context.Context) error {
 	return nil
 }
 
+func (ws *WshServer) SizeBuildOutputCommand(ctx context.Context, data wshrpc.CommandSizeBuildOutputData) error {
+	if storageScanner == nil {
+		return errStorageNotStarted
+	}
+	// not the RPC's context: the walk outlives the call
+	return storageScanner.SizeBuildOutput(context.Background(), data.Projects, data.Force)
+}
+
+func (ws *WshServer) StopSizingBuildOutputCommand(ctx context.Context) error {
+	if storageScanner == nil {
+		return errStorageNotStarted
+	}
+	storageScanner.StopSizing()
+	return nil
+}
+
 func (ws *WshServer) CleanStorageCommand(ctx context.Context, data wshrpc.CommandCleanStorageData) (*storage.StorageCleanResult, error) {
 	if storageScanner == nil {
 		return nil, errStorageNotStarted

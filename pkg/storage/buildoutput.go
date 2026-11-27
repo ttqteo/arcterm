@@ -33,10 +33,19 @@ type buildProject struct {
 	lastUsed int64
 }
 
+// buildListWorkers is how many git calls build output's listing runs at once. Listing 177 repos one git call after
+// another took 1m23s on a loaded machine.
+const buildListWorkers = 8
+
 // buildProjects is every project in config, then each git repo an agent has worked in that no project holds, at its
 // top level. A folder outside a repo has no build output git ignores, a linked worktree (an engine run's, Claude
 // Code's) belongs to the run worktrees card or to Claude Code, and the home dir kept in git, or any repo that holds a
 // project, is a parent folder, so none of them is listed.
+//
+// The repoTop calls, one git process per agent folder, run on a pool ahead of the merge; the merge then walks the agent
+// folders in their order and decides as it always did, so the projects and their order are the same. A folder a
+// project in config holds is bumped without a call, as before; one an earlier agent folder's repo holds is called for
+// and then bumped, the one extra call the pool costs.
 func buildProjects(ctx context.Context, env *Env) []buildProject {
 	var out []buildProject
 	for _, p := range env.ProjectPaths() {
@@ -46,6 +55,28 @@ func buildProjects(ctx context.Context, env *Env) []buildProject {
 		return out
 	}
 	home, _ := os.UserHomeDir()
+	agents := env.AgentProjects()
+	type topResult struct {
+		top string
+		ok  bool
+	}
+	var asked []int // the agent folders no project in config holds: the only ones the merge may call repoTop for
+	for i, a := range agents {
+		held := false
+		for _, p := range out {
+			held = held || isInside(a.Path, p.path)
+		}
+		if !held {
+			asked = append(asked, i)
+		}
+	}
+	tops := map[int]topResult{}
+	for n, r := range parallelMap(asked, buildListWorkers, func(i int) topResult {
+		top, ok := repoTop(ctx, agents[i].Path)
+		return topResult{top, ok}
+	}) {
+		tops[asked[n]] = r
+	}
 	// bump marks when an agent last worked in a listed project, reporting whether one holds dir
 	bump := func(dir string, ts int64) bool {
 		for i := range out {
@@ -56,12 +87,16 @@ func buildProjects(ctx context.Context, env *Env) []buildProject {
 		}
 		return false
 	}
-	for _, a := range env.AgentProjects() {
+	for i, a := range agents {
 		if bump(a.Path, a.LastActiveTs) {
 			continue
 		}
-		top, ok := repoTop(ctx, a.Path)
-		if !ok || SamePath(top, home) || bump(top, a.LastActiveTs) {
+		r, ok := tops[i]
+		if !ok { // cannot happen: bump holds every folder a project in config holds
+			r.top, r.ok = repoTop(ctx, a.Path)
+		}
+		top := r.top
+		if !r.ok || SamePath(top, home) || bump(top, a.LastActiveTs) {
 			continue
 		}
 		holds := false
@@ -206,28 +241,52 @@ func isPlainDir(p string) bool {
 	return err == nil && info.IsDir()
 }
 
+// measure lists the build folders and walks none of them: walking every node_modules and target of every repo an agent
+// worked in took minutes to hours. A folder's Bytes and SizedTs are what it measured when last sized (buildsizes.go),
+// 0 and 0 when it never was.
+//
+// The git calls of each project (check-ignore, and ls-files for each folder git ignores) run on a pool of
+// buildListWorkers projects at once, and the results are merged in the projects' order below: the same projects, items
+// and order as listing them one by one. A folder an earlier project already lists costs its ls-files call for
+// nothing, which only a repo nested in another does.
 func (buildOutput) measure(ctx context.Context, env *Env) StorageCategoryReport {
 	busy, busyErr := env.BusyProjects(ctx)
+	kept := readBuildSizes(env)
 	var items []StorageItem
+	projects := buildProjects(ctx, env)
+	type listing struct {
+		cands   []string
+		ignored map[string]bool
+		tracked map[string]bool // for the folders git ignores
+	}
+	listings := parallelMap(projects, buildListWorkers, func(bp buildProject) listing {
+		cands := buildCandidates(bp.path)
+		l := listing{cands: cands, ignored: gitIgnored(ctx, bp.path, cands), tracked: map[string]bool{}}
+		for _, c := range cands {
+			if l.ignored[c] {
+				l.tracked[c] = hasTrackedFiles(ctx, bp.path, c)
+			}
+		}
+		return l
+	})
 	// a folder two projects reach (a repo nested in another) is listed once, under the first
 	seen := map[string]bool{}
-	for _, bp := range buildProjects(ctx, env) {
+	for i, bp := range projects {
 		project := bp.path
-		cands := buildCandidates(project)
-		ignored := gitIgnored(ctx, project, cands)
+		cands, ignored, tracked := listings[i].cands, listings[i].ignored, listings[i].tracked
 		why := busyReason(busy, project)
 		if busyErr != nil {
 			why = "couldn't tell whether anything runs here"
 		}
 		for _, c := range cands {
-			if seen[c] || !ignored[c] || hasTrackedFiles(ctx, project, c) {
+			if seen[c] || !ignored[c] || tracked[c] {
 				continue
 			}
 			seen[c] = true
 			rel, _ := filepath.Rel(project, c)
 			// Detail is the project's path: the Settings card folds a project's folders into one row with one button
 			items = append(items, StorageItem{ID: c, Kind: KindBuild, Label: filepath.ToSlash(rel), Detail: project,
-				Path: c, Bytes: dirSize(c), ModTs: bp.lastUsed, Cleanable: why == "", Reason: why})
+				Path: c, Bytes: kept[c].Bytes, SizedTs: kept[c].Ts, ModTs: bp.lastUsed, Cleanable: why == "", Reason: why})
 		}
 	}
 	var err error
@@ -283,6 +342,7 @@ func (buildOutput) clean(ctx context.Context, env *Env, ids []string, opts Clean
 			skip(&res, id, "git tracks files in it")
 			continue
 		}
+		// measured right before it goes, whatever its kept size says: Reclaimed is what this clean freed
 		size := dirSize(id)
 		if err := os.RemoveAll(id); err != nil {
 			skip(&res, id, "couldn't remove: "+err.Error())
@@ -291,5 +351,6 @@ func (buildOutput) clean(ctx context.Context, env *Env, ids []string, opts Clean
 		res.Reclaimed += size
 		res.Cleaned = append(res.Cleaned, id)
 	}
+	dropBuildSizes(env, res.Cleaned...)
 	return res
 }

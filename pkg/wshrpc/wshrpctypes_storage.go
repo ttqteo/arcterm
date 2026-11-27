@@ -17,6 +17,12 @@ type StorageCommands interface {
 	RescanStorageCommand(ctx context.Context) error
 	// CleanStorageCommand cleans the named items of one category, re-checking each, then rescans
 	CleanStorageCommand(ctx context.Context, data CommandCleanStorageData) (*storage.StorageCleanResult, error)
+	// SizeBuildOutputCommand queues build output to be sized, in the background, and returns at once. A scan lists build
+	// folders without walking them: only this (a project's row opening, Size all, wsh storage size) measures them. The
+	// queue shows as StorageReport.Sizing in each storage:scan event.
+	SizeBuildOutputCommand(ctx context.Context, data CommandSizeBuildOutputData) error
+	// StopSizingBuildOutputCommand lets the walk in progress finish and drops the rest of the queue
+	StopSizingBuildOutputCommand(ctx context.Context) error
 	// ListCanvasesCommand lists every registered project's design canvases, newest first (Agent → Canvases)
 	ListCanvasesCommand(ctx context.Context) ([]storage.StorageCanvas, error)
 	// ListCanvasSessionsCommand lists the sessions that made one canvas (its topic folder), the latest first: the
@@ -33,6 +39,13 @@ type CommandSetCanvasLinkData struct {
 	Dir         string   `json:"dir"`         // the topic folder: StorageCanvas.Dir
 	Replaces    string   `json:"replaces"`    // the older canvas's topic, or "" for none
 	NotReplaces []string `json:"notreplaces"` // topics this canvas was said not to replace
+}
+
+// CommandSizeBuildOutputData asks for the build folders of Projects to be sized. An empty Projects is every project the
+// last scan lists build output for, the oldest size first (Size all); a project the scan does not list is refused.
+type CommandSizeBuildOutputData struct {
+	Projects []string `json:"projects,omitempty"` // project paths: a build output item's Detail
+	Force    bool     `json:"force,omitempty"`    // walk folders sized in the last 24 h too (Size all)
 }
 
 type CommandCleanStorageData struct {

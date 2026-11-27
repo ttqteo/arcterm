@@ -124,6 +124,12 @@ Clean up what arcterm and its runs left on disk with `wsh storage` (the Settings
 - `wsh storage scan --wait` scans afresh and prints the report; `wsh storage report` prints the last scan
   (`--json` for the full report). It lists each category (`runworktrees`, `sessions`, `housekeeping`,
   `buildoutput`, `canvases`, `packagecaches`) with every item's id, size and whether clean takes it.
+- A scan lists build output (`node_modules`, `target`, ...) without walking it, so a build folder's size is the one
+  kept from when it was last sized, and a folder never sized reads `not sized` and counts as 0 B. Run
+  `wsh storage size --wait` before judging build output: it sizes every listed project, the oldest size first, skips
+  folders sized in the last 24 hours (`--force` walks those too), and prints each project's size. The first run
+  can take many minutes; name a project's path (`wsh storage size <project> --wait`) to size only that one.
+  `report` marks an item `not sized` or `sized N days ago`.
 - `wsh storage clean <category> --all`, or `clean <category> <id...>`, removes the items marked cleanable:
   they lose nothing, and each is re-checked right before it goes.
 - A guarded item (a run tree with uncommitted changes, or one whose run is not in this app's store) is

@@ -18,17 +18,21 @@ import (
 )
 
 // TestStorageMeasure times Storage's scan on the owner's real home, the way a dev app runs it (the Final stage's
-// settings-storage scenario waits on one). Opt in, since it walks ~/.claude/projects and the build output of every
-// folder an agent worked in:
+// settings-storage scenario waits on one). Opt in, since it reads ~/.claude/projects and lists the build output of
+// every folder an agent worked in (git calls per repo), and the full scan also walks the package caches:
 //
 //	ARC_STORAGE_MEASURE=1    go test ./pkg/wshrpc/wshserver -run TestStorageMeasure -v -count=1   the quick scans only
 //	ARC_STORAGE_MEASURE=full go test ./pkg/wshrpc/wshserver -run TestStorageMeasure -v -count=1   plus one full scan
 //
-// Each scan logs "storage scan took …: <category> <time>, …", which the test prints. The quick scans leave out the build
-// output and the package caches (minutes of walking): they run with no unscanned hook and with the server's, three times
-// each, and the gap in the sessions time is the hook's cost. The full scan runs once, with the hook, as the app does.
-// Measure only reads and stats; nothing is cleaned. The package's TestMain points HOME at a temp dir, so the real home
-// is passed in ARC_STORAGE_MEASURE_HOME.
+// Each scan logs "storage scan took …: <category> <time>, …", which the test prints. A scan walks no build folder (it
+// lists them, and sizes none), and a dev app's own scan leaves the package caches to a background walk. The quick
+// scans leave out both build output and package caches: they run with no unscanned hook and with the server's, three
+// times each, and the gap in the sessions time is the hook's cost. The full scan runs once, with the hook, and lists
+// build output and measures the package caches inline (ScanNow), so its line gives what the listing and a walk of the
+// caches each cost; a dev app's scan waits for the listing only. Measure only reads and stats; nothing is cleaned, and
+// the scan gets a temp data dir so its drop of the sizes of folders it no longer lists cannot touch the real
+// buildsizes.json (the store and the rolled logs read as empty there, which costs under a tenth of a second). The
+// package's TestMain points HOME at a temp dir, so the real home is passed in ARC_STORAGE_MEASURE_HOME.
 func TestStorageMeasure(t *testing.T) {
 	mode := os.Getenv("ARC_STORAGE_MEASURE")
 	if mode == "" {
@@ -41,6 +45,7 @@ func TestStorageMeasure(t *testing.T) {
 	t.Setenv("USERPROFILE", home)
 	t.Setenv("HOME", home)
 	dataDir := wavebase.GetWaveDataDir()
+	scanDataDir := t.TempDir() // the sizes file lives under the Env's DataDir: never the real one
 	env := func(withBuildAndCaches bool) *storage.Env {
 		e := &storage.Env{
 			Now:           time.Now,
@@ -52,7 +57,7 @@ func TestStorageMeasure(t *testing.T) {
 			BusyProjects:     func(context.Context) (map[string]string, error) { return map[string]string{}, nil },
 			LiveTranscripts:  func(context.Context) ([]string, error) { return nil, nil },
 			WorktreeRoot:     orchestrate.WorktreeRoot,
-			DataDir:          dataDir,
+			DataDir:          scanDataDir,
 			TrashDir:         filepath.Join(home, ".arc", "trash"),
 			AttachmentsDir:   filepath.Join(home, ".arc", "attachments"),
 			SessionDirs:      []string{filepath.Join(home, ".claude", "projects")},

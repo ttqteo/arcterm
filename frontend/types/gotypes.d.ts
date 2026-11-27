@@ -3143,6 +3143,12 @@ declare global {
         timeoutms?: number;
     };
 
+    // wshrpc.CommandSizeBuildOutputData
+    type CommandSizeBuildOutputData = {
+        projects?: string[];
+        force?: boolean;
+    };
+
     // wshrpc.CommandStopDevServerData
     type CommandStopDevServerData = {
         pid: number;
@@ -6163,6 +6169,7 @@ declare global {
         guarded?: boolean;
         reason?: string;
         unscanned?: boolean;
+        sizedts?: number;
     };
 
     // storage.StorageReport
@@ -6172,6 +6179,15 @@ declare global {
         categories: StorageCategoryReport[];
         storebytes: number;
         lastauto?: StorageAutoClean;
+        sizing?: StorageSizing;
+    };
+
+    // storage.StorageSizing
+    type StorageSizing = {
+        queued: string[];
+        walking?: string;
+        done: number;
+        total: number;
     };
 
     // storage.StorageSkipped

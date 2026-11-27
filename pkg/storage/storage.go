@@ -19,7 +19,10 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/wavetermdev/waveterm/pkg/panichandler"
 )
 
 type StorageCategory string
@@ -61,6 +64,9 @@ type StorageItem struct {
 	Guarded   bool   `json:"guarded,omitempty"`   // only its own button removes it, after a confirm that says what is lost
 	Reason    string `json:"reason,omitempty"`    // why it stays, or what removing it costs
 	Unscanned bool   `json:"unscanned,omitempty"` // a session no Session ideas scan has read, which one could still read
+	// SizedTs is when a build folder's Bytes was measured (unix ms), 0 when it never was: a scan lists build output
+	// without walking it, so its Bytes is the kept size (buildsizes.go), 0 until the folder is sized
+	SizedTs int64 `json:"sizedts,omitempty"`
 }
 
 type StorageCategoryReport struct {
@@ -77,6 +83,17 @@ type StorageReport struct {
 	Categories []StorageCategoryReport `json:"categories"`
 	StoreBytes int64                   `json:"storebytes"` // arcterm's store (<data>/db): shown, never cleaned
 	LastAuto   *StorageAutoClean       `json:"lastauto,omitempty"`
+	Sizing     *StorageSizing          `json:"sizing,omitempty"` // build output being sized; nil when nothing is queued or walking
+}
+
+// StorageSizing is what sizes build output now: the projects waiting, the one being walked, and how far the queue has
+// got. Done and Total count projects since the queue was last idle (a row open that adds a project adds 1 to Total);
+// both reset when the queue empties.
+type StorageSizing struct {
+	Queued  []string `json:"queued"` // project paths waiting, not the one walking
+	Walking string   `json:"walking,omitempty"`
+	Done    int      `json:"done"`
+	Total   int      `json:"total"`
 }
 
 type StorageSkipped struct {
@@ -145,6 +162,14 @@ type provider interface {
 	clean(ctx context.Context, env *Env, ids []string, opts CleanOpts) StorageCleanResult
 }
 
+// backgroundProvider is a category too slow for a scan to wait on (the package caches: tens of GB, minutes on a loaded
+// machine): a Rescan hands it to one background walk and ends without it, and the category lands in the report when
+// the walk does. ScanNow and Clean still measure it inline.
+type backgroundProvider interface {
+	provider
+	background() string // what the walk's log line calls it
+}
+
 // report builds a category's report from its items and the error its scan ended with, if any.
 func report(cat StorageCategory, items []StorageItem, err error) StorageCategoryReport {
 	r := StorageCategoryReport{Category: cat, Items: items}
@@ -179,6 +204,36 @@ func dirSize(root string) int64 {
 		return nil
 	})
 	return total
+}
+
+// parallelMap runs fn over items on at most limit goroutines and returns the results in the order of items, whichever
+// finishes first. A panic in fn is logged and leaves that item's result zero: an unrecovered one in a goroutine would
+// end the whole process.
+func parallelMap[T, R any](items []T, limit int, fn func(T) R) []R {
+	out := make([]R, len(items))
+	if len(items) == 0 {
+		return out
+	}
+	next := make(chan int)
+	var wg sync.WaitGroup
+	for range max(1, min(limit, len(items))) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range next {
+				func() {
+					defer func() { panichandler.PanicHandler("storage.parallelMap", recover()) }()
+					out[i] = fn(items[i])
+				}()
+			}
+		}()
+	}
+	for i := range items {
+		next <- i
+	}
+	close(next)
+	wg.Wait()
+	return out
 }
 
 // SamePath compares two paths as the OS does: cleaned, and without case on Windows.

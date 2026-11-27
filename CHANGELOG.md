@@ -34,6 +34,10 @@ and a picture given to a line that is not big.
 
 ### Changed
 
+- Settings → Storage lists build output at once and sizes a project when you open its row, or all of them with Size all.
+  A project not sized yet reads `not sized`, and one sized more than a day ago says how long ago.
+- A Storage scan finishes in seconds: the package caches are measured in the background, and their card fills in when
+  their sizes are known.
 - Sleep now works on an agent that is asking you a question or waiting for a permission: its question waits for you, an
   answer you give while it sleeps reaches it when it wakes.
 ### Added

@@ -2148,6 +2148,12 @@ export class RpcApiType {
         return client.wshRpcCall("shellrun", data, opts);
     }
 
+    // command "sizebuildoutput" [call]
+    SizeBuildOutputCommand(client: WshClient, data: CommandSizeBuildOutputData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "sizebuildoutput", data, opts);
+        return client.wshRpcCall("sizebuildoutput", data, opts);
+    }
+
     // command "stopdevserver" [call]
     StopDevServerCommand(client: WshClient, data: CommandStopDevServerData, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "stopdevserver", data, opts);
@@ -2164,6 +2170,12 @@ export class RpcApiType {
     StopRunWorkerCommand(client: WshClient, data: CommandStopRunWorkerData, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "stoprunworker", data, opts);
         return client.wshRpcCall("stoprunworker", data, opts);
+    }
+
+    // command "stopsizingbuildoutput" [call]
+    StopSizingBuildOutputCommand(client: WshClient, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "stopsizingbuildoutput", null, opts);
+        return client.wshRpcCall("stopsizingbuildoutput", null, opts);
     }
 
     // command "streamagentlivereply" [responsestream]

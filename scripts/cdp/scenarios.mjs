@@ -17,6 +17,7 @@ import {
     readdirSync,
     readFileSync,
     realpathSync,
+    renameSync,
     rmSync,
     statSync,
     utimesSync,
@@ -61590,7 +61591,11 @@ const jarvisModes = {
 // fails there. It writes seven Claude transcripts under ~/.claude/projects (six 40 days old, one 10), and rescans.
 // No step confirms a category's own clean (it would take the developer's real sessions and trash): fixtures are
 // cleaned through their rows. Step 5b opens the sessions confirm and only presses Cancel or Scan them first, under
-// Session ideas' fixture mode (no model call); teardown seeds its store empty. Teardown removes every fixture and puts storage:autoclean, storage:nudgegb and the
+// Session ideas' fixture mode (no model call); teardown seeds its store empty. Steps 7c-7f drive build output's lazy
+// sizes (docs/superpowers/specs/2026-11-27-storage-lazy-build-sizes-design.md): the scan lists the fixture's
+// node_modules without a size (7c), opening its row sizes it (7d), a size kept two days back is walked again on open
+// and a fresh one is not (7e, written to <data>/storage/buildsizes.json), and Size all walks the oldest size first
+// (7f). arrange keeps the sizes file as it found it, and teardown puts it back. Teardown removes every fixture and puts storage:autoclean, storage:nudgegb and the
 // nudge's day back; settings.json is the vault's, shared with the packaged app.
 const SS_PROJECT = "verify-storage";
 const SS_BROKEN = "verify-storage-broken";
@@ -61619,12 +61624,18 @@ const ssRowState = (cat, suffix) => `(() => {
 const SS_HEAD = `document.querySelector('[data-storage-head]')`;
 const ssToast = (text) =>
     `[...document.querySelectorAll('[data-notification-toast]')].some((t) => (t.textContent || '').includes(${JSON.stringify(text)}))`;
+// How long a wait on the server's scan or sizing lasts, in seconds: 180 for a scan (it lists build output, walks none and
+// leaves the package caches to a background walk, so what is left to wait for is the listing: 1m23s measured under load,
+// spec "Added in fix round 1"), 600 for Stop sizing, which lets the walk in progress finish (the next real repo, minutes
+// under load), and for the package caches to land (step 7b). ARC_STORAGE_SCAN_WAIT_S replaces the default for a run on a
+// loaded machine.
+const ssWaitSecs = (dflt) => (Number(process.env.ARC_STORAGE_SCAN_WAIT_S) > 0 ? Number(process.env.ARC_STORAGE_SCAN_WAIT_S) : dflt);
 // a scan that started at or after `since` has landed in the page, and none is running
 const ssWaitScan = (h, since) =>
     polishWaitFor(
         h,
         `Number(${SS_HEAD}?.getAttribute('data-storage-scanned') ?? 0) >= ${since} && !${SS_HEAD}.hasAttribute('data-storage-scanning')`,
-        60000
+        ssWaitSecs(180) * 1000
     );
 // settings.json is the vault's, which the packaged app shares; a write can lose a rename race, so three tries
 const ssSetConfig = async (h, patch) => {
@@ -61668,6 +61679,91 @@ const ssConfirm = async (h, openExpr, label) => {
     await polishWaitFor(h, `document.querySelector('[role="dialog"]') == null`, 3000);
     return text;
 };
+// The build-output sizing steps (7c-7f). docs/superpowers/specs/2026-11-27-storage-lazy-build-sizes-design.md.
+// asks for a scan and waits for it to land in the server's report, not the page's; returns when it was asked and how long
+// it took. A Rescan asked while another scan runs is followed by a second scan at once, so the wait covers both.
+const ssRescanAndWait = async (h, waitSecs) => {
+    const from = Date.now();
+    await h.rpc("rescanstorage", null);
+    const askedAt = Date.now();
+    let started = false;
+    for (;;) {
+        const r = await h.rpc("getstorage", null);
+        started = started || r?.scanning === true;
+        if (r?.scannedts >= from && !r.scanning) break;
+        const waited = Math.round((Date.now() - askedAt) / 1000);
+        if (!started && waited > 30) {
+            throw new Error(`no scan started within ${waited} s of rescanstorage (last scan ${r?.scannedts}, asked at ${from})`);
+        }
+        if (waited > waitSecs) throw new Error(`the scan of the fixtures was still running after ${waited} s`);
+        await polishNap(500);
+    }
+    return { from, secs: Math.round((Date.now() - askedAt) / 1000) };
+};
+// the kept sizes: <data dir>/storage/buildsizes.json, folder id -> { bytes, ts }, read by every scan and every walk, so a
+// write here shows at the next rescan. Written through a temp file and a rename, as the server does, so a scan reading
+// at that moment never sees half of it.
+const ssSizesFile = (dataDir) => join(dataDir, "storage", "buildsizes.json");
+const ssWriteSizes = async (file, kept) => {
+    mkdirSync(dirname(file), { recursive: true });
+    const tmp = `${file}.${process.pid}.scenario.tmp`;
+    writeFileSync(tmp, typeof kept === "string" ? kept : JSON.stringify(kept, null, 2)); // a string is the file as it was found
+    for (let attempt = 0; ; attempt++) {
+        try {
+            renameSync(tmp, file);
+            return;
+        } catch (e) {
+            if (attempt >= 5) {
+                rmSync(tmp, { force: true });
+                throw e;
+            }
+            await polishNap(200); // the server has the file open for a read
+        }
+    }
+};
+const ssReadSizes = (file) => {
+    try {
+        return JSON.parse(readFileSync(file, "utf8")) ?? {};
+    } catch {
+        return {};
+    }
+};
+// every build output item a report lists (an item's detail is its project), or only the ones of the project whose folder
+// is named `repoName`
+const ssItemsOf = (report, repoName) =>
+    ((report?.categories ?? []).find((c) => c.category === "buildoutput")?.items ?? []).filter(
+        (i) => i.kind === "build" && (repoName == null || (i.detail ?? "").split(/[\\/]/).filter(Boolean).pop() === repoName)
+    );
+const ssBuildItems = async (h, repoName) => ssItemsOf(await h.rpc("getstorage", null), repoName);
+// polls the server's report until `done(report)`, or `secs` pass; returns the last report and whether it was done
+const ssWaitStorage = async (h, done, secs, napMs = 250) => {
+    const by = Date.now() + secs * 1000;
+    for (;;) {
+        const report = await h.rpc("getstorage", null);
+        if (done(report)) return { ok: true, report };
+        if (Date.now() > by) return { ok: false, report };
+        await polishNap(napMs);
+    }
+};
+// what the head adds up: every category but the shared caches, and arcterm's store (storagemodel.ts usedTotal)
+const ssUsedTotal = (report) =>
+    (report?.categories ?? []).filter((c) => c.category !== "packagecaches").reduce((n, c) => n + (c.bytes ?? 0), 0) +
+    (report?.storebytes ?? 0);
+// what the page draws for a row of the build output card
+const ssRowFlags = (cat, suffix) => `(() => {
+    const r = ${ssRow(cat, suffix)};
+    if (!r) return null;
+    return { text: r.textContent, unsized: r.hasAttribute('data-storage-unsized'), sizing: r.hasAttribute('data-storage-sizing') };
+})()`;
+const ssSizeAll = `${ssCard("buildoutput")}?.querySelector('[data-storage-sizeall]')`;
+// opens (or closes) a project row, pressing its button only when it is not already so: opening sends the sizing ask
+const ssSetOpen = async (h, repoName, open) => {
+    const was = await h.ev(`${ssRow("buildoutput", repoName)}?.querySelector('button[aria-expanded]')?.getAttribute('aria-expanded')`);
+    if (was !== String(open)) {
+        await h.ev(`${ssRow("buildoutput", repoName)}?.querySelector('button[aria-expanded]')?.click()`);
+        await polishNap(150);
+    }
+};
 
 const settingsStorage = {
     name: "settings-storage",
@@ -61677,6 +61773,10 @@ const settingsStorage = {
         const ctx = { dirs: [], projects: [] };
         // a throw past this point still returns ctx, so teardown removes whatever was already made
         try {
+            // the kept build sizes are the dev store's: steps 7d-7f write them, teardown puts them back as they were
+            ctx.sizesFile = ssSizesFile((await h.rpc("waveinfo", null)).datadir);
+            ctx.sizesSaved = existsSync(ctx.sizesFile) ? readFileSync(ctx.sizesFile, "utf8") : null;
+            ctx.sizesBacked = true;
             const settings = (await h.rpc("getfullconfig", null))?.settings ?? {};
             ctx.prevAuto = settings["storage:autoclean"] ?? null;
             ctx.prevNudge = settings["storage:nudgegb"] ?? null;
@@ -61739,28 +61839,17 @@ const settingsStorage = {
             }
 
             // The scan that saw the fixtures ends the wait. A Rescan asked while the auto-clean's scan runs is followed by
-            // a second scan at once, so the wait covers the rest of the first and all of the second. A scan walks the
-            // build output of every folder an agent worked in (also the real ones: this app reads ~/.claude): about 15 s
-            // on an idle machine, 7 to 40 minutes on a loaded one ("storage scan took" in waveapp.log). So it waits while
-            // a scan runs, for up to 180 s (ARC_STORAGE_SCAN_WAIT_S raises it for a run on a loaded machine), and says how
-            // long it waited.
-            const scanWaitSecs = Number(process.env.ARC_STORAGE_SCAN_WAIT_S) > 0 ? Number(process.env.ARC_STORAGE_SCAN_WAIT_S) : 180;
-            ctx.scanFrom = Date.now();
-            await h.rpc("rescanstorage", null);
-            const askedAt = Date.now();
-            let started = false;
-            for (;;) {
-                const r = await h.rpc("getstorage", null);
-                started = started || r?.scanning === true;
-                if (r?.scannedts >= ctx.scanFrom && !r.scanning) break;
-                const waited = Math.round((Date.now() - askedAt) / 1000);
-                if (!started && waited > 30) {
-                    throw new Error(`no scan started within ${waited} s of rescanstorage (last scan ${r?.scannedts}, asked at ${ctx.scanFrom})`);
-                }
-                if (waited > scanWaitSecs) throw new Error(`the scan of the fixtures was still running after ${waited} s`);
-                await polishNap(500);
-            }
-            ctx.scanSecs = Math.round((Date.now() - askedAt) / 1000);
+            // a second scan at once, so the wait covers the rest of the first and all of the second. The scan lists the
+            // build output of every folder an agent worked in (also the real ones: this app reads ~/.claude) and walks
+            // none of it: a folder is sized when its project's row opens or by Size all (steps 7c-7f). It no longer waits
+            // on the package caches either: they land from a background walk (step 7b waits for them). What a scan
+            // still takes is the listing of build output and the small categories: measured on a loaded machine
+            // (spec "Added in fix round 1"), the listing took 1m23s and every other category but the caches under 0.1 s,
+            // while the caches (59 GB) took 2m14s on their own. So it waits while a scan runs, for up to 180 s
+            // (ARC_STORAGE_SCAN_WAIT_S raises it for a run on a loaded machine), and says how long it waited.
+            const scan = await ssRescanAndWait(h, ssWaitSecs(180));
+            ctx.scanFrom = scan.from;
+            ctx.scanSecs = scan.secs;
         } catch (e) {
             ctx.arrangeError = String(e?.message ?? e);
         }
@@ -61989,7 +62078,13 @@ const settingsStorage = {
         // its folders, each with its own Remove
         await ssExpand(h, "buildoutput");
         const projectRow = await h.ev(ssRowState("buildoutput", repoName));
+        // 7c is read here, before the open: the click below sends the ask that sizes the project (spec call 13)
+        const unsizedRow = await h.ev(ssRowFlags("buildoutput", repoName));
+        await h.ev(`${ssRow("buildoutput", repoName)}?.scrollIntoView({ block: "center" })`);
+        await polishNap(150);
+        await h.shot("cdp-shots/settings-storage-7c-not-sized.png");
         const noCleanAll = await h.ev(`${ssCard("buildoutput")}?.querySelector('[data-storage-clean]') == null`);
+        const openedAt = Date.now();
         await h.ev(`${ssRow("buildoutput", repoName)}?.querySelector('button[aria-expanded]')?.click()`);
         await polishNap(150);
         const projectOpen = await h.ev(`${ssRow("buildoutput", repoName)}?.querySelector('[data-storage-open]') != null`);
@@ -62009,8 +62104,250 @@ const settingsStorage = {
             JSON.stringify({ projectRow, noCleanAll, projectOpen, folderRow, isFolder })
         );
 
+        // 7c. the scan listed the fixture's node_modules and walked nothing: before the open, the row has no size
+        rec(
+            "7c. build output, before any row is opened: the fixture project was listed by the scan but never sized, so its row reads not sized (and carries data-storage-unsized)",
+            unsizedRow != null && unsizedRow.unsized && unsizedRow.text.includes("not sized"),
+            JSON.stringify(unsizedRow)
+        );
+
+        // 7d. opening the row sized it (spec call 13): the server walked node_modules and kept the size, the queue is idle
+        // again, and the row dropped its spinner and its not-sized mark
+        const isNodeModules = (i) => i.id.endsWith("node_modules");
+        const openSized = await ssWaitStorage(
+            h,
+            (r) => {
+                const nm = ssItemsOf(r, repoName).find(isNodeModules);
+                return nm != null && nm.bytes > 0 && nm.sizedts > 0 && r.sizing == null;
+            },
+            60
+        );
+        const nmOpened = ssItemsOf(openSized.report, repoName).find(isNodeModules);
+        const sizedRowDrawn = await polishWaitFor(
+            h,
+            `(() => {
+                const r = ${ssRow("buildoutput", repoName)};
+                const f = ${ssRow("buildoutput", "node_modules")};
+                return r != null && f != null && !r.hasAttribute('data-storage-sizing') && !r.hasAttribute('data-storage-unsized') &&
+                    !f.hasAttribute('data-storage-unsized') && !f.textContent.includes('not sized');
+            })()`,
+            10000
+        );
+        const sizedFlags = await h.ev(ssRowFlags("buildoutput", repoName));
+        await h.shot("cdp-shots/settings-storage-7d-sized.png");
+        rec(
+            "7d. opening the fixture project's row sized it: node_modules has bytes and a size date from the open in the server's report, no sizing is queued or walking, and the row and its folder row show neither the spinner nor not sized",
+            openSized.ok &&
+                nmOpened.bytes > 0 &&
+                nmOpened.sizedts >= openedAt - 1000 &&
+                openSized.report.sizing == null &&
+                sizedRowDrawn &&
+                sizedFlags != null &&
+                !sizedFlags.sizing &&
+                !sizedFlags.unsized,
+            JSON.stringify({ bytes: nmOpened?.bytes, sizedts: nmOpened?.sizedts, openedAt, sizing: openSized.report?.sizing ?? null, sizedRowDrawn, sizedFlags })
+        );
+
+        // 7e. a kept size from two days back: written to the sizes file and read by the next scan, the row says so; opening
+        // it walks the folder again (the size date moves to now); opening it once more, now fresh, walks nothing
+        const staleAt = Date.now() - 2 * SS_DAY_MS;
+        const keptNow = ssReadSizes(ctx.sizesFile);
+        if (nmOpened != null) keptNow[nmOpened.id] = { bytes: nmOpened.bytes, ts: staleAt };
+        await ssWriteSizes(ctx.sizesFile, keptNow);
+        await ssRescanAndWait(h, ssWaitSecs(180));
+        const staleShown = await polishWaitFor(h, `/sized 2 days ago/.test(${ssRow("buildoutput", repoName)}?.textContent ?? '')`, 10000);
+        const staleRow = await h.ev(ssRowFlags("buildoutput", repoName));
+        const nmStale = (await ssBuildItems(h, repoName)).find(isNodeModules);
+        await h.shot("cdp-shots/settings-storage-7e-sized-2-days-ago.png");
+        await ssSetOpen(h, repoName, false);
+        const reopenedAt = Date.now();
+        await ssSetOpen(h, repoName, true);
+        const walkedAgain = await ssWaitStorage(
+            h,
+            (r) => {
+                const nm = ssItemsOf(r, repoName).find(isNodeModules);
+                return nm != null && nm.sizedts >= reopenedAt - 1000 && r.sizing == null;
+            },
+            60
+        );
+        const nmWalked = ssItemsOf(walkedAgain.report, repoName).find(isNodeModules);
+        const staleGone = await polishWaitFor(
+            h,
+            `!/sized \\d+ days? ago/.test(${ssRow("buildoutput", repoName)}?.textContent ?? '')`,
+            10000
+        );
+        await ssSetOpen(h, repoName, false);
+        await ssSetOpen(h, repoName, true);
+        await polishNap(2000); // a walk of this folder takes milliseconds: two seconds is long enough to see one
+        const afterFresh = await h.rpc("getstorage", null);
+        const nmFresh = ssItemsOf(afterFresh, repoName).find(isNodeModules);
+        rec(
+            "7e. a size kept two days back reads sized 2 days ago after a rescan; opening the row walks it again (its size date moves to the open) and the age text goes; opening it again, fresh now, leaves the size date as it was",
+            staleShown &&
+                staleRow != null &&
+                nmStale?.sizedts === staleAt &&
+                nmStale.bytes === nmOpened?.bytes &&
+                walkedAgain.ok &&
+                nmWalked?.sizedts > staleAt &&
+                staleGone &&
+                nmFresh != null &&
+                nmFresh.sizedts === nmWalked?.sizedts &&
+                afterFresh.sizing == null,
+            JSON.stringify({
+                staleShown,
+                staleAt,
+                stale: nmStale && { bytes: nmStale.bytes, sizedts: nmStale.sizedts },
+                reopenedAt,
+                walked: nmWalked && { bytes: nmWalked.bytes, sizedts: nmWalked.sizedts },
+                staleGone,
+                fresh: nmFresh && { sizedts: nmFresh.sizedts },
+                sizing: afterFresh?.sizing ?? null,
+            })
+        );
+
+        // 7f. Size all (spec call 15). The Final's app lists every repo an agent worked in, so the step makes the order and
+        // the total deterministic: every other listed folder is written as sized now (its own bytes kept), and the fixture's
+        // as 0 bytes two days old (by 7e it holds its real size, and keeping that would leave the total unchanged), then a
+        // rescan. Size all walks the oldest size first, so the fixture goes first, and the head's total grows by its bytes.
+        // Stop sizing lets the walk in progress (the next real repo) finish, so its wait is the long one.
+        const allBuild = await ssBuildItems(h);
+        const fixtureIds = new Set((await ssBuildItems(h, repoName)).map((i) => i.id));
+        const wroteAt = Date.now();
+        const projectKey = (p) => {
+            const s = p.replace(/\\/g, "/").replace(/\/+$/, "");
+            return process.platform === "win32" ? s.toLowerCase() : s;
+        };
+        const listedCount = new Set(allBuild.filter((i) => i.detail).map((i) => projectKey(i.detail))).size;
+        const keptAll = {};
+        for (const it of allBuild) {
+            keptAll[it.id] = fixtureIds.has(it.id) ? { bytes: 0, ts: wroteAt - 2 * SS_DAY_MS } : { bytes: it.bytes ?? 0, ts: wroteAt };
+        }
+        await ssWriteSizes(ctx.sizesFile, keptAll);
+        await ssRescanAndWait(h, ssWaitSecs(180));
+        const baseReport = await h.rpc("getstorage", null);
+        const baseById = Object.fromEntries(ssItemsOf(baseReport).map((i) => [i.id, i]));
+        const baseNm = ssItemsOf(baseReport, repoName).find(isNodeModules);
+        const sizeAllBtn = await h.ev(`(() => {
+            const b = ${ssSizeAll};
+            return b ? { text: b.textContent.trim(), disabled: b.disabled } : null;
+        })()`);
+        // the page watches its own button: a queue of a few small projects is over before a poll could read the label
+        await h.ev(`(() => {
+            window.__ssSizeAll = { label: null, busy: false, rowSizing: false };
+            const look = () => {
+                const b = ${ssSizeAll};
+                if (b && b.hasAttribute('data-storage-busy') && /^Stop sizing \\(\\d+ of \\d+\\)$/.test(b.textContent.trim())) {
+                    window.__ssSizeAll.busy = true;
+                    window.__ssSizeAll.label = window.__ssSizeAll.label ?? b.textContent.trim();
+                }
+                const r = ${ssRow("buildoutput", repoName)};
+                if (r && r.hasAttribute('data-storage-sizing')) window.__ssSizeAll.rowSizing = true;
+            };
+            window.__ssSizeObserver = new MutationObserver(look);
+            window.__ssSizeObserver.observe(${ssCard("buildoutput")}, { subtree: true, childList: true, attributes: true, characterData: true });
+        })()`);
+        const sizeAllAt = Date.now();
+        if (sizeAllBtn != null && !sizeAllBtn.disabled) {
+            ctx.sizeAllPressed = true; // teardown stops a sizing still running before it puts the file back
+            await h.ev(`${ssSizeAll}?.click()`);
+        }
+        const fixtureFirst = await ssWaitStorage(
+            h,
+            (r) => ssItemsOf(r, repoName).some((i) => i.sizedts >= sizeAllAt - 1000),
+            90,
+            50
+        );
+        const walkedReport = fixtureFirst.report;
+        const walkedFixture = ssItemsOf(walkedReport, repoName);
+        const fixtureBytes = walkedFixture.reduce((n, i) => n + (i.bytes ?? 0), 0);
+        const fixtureTs = Math.min(...walkedFixture.map((i) => i.sizedts ?? 0));
+        const others = ssItemsOf(walkedReport).filter((i) => !fixtureIds.has(i.id));
+        const othersDelta = others.reduce((n, i) => n + (i.bytes ?? 0) - (baseById[i.id]?.bytes ?? 0), 0);
+        // a repo that moved off its written size before the fixture did would have been walked first
+        const walkedBefore = others.filter((i) => i.sizedts !== wroteAt && i.sizedts < fixtureTs);
+        const headGrew = ssUsedTotal(walkedReport) - ssUsedTotal(baseReport);
+        await h.ev(`${ssCard("buildoutput")}?.scrollIntoView({ block: "start" })`);
+        await polishNap(150);
+        await h.shot("cdp-shots/settings-storage-7f-size-all.png");
+        const sizeSeen = await h.ev(`(window.__ssSizeObserver.disconnect(), window.__ssSizeAll)`);
+        const labelAt = /^Stop sizing \((\d+) of (\d+)\)$/.exec(sizeSeen?.label ?? "");
+        // Stop sizing while the queue still runs; if every listed project was already walked, there is nothing to stop
+        const stopPressed = await h.ev(`(() => {
+            const b = ${ssSizeAll};
+            if (b && b.textContent.trim().startsWith('Stop sizing')) {
+                b.click();
+                return true;
+            }
+            return false;
+        })()`);
+        const stopSecs = ssWaitSecs(600);
+        const stoppedAt = Date.now();
+        const idle = await ssWaitStorage(h, (r) => r.sizing == null, stopSecs, 1000);
+        const idleBtn = await polishWaitFor(
+            h,
+            `(() => {
+                const b = ${ssSizeAll};
+                return b != null && b.textContent.trim() === 'Size all' && !b.hasAttribute('data-storage-busy');
+            })()`,
+            10000
+        );
+        const unwalked = ssItemsOf(idle.report).filter((i) => !fixtureIds.has(i.id) && i.sizedts === wroteAt).length;
+        rec(
+            "7f. Size all walks the fixture project first and the head's total grows by its bytes; while it runs the button reads Stop sizing (N of M) with M every listed project; Stop sizing lets the walk in progress finish and drops the rest, and the button reads Size all again",
+            sizeAllBtn != null &&
+                sizeAllBtn.text === "Size all" &&
+                !sizeAllBtn.disabled &&
+                baseNm != null &&
+                baseNm.bytes === 0 &&
+                baseNm.sizedts === wroteAt - 2 * SS_DAY_MS &&
+                fixtureFirst.ok &&
+                fixtureBytes > 0 &&
+                walkedBefore.length === 0 &&
+                headGrew === fixtureBytes + othersDelta &&
+                sizeSeen?.busy === true &&
+                labelAt != null &&
+                Number(labelAt[1]) >= 1 &&
+                Number(labelAt[1]) <= Number(labelAt[2]) &&
+                Number(labelAt[2]) === listedCount &&
+                idle.ok &&
+                idleBtn,
+            JSON.stringify({
+                sizeAllBtn,
+                base: baseNm && { bytes: baseNm.bytes, sizedts: baseNm.sizedts },
+                wroteAt,
+                fixtureBytes,
+                fixtureTs,
+                walkedBefore: walkedBefore.map((i) => i.id),
+                othersDelta,
+                headGrew,
+                label: sizeSeen?.label,
+                rowSizing: sizeSeen?.rowSizing,
+                listedCount,
+                stopPressed,
+                stopWaitedSecs: Math.round((Date.now() - stoppedAt) / 1000),
+                idle: idle.ok,
+                idleBtn,
+                unwalkedAfterStop: unwalked,
+            }) + (stopPressed ? "" : " (the queue ended before Stop sizing could be pressed: Stop was not exercised)")
+        );
+
         // 7b. package caches: their own card, each cache a row with its own Remove or why it stays, no Clean all. No step
-        // presses one: they are the developer's real caches
+        // presses one: they are the developer's real caches. A scan no longer waits on them (spec call 18): they land from
+        // a background walk, minutes under load, and the report has no packagecaches category until the first walk ends.
+        // So the step waits for the server's report to hold it before it reads the card, then for the page to draw its rows.
+        const cachesFrom = Date.now();
+        const cachesLanded = await ssWaitStorage(
+            h,
+            (r) => (r?.categories ?? []).some((c) => c.category === "packagecaches"),
+            ssWaitSecs(600),
+            1000
+        );
+        const cachesWaitedSecs = Math.round((Date.now() - cachesFrom) / 1000);
+        const cacheItems = (cachesLanded.report?.categories ?? []).find((c) => c.category === "packagecaches")?.items?.length ?? 0;
+        if (cachesLanded.ok && cacheItems > 0) {
+            // the page gets the category from the same event that published it: a moment, not a walk
+            await polishWaitFor(h, `(${ssCard("packagecaches")}?.querySelectorAll('[data-storage-row]').length ?? 0) > 0`, 10000);
+        }
         await ssExpand(h, "packagecaches");
         const caches = await h.ev(`(() => {
             const card = ${ssCard("packagecaches")};
@@ -62028,8 +62365,12 @@ const settingsStorage = {
         await h.shot("cdp-shots/settings-storage-7b-caches.png");
         rec(
             "7b. package caches: the card says they are shared by every project, has no Clean all, and every cache row has its own Remove or a reason it stays",
-            caches != null && caches.blurb && !caches.cleanAll && caches.everyRowActs,
-            JSON.stringify(caches)
+            cachesLanded.ok && caches != null && caches.blurb && !caches.cleanAll && caches.everyRowActs,
+            `${
+                cachesLanded.ok
+                    ? `the package caches landed in the report after a wait of ${cachesWaitedSecs} s (${cacheItems} caches)`
+                    : `no packagecaches category in the server's report after ${cachesWaitedSecs} s`
+            }; ${JSON.stringify(caches)}`
         );
 
         // 8. a clean re-checks at removal: the clean tree changes after the scan, so the server skips it
@@ -62147,6 +62488,22 @@ const settingsStorage = {
                 console.error(`settings-storage teardown: ${what} failed: ${e?.message ?? e}`);
             }
         };
+        // The kept build sizes go back as arrange found them (no file at all when there was none). A Size all this run
+        // pressed may still be walking a real repo, and its write would land after the restore, so Stop sizing comes
+        // first and the restore waits for the queue to go idle (the walk in progress finishes).
+        if (ctx.sizeAllPressed) {
+            await step("stop the sizing and wait for it to end", async () => {
+                await h.rpc("stopsizingbuildoutput", null);
+                const idle = await ssWaitStorage(h, (r) => r?.sizing == null, ssWaitSecs(600), 1000);
+                if (!idle.ok) throw new Error("the sizing was still running at the end of the wait");
+            });
+        }
+        if (ctx.sizesBacked) {
+            await step("restore the kept build sizes", async () => {
+                if (ctx.sizesSaved === null) rmSync(ctx.sizesFile, { force: true });
+                else await ssWriteSizes(ctx.sizesFile, ctx.sizesSaved);
+            });
+        }
         // only what arrange read: a null deletes the key, which is how it was
         if (ctx.prevAuto !== undefined) {
             await step("restore the storage settings", () =>

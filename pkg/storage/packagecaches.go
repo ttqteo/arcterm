@@ -112,19 +112,34 @@ func isInside(p, dir string) bool {
 
 // packageCaches lists the caches that exist and removes the one a row asks for: never automatically, and never
 // while a build or an install runs, which may be reading the cache that moment.
-type packageCaches struct{}
+type packageCaches struct {
+	size func(dir string) int64 // measures one cache; nil is dirSize, a test replaces it
+}
 
 func (packageCaches) category() StorageCategory { return CategoryPackageCaches }
 
-func (packageCaches) measure(ctx context.Context, env *Env) StorageCategoryReport {
+// background: the caches hold tens of GB (59 GB across nine on one machine, 2m14s to walk when loaded), so a Rescan
+// leaves them to a background walk instead of waiting for them.
+func (packageCaches) background() string { return "package caches" }
+
+// measure sizes the caches that exist, all at once: they sit on different trees, and the biggest decides the time.
+func (p packageCaches) measure(ctx context.Context, env *Env) StorageCategoryReport {
 	why := busyCachesReason(env)
-	var items []StorageItem
+	size := p.size
+	if size == nil {
+		size = dirSize
+	}
+	var present []PackageCache
 	for _, c := range env.PackageCaches {
-		if !isPlainDir(c.Path) {
-			continue
+		if isPlainDir(c.Path) {
+			present = append(present, c)
 		}
+	}
+	sizes := parallelMap(present, len(present), func(c PackageCache) int64 { return size(c.Path) })
+	var items []StorageItem
+	for i, c := range present {
 		items = append(items, StorageItem{ID: c.ID, Kind: KindCache, Label: c.Label, Detail: c.Detail, Path: c.Path,
-			Bytes: dirSize(c.Path), Cleanable: why == "", Reason: why})
+			Bytes: sizes[i], Cleanable: why == "", Reason: why})
 	}
 	return report(CategoryPackageCaches, items, nil)
 }
