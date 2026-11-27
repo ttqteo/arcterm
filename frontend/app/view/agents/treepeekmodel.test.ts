@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 import { HOME_PROJECT, type ProjectTreeRow } from "./agentsidebarmodel";
 import type { AgentVM } from "./agentsviewmodel";
-import { peekDots, peekGroups, peekShown } from "./treepeekmodel";
+import { peekGroups, peekShown, peekStripItems } from "./treepeekmodel";
 
 function vm(id: string, over: Partial<AgentVM> = {}): AgentVM {
     return { id, name: `name ${id}`, task: "", state: "idle", ...over };
@@ -104,7 +104,45 @@ describe("peekGroups", () => {
     });
 });
 
-describe("peekDots", () => {
+describe("peekGroups with a split", () => {
+    const place = { row: 1, col: 1, rowSpan: 1, colSpan: 1 };
+    const board = { boardProject: "p", boardId: "x", name: "the board", chatId: "b", chat: "", activets: 0 };
+    function splitRow(cells: AgentVM[], shown: boolean, withBoard: boolean): ProjectTreeRow {
+        return {
+            kind: "split",
+            project: "p",
+            shown,
+            cells: [
+                ...(withBoard ? [{ id: "board:p/x", place, board }] : []),
+                ...cells.map((v) => ({ id: v.id, vm: v, place, menu: "agent" as const })),
+            ],
+        } as ProjectTreeRow;
+    }
+
+    it("lists a split's cells together in grid order, a board's cell among them with no digit", () => {
+        const a = vm("a");
+        const b = vm("b", { state: "working" });
+        const c = vm("c");
+        const rows = [group("p"), parent(a, "p"), splitRow([b], true, true), parent(c, "p")];
+        const split = { key: "p", shown: true };
+        expect(peekGroups(rows, byIdOf([a, b, c]), nameOf)[0].rows).toEqual([
+            { id: "a", name: "name a", dot: "idle", terminal: false, digit: 1 },
+            { id: "board:p/x", name: "the board", dot: "idle", terminal: false, split, board: { pick: "b" } },
+            { id: "b", name: "name b", dot: "working", terminal: false, digit: 2, split },
+            { id: "c", name: "name c", dot: "idle", terminal: false, digit: 3 },
+        ]);
+    });
+
+    it("frames no split whose other cells the roster does not know", () => {
+        const b = vm("b");
+        const rows = [group("p"), splitRow([b, vm("gone")], false, false)];
+        expect(peekGroups(rows, byIdOf([b]), nameOf)[0].rows).toEqual([
+            { id: "b", name: "name b", dot: "idle", terminal: false, digit: 1 },
+        ]);
+    });
+});
+
+describe("peekStripItems", () => {
     it("marks where a new project starts", () => {
         const groups = [
             { project: "a", label: "a", rows: [{ id: "1", name: "", dot: "idle" as const, terminal: false }] },
@@ -117,10 +155,37 @@ describe("peekDots", () => {
                 ],
             },
         ];
-        expect(peekDots(groups)).toEqual([
-            { id: "1", dot: "idle", gapBefore: false },
-            { id: "2", dot: "asking", gapBefore: true },
-            { id: "3", dot: "working", gapBefore: false },
+        expect(peekStripItems(groups)).toEqual([
+            { key: "1", gapBefore: false, dots: [{ id: "1", dot: "idle", gapBefore: false, board: false }] },
+            { key: "2", gapBefore: true, dots: [{ id: "2", dot: "asking", gapBefore: true, board: false }] },
+            { key: "3", gapBefore: false, dots: [{ id: "3", dot: "working", gapBefore: false, board: false }] },
+        ]);
+    });
+
+    it("runs a split's dots together, its board as a square", () => {
+        const split = { key: "p", shown: true };
+        const groups = [
+            {
+                project: "p",
+                label: "p",
+                rows: [
+                    { id: "a", name: "", dot: "idle" as const, terminal: false },
+                    { id: "b", name: "", dot: "working" as const, terminal: false, split },
+                    { id: "board:p/x", name: "", dot: "idle" as const, terminal: false, split, board: { pick: "b" } },
+                ],
+            },
+        ];
+        expect(peekStripItems(groups)).toEqual([
+            { key: "a", gapBefore: false, dots: [{ id: "a", dot: "idle", gapBefore: false, board: false }] },
+            {
+                key: "split:p:p",
+                split,
+                gapBefore: false,
+                dots: [
+                    { id: "b", dot: "working", gapBefore: false, board: false },
+                    { id: "board:p/x", dot: "idle", gapBefore: false, board: true },
+                ],
+            },
         ]);
     });
 });

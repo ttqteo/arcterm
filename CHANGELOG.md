@@ -52,6 +52,8 @@ and a picture given to a line that is not big.
 
 - One letter after `@` picks a kind: `@a` lists agents, `@r` runs, `@c` councils, `@s` conversations, `@e` initiatives
   and `@b` boards, ahead of the files.
+- The folded Agent tree shows splits: the peek card frames a split's agents and its board together, and the strip runs
+  their dots on one pill.
 
 ### Fixed
 
