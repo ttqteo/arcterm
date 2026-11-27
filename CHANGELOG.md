@@ -36,6 +36,8 @@ and a picture given to a line that is not big.
 
 - Settings → Storage lists build output at once and sizes a project when you open its row, or all of them with Size all.
   A project not sized yet reads `not sized`, and one sized more than a day ago says how long ago.
+- A Storage scan finishes in seconds: the package caches are measured in the background, and their card fills in when
+  their sizes are known.
 
 ## 1.12.0 — 2026-11-27
 

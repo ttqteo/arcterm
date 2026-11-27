@@ -248,6 +248,137 @@ func TestBuildOutputReachesTheReposAgentsWorkedIn(t *testing.T) {
 	}
 }
 
+// sequentialBuildItems is what build output listed before its git calls ran on a pool: one project after another, one
+// repoTop, check-ignore and ls-files at a time (the old buildProjects and measure loops, kept here as the reference).
+func sequentialBuildItems(ctx context.Context, env *Env) []StorageItem {
+	var projects []buildProject
+	for _, p := range env.ProjectPaths() {
+		projects = append(projects, buildProject{path: filepath.Clean(p)})
+	}
+	home, _ := os.UserHomeDir()
+	bump := func(dir string, ts int64) bool {
+		for i := range projects {
+			if isInside(dir, projects[i].path) {
+				projects[i].lastUsed = max(projects[i].lastUsed, ts)
+				return true
+			}
+		}
+		return false
+	}
+	for _, a := range env.AgentProjects() {
+		if bump(a.Path, a.LastActiveTs) {
+			continue
+		}
+		top, ok := repoTop(ctx, a.Path)
+		if !ok || SamePath(top, home) || bump(top, a.LastActiveTs) {
+			continue
+		}
+		holds := false
+		for _, p := range projects {
+			holds = holds || isInside(p.path, top)
+		}
+		if !holds {
+			projects = append(projects, buildProject{path: top, lastUsed: a.LastActiveTs})
+		}
+	}
+	var items []StorageItem
+	seen := map[string]bool{}
+	for _, bp := range projects {
+		cands := buildCandidates(bp.path)
+		ignored := gitIgnored(ctx, bp.path, cands)
+		for _, c := range cands {
+			if seen[c] || !ignored[c] || hasTrackedFiles(ctx, bp.path, c) {
+				continue
+			}
+			seen[c] = true
+			rel, _ := filepath.Rel(bp.path, c)
+			items = append(items, StorageItem{ID: c, Kind: KindBuild, Label: filepath.ToSlash(rel), Detail: bp.path, Path: c, ModTs: bp.lastUsed, Cleanable: true})
+		}
+	}
+	return items
+}
+
+func TestBuildOutputListsManyReposInTheOrderItListedThemOneByOne(t *testing.T) {
+	ctx := context.Background()
+	// nine projects, more than the pool has workers (8), so the merge decides the order, not whichever git call returns first
+	p1, p2, p3 := buildRepo(t), buildRepo(t), buildRepo(t)
+	var q []string // repos only agents worked in
+	for range 5 {
+		q = append(q, buildRepo(t))
+	}
+	// a repo nested in p1 and a project of its own: p1's scan reaches its node_modules (listed once, under p1)
+	nested := filepath.Join(p1, "pkgs", "inner")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := gitOut(ctx, nested, "init", "-q"); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+	if err := os.WriteFile(filepath.Join(nested, ".gitignore"), []byte("node_modules/\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(nested, "node_modules", "n.js"), 7)
+	plain := t.TempDir() // not a repo
+	writeFile(t, filepath.Join(plain, "node_modules", "p.js"), 4)
+
+	env := buildEnv(p1, nil)
+	env.ProjectPaths = func() []string { return []string{p1, p2, nested, p3} }
+	env.AgentProjects = func() []AgentProject {
+		return []AgentProject{
+			{Path: filepath.Join(q[0], "frontend"), LastActiveTs: 900}, // a repo no project holds, asked for in a subfolder
+			{Path: q[1], LastActiveTs: 800},
+			{Path: filepath.Join(p2, "src-tauri"), LastActiveTs: 700}, // reached by a project in config and an agent folder
+			{Path: q[0], LastActiveTs: 600},                           // the repo the first ask listed: it only bumps
+			{Path: plain, LastActiveTs: 500},
+			{Path: q[2], LastActiveTs: 400},
+			{Path: q[3], LastActiveTs: 300},
+			{Path: filepath.Join(q[1], "frontend"), LastActiveTs: 250},
+			{Path: q[4], LastActiveTs: 200},
+		}
+	}
+	want := sequentialBuildItems(ctx, env)
+	got := buildOutput{}.measure(ctx, env).Items
+	if len(want) < 16 {
+		t.Fatalf("the reference lists %d folders, want at least 16 (8 repos, two each): the fixture is not what the test expects", len(want))
+	}
+	seen := map[string]bool{}
+	for _, it := range got {
+		if seen[it.ID] {
+			t.Fatalf("%s is listed twice: a folder two projects reach is listed once, under the first", it.ID)
+		}
+		seen[it.ID] = true
+	}
+	if len(got) != len(want) {
+		t.Fatalf("listed %d folders, want %d:\n got  %v\n want %v", len(got), len(want), itemPaths(got), itemPaths(want))
+	}
+	for i := range want {
+		g, w := got[i], want[i]
+		if g.ID != w.ID || g.Label != w.Label || g.Detail != w.Detail || g.ModTs != w.ModTs || g.Kind != w.Kind || !g.Cleanable {
+			t.Fatalf("item %d is %+v, want %+v (one by one: config projects in order, then each repo agents worked in, each project's folders in the folder order)\n got  %v\n want %v",
+				i, g, w, itemPaths(got), itemPaths(want))
+		}
+	}
+	// what the reference says, spelled out: the project in config reached by an agent folder takes its time, a repo agents
+	// asked for twice keeps the newest, and nothing is listed under the folder outside every repo
+	if it := itemByID(got, filepath.Join(p2, "src-tauri", "target")); it.ModTs != 700 || it.Detail != p2 {
+		t.Fatalf("p2's target: %+v, want its project's path and the agent's time 700", it)
+	}
+	if it := itemByID(got, filepath.Join(q[0], "frontend", "node_modules")); it.ModTs != 900 || it.Detail != q[0] {
+		t.Fatalf("q0's node_modules: %+v, want the repo's top level and the newer of its two asks (900)", it)
+	}
+	if it := itemByID(got, filepath.Join(plain, "node_modules")); it.ID != "" {
+		t.Fatalf("a folder outside a repo is listed: %+v", it)
+	}
+}
+
+func itemPaths(items []StorageItem) []string {
+	out := make([]string, len(items))
+	for i, it := range items {
+		out[i] = it.ID
+	}
+	return out
+}
+
 func TestAnAgentInASubfolderKeepsTheProjectBusy(t *testing.T) {
 	repo := buildRepo(t)
 	env := buildEnv(repo, map[string]string{filepath.Join(repo, "frontend"): "agent working in this project"})

@@ -19,7 +19,10 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/wavetermdev/waveterm/pkg/panichandler"
 )
 
 type StorageCategory string
@@ -159,6 +162,14 @@ type provider interface {
 	clean(ctx context.Context, env *Env, ids []string, opts CleanOpts) StorageCleanResult
 }
 
+// backgroundProvider is a category too slow for a scan to wait on (the package caches: tens of GB, minutes on a loaded
+// machine): a Rescan hands it to one background walk and ends without it, and the category lands in the report when
+// the walk does. ScanNow and Clean still measure it inline.
+type backgroundProvider interface {
+	provider
+	background() string // what the walk's log line calls it
+}
+
 // report builds a category's report from its items and the error its scan ended with, if any.
 func report(cat StorageCategory, items []StorageItem, err error) StorageCategoryReport {
 	r := StorageCategoryReport{Category: cat, Items: items}
@@ -193,6 +204,36 @@ func dirSize(root string) int64 {
 		return nil
 	})
 	return total
+}
+
+// parallelMap runs fn over items on at most limit goroutines and returns the results in the order of items, whichever
+// finishes first. A panic in fn is logged and leaves that item's result zero: an unrecovered one in a goroutine would
+// end the whole process.
+func parallelMap[T, R any](items []T, limit int, fn func(T) R) []R {
+	out := make([]R, len(items))
+	if len(items) == 0 {
+		return out
+	}
+	next := make(chan int)
+	var wg sync.WaitGroup
+	for range max(1, min(limit, len(items))) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range next {
+				func() {
+					defer func() { panichandler.PanicHandler("storage.parallelMap", recover()) }()
+					out[i] = fn(items[i])
+				}()
+			}
+		}()
+	}
+	for i := range items {
+		next <- i
+	}
+	close(next)
+	wg.Wait()
+	return out
 }
 
 // SamePath compares two paths as the OS does: cleaned, and without case on Windows.
