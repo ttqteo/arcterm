@@ -56,14 +56,39 @@ func startSessionIdeasScan(opts sessionideas.ScanOpts) error {
 			panichandler.PanicHandler("sessionideas scan", recover())
 			cancel()
 			sessionIdeasScanMu.Lock()
+			defer sessionIdeasScanMu.Unlock()
+			// still holding the guard, so no other scan has started: a scan with no end time here is this one, which
+			// panicked or could not save its end, and would read as running until the next boot
+			endUnfinishedSessionIdeasScan(sessionideas.EndedByFailure)
 			sessionIdeasScanCancel = nil
-			sessionIdeasScanMu.Unlock()
 		}()
 		if err := runSessionIdeasScan(ctx, opts); err != nil && ctx.Err() == nil {
 			log.Printf("sessionideas: scan ended with an error: %v", err)
 		}
 	}()
 	return nil
+}
+
+// endUnfinishedSessionIdeasScan ends a stored scan with no end time, logging what it did. Call it only while no scan
+// runs in this process.
+func endUnfinishedSessionIdeasScan(why string) {
+	ended, err := sessionideas.EndUnfinishedScan(sessionideas.Default(), why)
+	switch {
+	case err != nil:
+		log.Printf("sessionideas: ending a scan left unfinished (%s): %v", why, err)
+	case ended:
+		log.Printf("sessionideas: a scan left unfinished is marked stopped: %s", why)
+	}
+}
+
+// endSessionIdeasScanLeftAtShutdown is the boot's pass: under the guard, so a Scan pressed first is never taken for the
+// scan the last wavesrv left, it ends a stored scan with no end time when no scan runs.
+func endSessionIdeasScanLeftAtShutdown() {
+	sessionIdeasScanMu.Lock()
+	defer sessionIdeasScanMu.Unlock()
+	if sessionIdeasScanCancel == nil {
+		endUnfinishedSessionIdeasScan(sessionideas.EndedByShutdown)
+	}
 }
 
 // sessionIdeasScanRunning says whether a scan holds the guard.

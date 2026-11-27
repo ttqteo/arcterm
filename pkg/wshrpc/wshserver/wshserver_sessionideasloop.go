@@ -27,7 +27,11 @@ var sessionIdeasArmed int64
 // can miss. A tick reads file times and the marks, and the head of a transcript it has not seen as it stands (to tell a
 // machine session), nothing more, until a session is due. At the first tick the loop also lists the sessions once
 // (warmSessionIdeasOrigins), whether or not a scan was ever asked for.
+//
+// Before the loop starts, a scan the store holds with no end time is ended: it ran when wavesrv last stopped, and would
+// otherwise read as running for good (Scan hidden, Stop with nothing to cancel).
 func StartSessionIdeasLoop(ctx context.Context) {
+	endSessionIdeasScanLeftAtShutdown()
 	go func() {
 		timer := time.NewTimer(sessionIdeasFirstTick)
 		defer timer.Stop()
