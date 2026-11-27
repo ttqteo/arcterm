@@ -45,8 +45,10 @@ Five levels, lowest to highest: `information`, `low`, `medium`, `high`, `critica
 
 `advance` in Go and `nextChunk` in the frontend use one rule:
 
-1. The active chunk, if there is one. `advance` never takes the active slot from a chunk: priority only decides which
-   chunk opens next.
+1. The active chunk, if there is one. Priority never takes the active slot from a chunk: setting `critical` on a
+   pending chunk leaves the active chunk active, and only `advance` (which marks the active chunk done) moves on.
+   `advance` picks among the chunks that are not active, so a second active chunk (the server does not forbid one) is
+   not re-picked: it opens the next pending chunk, as today's loop, which skips active chunks, does.
 2. Otherwise, among `pending` chunks, the one with the highest rank: critical > high > medium = unset > low >
    information.
 3. Only when no chunk is pending: among `blocked` and `deferred` chunks, the one with the highest rank (builder
@@ -64,7 +66,9 @@ Builder question 1, answered: every other place that names the next chunk follow
 - the Agent surface's initiative band and popover, `nextChunks` (`frontend/app/view/agents/initiativepopovermodel.ts:33`,
   used at `initiativeband.ts:86`), which lists the next chunks in the order of work;
 - Chat's "go on with: <chunk>" chip (`frontend/app/view/agents/chatsuggest.ts:316`);
-- DUM-E's queue (`pkg/dume/chunks.go:115`, `Summary.Waiting`, whose first entry is next).
+- DUM-E's queue (`pkg/dume/chunks.go:115`, `Summary.Waiting`, whose first entry is next);
+- linking an agent to an initiative (`frontend/app/view/agents/agentheader.tsx:309`), which attaches the agent to the
+  active chunk, else today the first pending chunk by position; it attaches to `nextChunk` instead.
 
 `EffortChunkSummary` (`pkg/wshrpc/wshrpctypes_effort.go:247`) gains `priority` so the frontend sites can rank. Each
 site gets a test over the shared cases.
@@ -79,8 +83,9 @@ side, with a test on each side over the same cases, so the two cannot drift.
 - `wsh effort chunk priority <effort> <chunk> <critical|high|medium|low|information|"">`. `""` clears it.
 - `wsh effort chunk add … --priority <level>`.
 - Each change writes a note on the chunk's trail (`priority: high`, `priority cleared`), as a due change does.
-- In the cockpit, the chunk row's menu gains a Priority section: the five levels with the current one ticked, then
-  "No priority". This matches the prototype.
+- In the cockpit, the chunk row's menu gains a Priority section at its top: the five levels with the current one
+  ticked, then "No priority", then a separator and the menu's existing items (Status, Rename, Move…). This is the
+  order the prototype draws.
 
 ### Badge on the row
 
@@ -95,7 +100,8 @@ and before the notes count, in the same style as the due chip. Colors come from 
 | low | `text-muted` |
 | information | `text-ink-faint` |
 
-A chunk with no priority shows no word.
+A chunk with no priority shows no word. Left to right a row reads: label, due chip, priority word, notes count, status
+word (or "next"), as the board draws the "90-day re-measure" row.
 
 ### `wsh effort show`
 
@@ -114,16 +120,22 @@ lists the open chunks' numbers in the order of work: `Order of work: 11, 21, 17,
 ## Testing
 
 - Go (`pkg/jarvis/effortops_test.go`): `advance` opens by priority, then by position. A pending chunk opens before
-  any blocked or deferred chunk, whatever their levels. `advance` keeps an active chunk.
+  any blocked or deferred chunk, whatever their levels. Setting a priority never changes which chunk is active.
+  `advance` with an active chunk marks it done and opens the highest-ranked pending chunk; with a second active chunk
+  present it opens a pending chunk, not that other active one.
   An unset chunk ranks as medium. `information` opens last. An invalid level is refused. A change writes a trail note.
 - Go (`cmd/wsh/cmd/wshcmd-effort_test.go`): `show`'s Order of work line, the next mark and the level suffix.
 - Go: `ActiveChunk` in `pkg/jarvisstate` and DUM-E's `Waiting` order in `pkg/dume` follow the rule.
-- Vitest: `nextChunks` (`initiativepopovermodel.test.ts`) and the Chat chip (`chatsuggest.test.ts`) follow the rule.
+- Vitest: `nextChunks` (`initiativepopovermodel.test.ts`), the Chat chip (`chatsuggest.test.ts`) and the chunk the
+  link attaches to follow the rule.
 - Vitest (`inlinetracker.test.ts`): a folded plan whose next chunk is past the first 10 shows that chunk's row.
 - Vitest (`effortmodel.test.ts`, `inlinetracker.test.ts`): `nextChunk` over the same cases as the Go test, and the
   badge text and tone per level.
-- CDP: a scenario that draws an initiative card with chunks of several levels, the badges, the "next" arrow on the
-  highest-ranked chunk, and the Priority menu open. It is checked against `A-word-chip.dc.html`.
+- CDP: a scenario that draws an initiative card with chunks of several levels, the badges (and their place between a
+  due chip and the notes count), the "next" arrow on the highest-ranked chunk, and the Priority menu open. It is
+  checked against `A-word-chip.dc.html`. A step with a scenario agent (a terminal tab whose `session:effort` names the
+  initiative; no real agent) shows the Agent rail's Initiative tab (whose rows are `bandRows`, the band's rows before
+  the tab replaced it) listing the next chunks in order of work. The "go on with" chip needs a finished Chat reply to draw, so it is unit-tested only.
 - `CHANGELOG.md`: one line under Added (a user opens it to try it, so `<!-- big -->` with its shot).
 
 ## Builder's calls
@@ -154,8 +166,14 @@ Made by the lead of the autonomous run (2026-11-27), each with why.
    `Due` on add, writes no separate note. An invalid level is `EC-INVALID-PRIORITY`.
 8. **Vault merge** (`pkg/wavevault/effortmerge.go`) picks `Priority` with `pickField` like `Due`, so a synced edit is
    not lost.
-9. **The menu** gets a section, not a submenu: `MenuHead` "Priority", the five levels highest first with the current one
-   ticked (`active`), then "No priority" (ticked when unset), after Move up/down. A section is what the prototype draws
-   and what the Status section already does. No keyboard shortcut.
+9. **The menu** gets a section, not a submenu, at the top of the menu: `MenuHead` "Priority", the five levels highest
+   first with the current one ticked (`active`), then "No priority" (ticked when unset), then a separator and the
+   existing items. A section at the top is what the prototype draws (plan review round 1 caught an earlier "after Move
+   up/down" that disagreed with the board) and what the Status section already does. No keyboard shortcut.
 10. **`show`** prints the level as ` (priority high)` after the due suffix, marks the next chunk with ` ← next` at the
     end of its line, and prints `Order of work: …` (1-based positions) under the title only when a chunk is open.
+11. **`advance`** activates the first entry of the order of work that is not already active (plan review round 1: the
+    order of work puts every active chunk first, so taking its first entry would re-pick a second active chunk).
+12. **The Agent surface** is checked live by a `chunk-priority` step with a scenario agent (`initOpenAgent` in
+    `scripts/cdp/scenarios.mjs`), and the link's chunk by the existing `initiative-link` scenario, whose chunks have no
+    priority so its expectations hold. The "go on with" chip stays unit-tested only.
