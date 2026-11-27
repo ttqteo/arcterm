@@ -1354,7 +1354,7 @@ function ParentRow({
     const fields = useAtomValue(rowFieldsAtom);
     const shownBranch = fields.branch ? notableBranch(branch) : undefined;
     const shownModel = fields.model ? agent.model : undefined;
-    // the Claude account it runs on, only while the open agents run on more than one (agentaccountbadge.ts)
+    // the Claude account it runs on (agentaccountbadge.ts)
     const account = useAccountBadge(agent.id);
     const accountPart = usePartMotion(foldX);
     // what its processes hold now (agentram.ts); an asleep agent has none, whatever a reading still names

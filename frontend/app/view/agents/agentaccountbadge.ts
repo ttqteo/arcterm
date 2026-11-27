@@ -1,14 +1,13 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// Pure: the Claude account word an agent shows beside its model, in the chat footer and under its sidebar row. It
-// shows only while the open claude agents run on two accounts or more: with one account in play the word says
-// nothing. Accounts are told apart by their quota key (agentQuotaKey), so a token account tied to the /login email
-// counts as that one account, as its limits do.
+// Pure: the Claude account word an agent shows beside its model, in the chat footer and under its sidebar row. Every
+// claude agent names its account, also while all of them run on one: the /login (Default) account and the active
+// account can differ, and the word is how the person sees which one an agent took.
 
 import { agentAccountId } from "./chatlimitstrip";
 import { CLAUDE_ACCOUNT_META, defaultAccountName } from "./claudeaccount";
-import { agentQuotaKey, type ClaudeIdentity } from "./ratelimitstore";
+import type { ClaudeIdentity } from "./ratelimitstore";
 
 export interface AccountBadge {
     text: string; // the account as named: its label, or the /login email in full; a long one truncates where drawn
@@ -24,13 +23,13 @@ export interface AccountBadgeAgent {
     loginEmail?: string;
 }
 
-// The badge of each claude agent, by agent id: empty while they all run on one account (or none is claude).
+// The badge of each claude agent, by agent id; an agent of another harness has none.
 export function agentAccountBadges(
     agents: AccountBadgeAgent[],
     identity: ClaudeIdentity,
     activeId: string
 ): Record<string, AccountBadge> {
-    const seen = new Map<string, { key: string; label: string }>();
+    const out: Record<string, AccountBadge> = {};
     for (const a of agents) {
         if (a.agent !== "claude") {
             continue;
@@ -41,14 +40,7 @@ export function agentAccountBadges(
             accountId === ""
                 ? defaultAccountName(a.loginEmail || identity.loginEmail)
                 : (identity.accounts.find((x) => x.id === accountId)?.label ?? accountId);
-        seen.set(a.id, { key: agentQuotaKey(accountId, a.loginEmail, identity), label });
-    }
-    if (new Set([...seen.values()].map((s) => s.key)).size < 2) {
-        return {};
-    }
-    const out: Record<string, AccountBadge> = {};
-    for (const [id, s] of seen) {
-        out[id] = { text: s.label, title: `Claude account: ${s.label}` };
+        out[a.id] = { text: label, title: `Claude account: ${label}` };
     }
     return out;
 }

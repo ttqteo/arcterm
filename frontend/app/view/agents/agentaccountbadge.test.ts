@@ -15,15 +15,21 @@ const identity: ClaudeIdentity = {
 };
 
 describe("agentAccountBadges", () => {
-    it("shows nothing while every claude agent runs on one account", () => {
+    it("names the account also while every claude agent runs on one", () => {
         const agents = [
             { id: "t1", agent: "claude" },
             { id: "t2", agent: "claude", usage: {} },
         ];
-        expect(agentAccountBadges(agents, identity, "")).toEqual({});
+        expect(agentAccountBadges(agents, identity, "a1")).toEqual({
+            t1: { text: "Work", title: "Claude account: Work" },
+            t2: { text: "me@home.dev", title: "Claude account: me@home.dev" },
+        });
+        expect(agentAccountBadges([{ id: "t1", agent: "claude" }], identity, "")).toEqual({
+            t1: { text: "me@home.dev", title: "Claude account: me@home.dev" },
+        });
     });
 
-    it("names each claude agent once two accounts are in play", () => {
+    it("names each claude agent, and none of another harness", () => {
         const agents = [
             { id: "t1", agent: "claude", usage: { account: "a1" } },
             { id: "t2", agent: "claude", usage: {} },
@@ -43,14 +49,6 @@ describe("agentAccountBadges", () => {
         const out = agentAccountBadges(agents, identity, "a2");
         expect(out.t1.text).toBe("me@home.dev");
         expect(out.t2.text).toBe("Spare");
-    });
-
-    it("counts a token account tied to the /login email as that one account", () => {
-        const agents = [
-            { id: "t1", agent: "claude", usage: { account: "a3" } },
-            { id: "t2", agent: "claude", usage: {} },
-        ];
-        expect(agentAccountBadges(agents, identity, "")).toEqual({});
     });
 
     it("tells Default agents apart by the /login email each started on", () => {

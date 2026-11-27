@@ -743,7 +743,7 @@ export function ChatFooter({ agent }: { agent: AgentVM }) {
     };
     const pct = agent.usage?.contextpct;
     const hasModel = agent.model != null && agent.model !== "";
-    // the Claude account it runs on, left of the model, only while the open agents run on more than one
+    // the Claude account it runs on, left of the model (agentaccountbadge.ts)
     const account = useAccountBadge(agent.id);
     const accountPart = usePartMotion(foldX);
     return (
