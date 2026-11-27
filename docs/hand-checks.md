@@ -24,6 +24,11 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
 
 ## 2026-11-27
 
+- [ ] (arcterm) **Pair: judge replies read in the working agent's Chat lower the ⚖ count.** In a paired agent with
+  several judge replies unread, scroll its Chat down past them without opening the pair: the number on the ⚖ line (tree
+  row and header button) drops as each judge card's head comes on screen, and the working agent's own turns never count.
+  The judge cards and the "paired this agent with" line name the judge "Judge: …", not the project, old replies too.
+  (b9659f45b, 861017c4a)
 - [ ] (arcterm) **Save for later: the What's new picture.** Take it with `node scripts/whatsnew-shot.mjs save-later
   --selector [data-jarvis-brief-region="later-chunks"]` (the Brief with a few later items on screen), then swap the
   CHANGELOG line's `<!-- shot: none -->` for the comment it prints, in one commit (spec "Builder's calls" 17). Until
