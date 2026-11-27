@@ -59,7 +59,8 @@ and a picture given to a line that is not big.
 
 - A split keeps its agents across a restart of arcterm: an agent coming back used to drop out of its split until it
   spoke, and a board beside it lost its split with it.
-- A judge arcterm starts for a pair is named "Judge: <agent>" on its replies in Chat, not the project's name.
+- A judge arcterm starts for a pair is named "Judge: <agent>" on its replies in Chat, not the project's name, in
+  the replies it already sent too while its tab is open.
 
 ## 1.12.0 — 2026-11-27
 
