@@ -70,6 +70,8 @@ and a picture given to a line that is not big.
   first. `wsh sessionideas` lists, keeps and drops them. <!-- big --> <!-- shot: 1.11.0-session-ideas.webp -->
 - Pin a project folder in the Agent tree (right-click it → Pin folder): it stays in the tree after its last agent and
   terminal close, faint and marked with a pin, so you can start the next agent there from its menu. Unpin folder lets it go.
+- With a Vietnamese (Telex) or other input method on, the chat box's `/` command menu and `@` list show while you type,
+  not only after the word is committed: `/co` or `@a` lists its matches right away.
 
 ## 1.11.0 — 2026-11-26
 
