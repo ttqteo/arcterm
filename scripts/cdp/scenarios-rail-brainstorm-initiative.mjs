@@ -904,7 +904,8 @@ export default function (kit) {
                         label: r.getAttribute("data-rail-initiative-row"),
                         tag: flat(r.querySelector("[data-rail-initiative-tag]")),
                         workOn: !!r.querySelector("[data-rail-initiative-work-on]"),
-                        struck: getComputedStyle(r.querySelector("span.truncate") ?? r).textDecorationLine.includes("line-through"),
+                        // the label's own span: the row on the cursor shows its whole title, without the truncate class
+                        struck: getComputedStyle(r.querySelector("[data-rail-initiative-label]") ?? r).textDecorationLine.includes("line-through"),
                     });
                     const sec = (id) => {
                         const s = pane?.querySelector('[data-rail-initiative-section="' + id + '"]');
@@ -1256,8 +1257,9 @@ export default function (kit) {
                 await openTab();
                 const allUp = await ensureAll();
                 await polishNap(400);
-                // a row of the full list: its status menu sets it blocked
-                const menuClicked = await click(h, `${IN(A)}?.querySelector('[data-rail-initiative-all-list] [data-rail-initiative-row="${C.free2}"]')`);
+                // a row of the full list: its status menu sets it blocked. The click goes on the title: on the cursor's row
+                // Work on this sits on a line under it, where a click in the middle of the row would land
+                const menuClicked = await click(h, `${IN(A)}?.querySelector('[data-rail-initiative-all-list] [data-rail-initiative-row="${C.free2}"] [data-rail-initiative-label]')`);
                 const menuUp = await polishWaitFor(h, `!!${IN(A)}?.querySelector("[data-rail-initiative-menu]")`, SHORT_MS);
                 const items = await h.ev(`[...(${IN(A)}?.querySelectorAll("[data-rail-initiative-menu] [data-menu-item]") ?? [])].map((i) => i.dataset.menuItem)`);
                 await shot("7-status-menu");
@@ -1265,7 +1267,7 @@ export default function (kit) {
                 const blocked = await until(async () => (await chunkState(h, ctx.main))[C.free2]?.status === "blocked", WAIT_MS);
                 // and the same chunk renamed through the menu's last row
                 await polishWaitFor(h, `!${IN(A)}?.querySelector("[data-rail-initiative-menu]")`, SHORT_MS);
-                await click(h, `${IN(A)}?.querySelector('[data-rail-initiative-all-list] [data-rail-initiative-row="${C.free2}"]')`);
+                await click(h, `${IN(A)}?.querySelector('[data-rail-initiative-all-list] [data-rail-initiative-row="${C.free2}"] [data-rail-initiative-label]')`);
                 await polishWaitFor(h, `!!${IN(A)}?.querySelector("[data-rail-initiative-menu]")`, SHORT_MS);
                 await click(h, `${IN(A)}?.querySelector('[data-rail-initiative-menu] [data-menu-item="rename"]')`);
                 const inputExpr = `${IN(A)}?.querySelector('input[aria-label="Rename ${C.free2}"]')`;
