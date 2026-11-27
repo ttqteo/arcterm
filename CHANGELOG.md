@@ -42,6 +42,11 @@ and a picture given to a line that is not big.
 - With a board in the split beside a Chat, a dashed chip with its name shows under the chat box: a click attaches the
   board to your next message (it goes as `board:<id>`, so the agent draws or answers on that board), and it lets go
   once that message is sent.
+- Words in Chat that name a shape of the board beside it light that shape on the board while the pointer is on them,
+  and a click shows it there (again for the next drawing that holds it; Back returns). A message sent with the board
+  attached gives the agent the board's shapes, so it links the ones it talks about; quotes, dates and short bold
+  phrases or table cells that match a shape's text point too, underlined dotted. `wsh board shapes board:<id>` lists
+  a board's shapes.
 
 ### Changed
 
