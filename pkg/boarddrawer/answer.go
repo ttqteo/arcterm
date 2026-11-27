@@ -41,8 +41,12 @@ var labelTypes = map[string]bool{"rectangle": true, "ellipse": true, "diamond": 
 // updateKeys is what an update may patch, by the JSON type its value must have.
 var updateKeys = map[string]string{
 	"id": "string", "x": "number", "y": "number", "width": "number", "height": "number",
-	"text": "string", "label": "string", "strokeColor": "string", "backgroundColor": "string",
+	"text": "string", "label": "string", "strokeColor": "string", "backgroundColor": "string", "link": "string",
 }
+
+// NewDrawingLink is the link target that names the drawing the answer itself adds: Arc puts that drawing's frame id
+// in its place once it lands. An overview box links to the detail drawing drawn for it in the same turn.
+const NewDrawingLink = "@new"
 
 // Answer is a checked drawer reply: a drawing, or a question flagged for the board's agent. Add and Update are
 // compact JSON arrays, "" when empty. A drawing is new, or with Edit, a change to the drawing DrawingId names: the one
@@ -71,6 +75,7 @@ type skeletonEntry struct {
 	} `json:"label"`
 	Start *bindingId `json:"start"`
 	End   *bindingId `json:"end"`
+	Link  *string    `json:"link"`
 }
 
 type bindingId struct {
@@ -123,8 +128,11 @@ func ParseAnswer(reply string, scene Scene, drawing string, pick bool) (Answer, 
 	if raw.Add, err = expandCharts(raw.Add); err != nil {
 		return Answer{}, err
 	}
-	updated, err := checkUpdate(raw.Update, scene)
+	updated, linkOnly, err := checkUpdate(raw.Update, scene)
 	if err != nil {
+		return Answer{}, err
+	}
+	if err := checkLinks(raw.Add, raw.Update, scene, !a.Edit && a.Added > 0); err != nil {
 		return Answer{}, err
 	}
 	for _, id := range raw.Remove {
@@ -144,7 +152,7 @@ func ParseAnswer(reply string, scene Scene, drawing string, pick bool) (Answer, 
 			return Answer{}, unusable("it edits %q, which is no drawing on the board", drawing)
 		}
 	}
-	if err := checkScope(a, updated, raw.Remove, scene, drawing); err != nil {
+	if err := checkScope(a, updated, linkOnly, raw.Remove, scene, drawing); err != nil {
 		return Answer{}, err
 	}
 	if a.Edit && a.HasDrawing() {
@@ -179,18 +187,53 @@ func couldNotDraw(what, how string) error {
 	return fmt.Errorf("the drawer could not draw %s: it %s", what, how)
 }
 
+// checkLinks checks every link the answer sets, in add and in update: it names a shape or a drawing's frame on the
+// board, or NewDrawingLink when the answer draws a new drawing; an update may clear a link with "".
+func checkLinks(add, update []json.RawMessage, scene Scene, newDrawing bool) error {
+	var targets []string
+	for _, r := range add {
+		var e skeletonEntry
+		if json.Unmarshal(r, &e) == nil && e.Link != nil && strings.TrimSpace(*e.Link) != "" {
+			targets = append(targets, strings.TrimSpace(*e.Link))
+		}
+	}
+	for _, r := range update {
+		var p struct {
+			Link *string `json:"link"`
+		}
+		if json.Unmarshal(r, &p) == nil && p.Link != nil && strings.TrimSpace(*p.Link) != "" {
+			targets = append(targets, strings.TrimSpace(*p.Link))
+		}
+	}
+	for _, t := range targets {
+		if t == NewDrawingLink {
+			if !newDrawing {
+				return unusable("a link names %q, but the answer draws no new drawing", NewDrawingLink)
+			}
+			continue
+		}
+		if _, ok := scene.Types[t]; !ok {
+			return unusable("a link names %q, which is not on the board (link to a shape or a drawing's frame id, or %q)", t, NewDrawingLink)
+		}
+	}
+	return nil
+}
+
 // checkScope keeps an answer to one drawing: a new drawing only adds, and an edit changes (updates or removes) only
 // shapes of the drawing it edits, never a frame (an edit that removes frames is deleteDrawings'). Both are kept
 // short. An answer that draws nothing has no drawing to keep to, so its edit key is moot. updated and removed are the
 // ids the answer updates and removes.
-func checkScope(a Answer, updated, removed []string, scene Scene, drawing string) error {
+func checkScope(a Answer, updated []string, linkOnly map[string]bool, removed []string, scene Scene, drawing string) error {
 	if a.Added > MaxDrawingAdds {
 		return unusable("it adds %d shapes, more than %d", a.Added, MaxDrawingAdds)
 	}
 	if _, ok := scene.Frames[drawing]; a.Edit && a.HasDrawing() && !ok {
 		return unusable("it edits the drawing in view, but no drawing is in view")
 	}
-	if !a.Edit && a.Changed+a.Removed > 0 {
+	if !a.Edit && a.Added == 0 && len(linkOnly) > 0 {
+		return unusable("it only sets links, which is an edit: set \"edit\": true and name the drawing")
+	}
+	if !a.Edit && a.Changed-len(linkOnly)+a.Removed > 0 {
 		return unusable("a new drawing only adds shapes, and it updates or removes shapes on the board")
 	}
 	for _, id := range removed {
@@ -202,6 +245,9 @@ func checkScope(a Answer, updated, removed []string, scene Scene, drawing string
 		}
 	}
 	for _, id := range updated {
+		if linkOnly[id] {
+			continue // a link may be set on any shape: an overview box links to the drawing that explains it
+		}
 		if scene.Types[id] == typeFrame {
 			return unusable("it changes %q, a drawing's frame, which only Arc changes", id)
 		}
@@ -309,40 +355,43 @@ func checkAdd(add []json.RawMessage) error {
 }
 
 // checkUpdate returns the ids the update names.
-func checkUpdate(update []json.RawMessage, scene Scene) ([]string, error) {
-	ids := make([]string, 0, len(update))
+// checkUpdate checks the update entries against the scene and returns the ids they change, and which of them only set a
+// link (linkOnly), which may sit in any drawing.
+func checkUpdate(update []json.RawMessage, scene Scene) (ids []string, linkOnly map[string]bool, err error) {
+	ids = make([]string, 0, len(update))
+	linkOnly = map[string]bool{}
 	seen := make(map[string]bool, len(update))
 	for i, r := range update {
 		var patch map[string]json.RawMessage
 		if json.Unmarshal(r, &patch) != nil || patch == nil {
-			return nil, unusable("update entry %d is not an object", i+1)
+			return nil, nil, unusable("update entry %d is not an object", i+1)
 		}
 		for k, v := range patch {
 			kind, ok := updateKeys[k]
 			if !ok {
-				return nil, unusable("update entry %d has the key %q, which an update cannot change", i+1, k)
+				return nil, nil, unusable("update entry %d has the key %q, which an update cannot change", i+1, k)
 			}
 			if !hasKind(v, kind) {
-				return nil, unusable("update entry %d's %q is not a %s", i+1, k, kind)
+				return nil, nil, unusable("update entry %d's %q is not a %s", i+1, k, kind)
 			}
 		}
 		var id string
 		if json.Unmarshal(patch["id"], &id) != nil || id == "" {
-			return nil, unusable("update entry %d has no id", i+1)
+			return nil, nil, unusable("update entry %d has no id", i+1)
 		}
 		typ, ok := scene.Types[id]
 		if !ok {
-			return nil, unusable("update names %q, which is not on the board", id)
+			return nil, nil, unusable("update names %q, which is not on the board", id)
 		}
 		if seen[id] {
-			return nil, unusable("update names %q twice", id)
+			return nil, nil, unusable("update names %q twice", id)
 		}
 		seen[id] = true
 		if _, ok := patch["text"]; ok && typ != typeText {
-			return nil, unusable("update sets text on %q, a %s, not a text element", id, typ)
+			return nil, nil, unusable("update sets text on %q, a %s, not a text element", id, typ)
 		}
 		if _, ok := patch["label"]; ok && !labelTypes[typ] {
-			return nil, unusable("update sets a label on %q, a %s, which has no label", id, typ)
+			return nil, nil, unusable("update sets a label on %q, a %s, which has no label", id, typ)
 		}
 		for _, k := range []string{"text", "label"} {
 			var words string
@@ -350,12 +399,15 @@ func checkUpdate(update []json.RawMessage, scene Scene) ([]string, error) {
 				continue
 			}
 			if n := tooWordy(words); n > 0 {
-				return nil, unusable("update entry %d's %s has %d words, more than %d", i+1, k, n, MaxLabelWords)
+				return nil, nil, unusable("update entry %d's %s has %d words, more than %d", i+1, k, n, MaxLabelWords)
 			}
+		}
+		if _, ok := patch["link"]; ok && len(patch) == 2 {
+			linkOnly[id] = true
 		}
 		ids = append(ids, id)
 	}
-	return ids, nil
+	return ids, linkOnly, nil
 }
 
 func hasKind(v json.RawMessage, kind string) bool {

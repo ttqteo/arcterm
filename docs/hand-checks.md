@@ -24,6 +24,14 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
 
 ## 2026-11-27
 
+- [ ] (arcterm) **Links between a board's drawings, and Back** (`boardlinks.ts`, `boardcanvas.tsx` follow/onLinkOpen,
+  `BoardBack`, `pkg/boarddrawer` `link`/`@new`). Go and vitest only, no real drawer run, no scenario step. On
+  `mit-thesis` harnesspov-method-retrace, have the agent `wsh board draw --ask "in 'Timeline liền mạch', link the box
+  '21/10 Thiết kế…' to the drawing 'Thiết kế 21/10'"`: the box gets Excalidraw's link mark. In view mode press the box
+  (not only the mark): the view eases to 'Thiết kế 21/10', a Back fades in left of History; press Back (or Backspace on
+  the canvas) → back to the timeline, Back fades out. A drag that starts on the box pans and does not follow. In Edit, a
+  press selects the box; its link mark still follows. Then `--ask "draw the detail of '22/10 M2' and link that box to
+  it"`: one turn adds the drawing and the link.
 - [ ] (arcterm) **Allow and Deny on an agent's sidebar row** (`permissionrow.tsx`, branch of the sidebar-permission-row
   run). Vitest and typecheck only; the end state is `task verify:ui -- sidebar-permission-row`, never run here (a run
   agent runs no CDP). With a real Claude agent outside a run, have it run a Bash command that asks permission: its row's

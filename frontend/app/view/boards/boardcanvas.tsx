@@ -30,7 +30,16 @@ import type { ExcalidrawElement, ExcalidrawFrameElement } from "@excalidraw/exca
 import type { AppState, BinaryFiles, ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { useAtom, useAtomValue } from "jotai";
 import { Moon, Sun } from "lucide-react";
-import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
+import {
+    lazy,
+    Suspense,
+    useEffect,
+    useRef,
+    useState,
+    useSyncExternalStore,
+    type KeyboardEvent,
+    type PointerEvent as ReactPointerEvent,
+} from "react";
 import "./boardcanvas.css";
 import {
     drawingAfterDelete,
@@ -51,6 +60,7 @@ import {
     stepDrawing,
     type Drawing,
 } from "./boarddrawings";
+import { linkAt, linkDrawing, linkTarget, sceneAt } from "./boardlinks";
 import { parseBoardFile, serializeBoard, withReadableFont, wrapEarlier, type BoardScene } from "./boardmodel";
 import {
     boardParts,
@@ -68,11 +78,14 @@ import {
 } from "./boardparts";
 import { copyBoardView } from "./boardshot";
 import {
+    boardBackAtom,
     boardDrawingsAtom,
     boardEditingAtom,
     boardPickAtom,
     boardThemeAtom,
     boardViewportAtom,
+    followLink,
+    goBack,
     loadBoardConvert,
     pointExcalidrawAtLocalFonts,
     registerLiveBoard,
@@ -510,8 +523,9 @@ function OpenBoard({ project, boardId, part: partProp, onPart, onParts }: BoardC
         if (api == null || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) {
             return;
         }
+        const back = e.key === "Backspace" && globalStore.get(boardBackAtom(boardId)).length > 0;
         const arrow = e.key === "ArrowRight" || e.key === "ArrowLeft";
-        if (parts.length === 0 && !arrow) {
+        if (parts.length === 0 && !arrow && !back) {
             return;
         }
         const target = e.target as HTMLElement;
@@ -524,6 +538,13 @@ function OpenBoard({ project, boardId, part: partProp, onPart, onParts }: BoardC
             st.editingTextElement == null &&
             (st.activeTool.type === "selection" || st.activeTool.type === "hand");
         if (!idle) {
+            return;
+        }
+        // Backspace goes back to the drawing a followed link left (nothing is selected, so it deletes nothing)
+        if (back) {
+            e.preventDefault();
+            e.stopPropagation();
+            goBack(boardId);
             return;
         }
         if (parts.length === 0) {
@@ -548,6 +569,35 @@ function OpenBoard({ project, boardId, part: partProp, onPart, onParts }: BoardC
         e.preventDefault();
         e.stopPropagation();
         setPart(next);
+    }
+
+    // A link on the board goes to the drawing its target is in (boardlinks.ts), the drawing in view kept for Back
+    function follow(target: string): void {
+        const api = apiRef.current;
+        const to = api == null ? null : linkDrawing(api.getSceneElements(), target);
+        if (to != null) {
+            followLink(boardId, row?.inView ?? null, to);
+        }
+    }
+
+    // In view mode a press on a linked shape follows its link, not only one on its corner icon (Excalidraw's): a press
+    // that did not move, so a drag that pans never does
+    const pressRef = useRef<{ x: number; y: number } | null>(null);
+    function onPointerDownCapture(e: ReactPointerEvent<HTMLDivElement>): void {
+        pressRef.current = e.button === 0 ? { x: e.clientX, y: e.clientY } : null;
+    }
+    function onPointerUpCapture(e: ReactPointerEvent<HTMLDivElement>): void {
+        const press = pressRef.current;
+        pressRef.current = null;
+        const api = apiRef.current;
+        if (editing || api == null || press == null || Math.hypot(e.clientX - press.x, e.clientY - press.y) > 4) {
+            return;
+        }
+        const at = sceneAt(e.clientX, e.clientY, api.getAppState());
+        const target = linkAt(api.getSceneElements(), at.x, at.y);
+        if (target != null) {
+            follow(target);
+        }
     }
 
     useEffect(() => {
@@ -959,11 +1009,21 @@ function OpenBoard({ project, boardId, part: partProp, onPart, onParts }: BoardC
             data-board-parts={parts.length}
             data-board-part={part ?? ""}
             onKeyDownCapture={onKeyDownCapture}
+            onPointerDownCapture={onPointerDownCapture}
+            onPointerUpCapture={onPointerUpCapture}
         >
             <Suspense fallback={null}>
                 <LazyExcalidraw
                     excalidrawAPI={onApi}
                     onChange={onChange}
+                    // a link to a shape or drawing of this board moves the view there instead of opening a page
+                    onLinkOpen={(element, event) => {
+                        const target = linkTarget(element.link);
+                        if (target != null) {
+                            event.preventDefault();
+                            follow(target);
+                        }
+                    }}
                     theme={theme}
                     // controlled, so only the Edit switch changes it (Excalidraw's own toggle is off)
                     viewModeEnabled={!editing}

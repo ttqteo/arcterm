@@ -28,7 +28,7 @@ import type { AgentsViewModel } from "../agents/agents";
 import { sessionKey } from "../agents/sessionsruns";
 import { retryBoardTurn, stopBoardTurn } from "../boards/boardactions";
 import { BoardCanvas } from "../boards/boardcanvas";
-import { BoardHistory } from "../boards/boardhistory";
+import { BoardBack, BoardHistory } from "../boards/boardhistory";
 import { parseBoardFile } from "../boards/boardmodel";
 import { openBoard } from "../boards/boardsplitstore";
 import { BoardStatus } from "../boards/boardstatus";
@@ -291,6 +291,7 @@ function BoardDetail({ model, row }: { model: AgentsViewModel; row: BoardRow }) 
                     {row.alive ? "" : " · hand edits still save"}
                 </span>
                 <div className="flex-1" />
+                <BoardBack boardId={row.id} />
                 <BoardHistory boardId={row.id} talk={talk} />
                 <OpenInSplitButton model={model} row={row} variant="text" />
                 {sessionId ? (

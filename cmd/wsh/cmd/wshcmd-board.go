@@ -39,6 +39,10 @@ A request is a new drawing, unless it asks to fix, change or delete a drawing al
 title ("in Part 1, drop the two long arrows", "delete the drawing Part 2, fixed"), and the drawer edits or deletes that
 one. A fix changes one drawing; a delete can take several, empty frames too ("delete the empty frames").
 
+A box can link to another drawing: a press on it moves the board there, and Back returns. Ask for it by titles ("draw
+the detail of '21/10 Design' and link that box in Timeline to it", "in Timeline, link '21/10 Design' to the drawing
+'Design 21/10'").
+
 A board whose agent ended (its tab is gone) goes to the agent that draws on it next, drawing and turns kept.
 
 Pass --context, --ask or both. The command waits for the drawing (up to 9 minutes) and prints one line:

@@ -16,6 +16,7 @@ import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
 import { atomFamily, atomWithStorage } from "jotai/utils";
 import { useEffect } from "react";
 import type { BoardDrawings } from "./boarddrawings";
+import { popBack, pushBack } from "./boardlinks";
 
 export interface BoardViewport {
     scrollX: number;
@@ -54,6 +55,25 @@ export interface BoardPick {
 export const boardPickAtom = atomFamily(
     (_boardId: string) => atom<BoardPick | null>(null) as PrimitiveAtom<BoardPick | null>
 );
+// The drawings a followed link left, newest last (boardlinks.ts pushBack/popBack): what Back returns to. In memory,
+// per board, shared by every view of it.
+export const boardBackAtom = atomFamily((_boardId: string) => atom<string[]>([]) as PrimitiveAtom<string[]>);
+
+// Follows a link from the drawing in view to the drawing its target is in, remembering the one left for Back
+export function followLink(boardId: string, from: string | null, to: string): void {
+    globalStore.set(boardBackAtom(boardId), (stack) => pushBack(stack, from, to));
+    globalStore.set(boardPickAtom(boardId), { drawingId: to, ts: Date.now() });
+}
+
+// Back: to the drawing the last followed link left, while it is still on the board
+export function goBack(boardId: string): void {
+    const live = new Set((globalStore.get(boardDrawingsAtom(boardId))?.drawings ?? []).map((d) => d.id));
+    const { to, stack } = popBack(globalStore.get(boardBackAtom(boardId)), live);
+    globalStore.set(boardBackAtom(boardId), stack);
+    if (to != null) {
+        globalStore.set(boardPickAtom(boardId), { drawingId: to, ts: Date.now() });
+    }
+}
 
 // every board's canvas theme, the person's pick on the canvas's sun/moon: the app is dark, the board may be light (for
 // a drawing made to be pasted into a paper or slides). Excalidraw draws the dark theme by inverting the canvas.
