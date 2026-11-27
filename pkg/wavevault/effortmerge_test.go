@@ -377,6 +377,76 @@ func TestMergeEffort(t *testing.T) {
 }
 
 // A pin keeps UpdatedTs, so it cannot ride the newer-side rule: the side that pinned is often the older.
+// a chunk's priority merges per field against the base, like its due: a level set on the older side is not lost to
+// the newer side's unrelated edit
+func TestMergeEffortChunkPriority(t *testing.T) {
+	withPriority := func(ts int64, priority string, edit func(c *waveobj.EffortChunk)) *waveobj.Effort {
+		c := chunk("a", ts)
+		c.Priority = priority
+		if edit != nil {
+			edit(&c)
+		}
+		return effort(ts, c)
+	}
+	cases := []struct {
+		name               string
+		base, ours, theirs *waveobj.Effort
+		wantPriority       string
+		wantOwner          string
+	}{
+		{
+			name:         "only the older side set a level: it is kept",
+			base:         withPriority(10, "", nil),
+			ours:         withPriority(20, "high", nil),
+			theirs:       withPriority(30, "", func(c *waveobj.EffortChunk) { c.Owner = "x" }),
+			wantPriority: "high",
+			wantOwner:    "x",
+		},
+		{
+			name:         "only the older side cleared a level: it stays cleared",
+			base:         withPriority(10, "critical", nil),
+			ours:         withPriority(20, "", nil),
+			theirs:       withPriority(30, "critical", func(c *waveobj.EffortChunk) { c.Owner = "x" }),
+			wantPriority: "",
+			wantOwner:    "x",
+		},
+		{
+			name:         "both sides changed the level: the newer side wins",
+			base:         withPriority(10, "low", nil),
+			ours:         withPriority(20, "high", nil),
+			theirs:       withPriority(30, "critical", nil),
+			wantPriority: "critical",
+		},
+		{
+			name:         "only the newer side changed the level: it is taken",
+			base:         withPriority(10, "low", nil),
+			ours:         withPriority(20, "low", func(c *waveobj.EffortChunk) { c.Owner = "x" }),
+			theirs:       withPriority(30, "information", nil),
+			wantPriority: "information",
+			wantOwner:    "x",
+		},
+		{
+			name:         "a chunk new on both sides takes the newer chunk's level",
+			base:         effort(10),
+			ours:         withPriority(20, "high", nil),
+			theirs:       withPriority(30, "low", nil),
+			wantPriority: "low",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := MergeEffort(tc.base, tc.ours, tc.theirs)
+			c := findChunk(got, "a")
+			if c == nil {
+				t.Fatalf("chunk a missing: %v", labels(got))
+			}
+			if c.Priority != tc.wantPriority || c.Owner != tc.wantOwner {
+				t.Fatalf("chunk = %+v, want priority %q and owner %q", c, tc.wantPriority, tc.wantOwner)
+			}
+		})
+	}
+}
+
 func TestMergeEffortPinnedTs(t *testing.T) {
 	pinned := func(ts, pinnedTs int64) *waveobj.Effort {
 		e := effort(ts)

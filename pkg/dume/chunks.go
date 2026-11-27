@@ -112,8 +112,22 @@ type Summary struct {
 	Done     int
 }
 
+// refOf is the Ref for one of e's chunks.
+func refOf(e *waveobj.Effort, c waveobj.EffortChunk) Ref {
+	r := Ref{EffortOID: e.OID, EffortTitle: e.Title, Project: e.Project, Chunk: c.Label}
+	for _, n := range c.Notes {
+		r.Notes = append(r.Notes, n.Text)
+	}
+	if id, br, ok := ParseStarted(lastStarted(c)); ok {
+		r.RunId, r.Branch = id, br
+	}
+	return r
+}
+
 // Summarize reads DUM-E's queue off the initiatives: only active ones, and a waiting chunk only when its
-// initiative names a project (the run needs a checkout).
+// initiative names a project (the run needs a checkout). Within one initiative the waiting chunks come in its order
+// of work (the highest-ranked first, ties by position: waveobj.ChunkOrderOfWork), so the first of Waiting is the one
+// DUM-E takes next; initiatives keep their order. The other queues keep plan order.
 func Summarize(efforts []*waveobj.Effort, runLive func(runId string) bool) Summary {
 	var s Summary
 	for _, e := range efforts {
@@ -122,21 +136,11 @@ func Summarize(efforts []*waveobj.Effort, runLive func(runId string) bool) Summa
 		}
 		for _, c := range e.Chunks {
 			st := ClassifyChunk(c, runLive)
-			if st == StateNone {
+			if st == StateNone || st == StateWaiting {
 				continue
 			}
-			r := Ref{EffortOID: e.OID, EffortTitle: e.Title, Project: e.Project, Chunk: c.Label}
-			for _, n := range c.Notes {
-				r.Notes = append(r.Notes, n.Text)
-			}
-			if id, br, ok := ParseStarted(lastStarted(c)); ok {
-				r.RunId, r.Branch = id, br
-			}
+			r := refOf(e, c)
 			switch st {
-			case StateWaiting:
-				if e.Project != "" {
-					s.Waiting = append(s.Waiting, r)
-				}
 			case StateRunning:
 				s.Running = append(s.Running, r)
 			case StateFinished:
@@ -147,6 +151,14 @@ func Summarize(efforts []*waveobj.Effort, runLive func(runId string) bool) Summa
 				s.Blocked++
 			case StateDone:
 				s.Done++
+			}
+		}
+		if e.Project == "" {
+			continue
+		}
+		for _, i := range waveobj.ChunkOrderOfWorkOf(e.Chunks) {
+			if ClassifyChunk(e.Chunks[i], runLive) == StateWaiting {
+				s.Waiting = append(s.Waiting, refOf(e, e.Chunks[i]))
 			}
 		}
 	}

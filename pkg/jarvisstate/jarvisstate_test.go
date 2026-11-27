@@ -364,3 +364,114 @@ func TestEffortSummaryCarriesPinnedTs(t *testing.T) {
 		t.Fatalf("unpinned summary PinnedTs = %d, want 0", got)
 	}
 }
+
+// the summary's chunks carry their level, so the frontend sites that rank chunks (the Brief's card, the band, the
+// Chat chip) read the same priority the server ranks by
+func TestEffortSummaryCarriesPriority(t *testing.T) {
+	e := &waveobj.Effort{Title: "t", Status: "active", Chunks: []waveobj.EffortChunk{
+		{Label: "c1", Status: "pending", Priority: "critical"},
+		{Label: "c2", Status: "pending"},
+		{Label: "c3", Status: "pending", Priority: "information"},
+	}}
+	s := EffortSummaryOf(e)
+	if len(s.Chunks) != 3 || s.Chunks[0].Priority != "critical" || s.Chunks[1].Priority != "" || s.Chunks[2].Priority != "information" {
+		t.Fatalf("chunk priorities: %+v", s.Chunks)
+	}
+}
+
+// ActiveChunk is the chunk the order of work names first: the active chunk, else the highest-ranked pending chunk
+// (ties by position), else the highest-ranked blocked or deferred one
+func TestEffortSummaryActiveChunkFollowsTheOrderOfWork(t *testing.T) {
+	cases := []struct {
+		name   string
+		chunks []waveobj.EffortChunk
+		want   string
+	}{
+		{
+			name: "an active chunk stays next whatever the others' levels",
+			chunks: []waveobj.EffortChunk{
+				{Label: "a", Status: "done"},
+				{Label: "b", Status: "active", Priority: "information"},
+				{Label: "c", Status: "pending", Priority: "critical"},
+			},
+			want: "b",
+		},
+		{
+			name: "of two active chunks, the first by position",
+			chunks: []waveobj.EffortChunk{
+				{Label: "a", Status: "active", Priority: "low"},
+				{Label: "b", Status: "active", Priority: "critical"},
+			},
+			want: "a",
+		},
+		{
+			name: "no active chunk: the highest-ranked pending one",
+			chunks: []waveobj.EffortChunk{
+				{Label: "a", Status: "pending", Priority: "low"},
+				{Label: "b", Status: "pending", Priority: "high"},
+				{Label: "c", Status: "pending", Priority: "medium"},
+			},
+			want: "b",
+		},
+		{
+			name: "unset ranks as medium, and ties keep position",
+			chunks: []waveobj.EffortChunk{
+				{Label: "a", Status: "pending", Priority: "low"},
+				{Label: "b", Status: "pending"},
+				{Label: "c", Status: "pending", Priority: "medium"},
+			},
+			want: "b",
+		},
+		{
+			name: "information opens last",
+			chunks: []waveobj.EffortChunk{
+				{Label: "a", Status: "pending", Priority: "information"},
+				{Label: "b", Status: "pending", Priority: "low"},
+			},
+			want: "b",
+		},
+		{
+			name: "a pending chunk is next before a blocked or deferred one, whatever their levels",
+			chunks: []waveobj.EffortChunk{
+				{Label: "a", Status: "blocked", Priority: "critical"},
+				{Label: "b", Status: "deferred", Priority: "high"},
+				{Label: "c", Status: "pending", Priority: "information"},
+			},
+			want: "c",
+		},
+		{
+			name: "only parked chunks: the highest-ranked of them",
+			chunks: []waveobj.EffortChunk{
+				{Label: "a", Status: "blocked", Priority: "low"},
+				{Label: "b", Status: "deferred", Priority: "high"},
+			},
+			want: "b",
+		},
+		{
+			name: "done, skipped and proposed chunks are never next",
+			chunks: []waveobj.EffortChunk{
+				{Label: "a", Status: "done", Priority: "critical"},
+				{Label: "b", Status: "skipped", Priority: "critical"},
+				{Label: "c", Status: "proposed", Priority: "critical"},
+				{Label: "d", Status: "pending", Priority: "low"},
+			},
+			want: "d",
+		},
+		{
+			name: "nothing open: no active chunk",
+			chunks: []waveobj.EffortChunk{
+				{Label: "a", Status: "done"},
+				{Label: "b", Status: "proposed"},
+			},
+			want: "",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := EffortSummaryOf(&waveobj.Effort{Title: "t", Status: "active", Chunks: tc.chunks})
+			if s.ActiveChunk != tc.want {
+				t.Fatalf("ActiveChunk = %q, want %q", s.ActiveChunk, tc.want)
+			}
+		})
+	}
+}

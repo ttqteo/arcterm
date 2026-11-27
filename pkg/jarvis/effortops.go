@@ -208,6 +208,9 @@ func ApplyEffortOpsAs(e *waveobj.Effort, ops []wshrpc.EffortOp, cmdNote string, 
 			if err := validDue(op.Due); err != nil {
 				return err
 			}
+			if err := validPriority(op.Priority); err != nil {
+				return err
+			}
 			if op.Status != "" && op.Status != "proposed" {
 				return fmt.Errorf("EC-INVALID-STATUS: a new chunk is pending, or proposed with --proposed; not %q", op.Status)
 			}
@@ -218,7 +221,7 @@ func ApplyEffortOpsAs(e *waveobj.Effort, ops []wshrpc.EffortOp, cmdNote string, 
 			if len(e.Chunks) == 1 && e.Chunks[0].Status != "proposed" {
 				return fmt.Errorf("EC-LAST-CHUNK: cannot remove the last chunk")
 			}
-		case "renameChunk", "moveChunk", "setChunkStatus", "setChunkStage", "setChunkDue", "setOwner", "recheckChunk":
+		case "renameChunk", "moveChunk", "setChunkStatus", "setChunkStage", "setChunkDue", "setChunkPriority", "setOwner", "recheckChunk":
 			if _, err := ResolveChunkIndex(e, op.Chunk); err != nil {
 				return err
 			}
@@ -229,6 +232,10 @@ func ApplyEffortOpsAs(e *waveobj.Effort, ops []wshrpc.EffortOp, cmdNote string, 
 				}
 			case "setChunkDue":
 				if err := validDue(op.Due); err != nil {
+					return err
+				}
+			case "setChunkPriority":
+				if err := validPriority(op.Priority); err != nil {
 					return err
 				}
 			case "setChunkStatus":
@@ -358,7 +365,7 @@ func ApplyEffortOpsAs(e *waveobj.Effort, ops []wshrpc.EffortOp, cmdNote string, 
 			if op.Status == "proposed" {
 				status, verb = "proposed", "proposed"
 			}
-			c := waveobj.EffortChunk{Label: op.Label, Status: status, Stage: strings.TrimSpace(op.Stage), Owner: op.Owner, Due: op.Due, BaseCommit: op.Base, UpdatedTs: now}
+			c := waveobj.EffortChunk{Label: op.Label, Status: status, Stage: strings.TrimSpace(op.Stage), Owner: op.Owner, Due: op.Due, Priority: op.Priority, BaseCommit: op.Base, UpdatedTs: now}
 			e.Chunks = append(e.Chunks[:idx], append([]waveobj.EffortChunk{c}, e.Chunks[idx:]...)...)
 			effortNote(e, "chunk "+verb+": "+op.Label+noteSuffix(cmdNote), now)
 			effortEvent(e, "chunk-added", op.Label, "", now)
@@ -445,6 +452,16 @@ func ApplyEffortOpsAs(e *waveobj.Effort, ops []wshrpc.EffortOp, cmdNote string, 
 			idx, _ := ResolveChunkIndex(e, op.Chunk)
 			e.Chunks[idx].Due = op.Due
 			chunkNote(e, idx, "due set to "+orNone(op.Due), now, by)
+		case "setChunkPriority":
+			// trail-only as well: a level completes nothing and never moves the active slot (only advance does),
+			// so it stays out of the delta. The note keeps the history of a level changed.
+			idx, _ := ResolveChunkIndex(e, op.Chunk)
+			e.Chunks[idx].Priority = op.Priority
+			if op.Priority == "" {
+				chunkNote(e, idx, "priority cleared", now, by)
+			} else {
+				chunkNote(e, idx, "priority: "+op.Priority, now, by)
+			}
 		case "setOwner":
 			idx, _ := ResolveChunkIndex(e, op.Chunk)
 			e.Chunks[idx].Owner = op.Owner
@@ -507,8 +524,9 @@ func ApplyEffortOpsAs(e *waveobj.Effort, ops []wshrpc.EffortOp, cmdNote string, 
 	return nil
 }
 
-// advance marks the active chunk done and activates the next non-done chunk (the run-card contract:
-// one active at a time). With no active chunk it activates the first non-done.
+// advance marks the active chunk done and activates the next chunk in the order of work (the run-card contract:
+// one active at a time): the highest-ranked pending chunk, ties by position, and only when none is pending the
+// highest-ranked blocked or deferred one. With no active chunk it activates that chunk straight away.
 func advance(e *waveobj.Effort, note string, now int64, by NoteAuthor) {
 	active := -1
 	for i, c := range e.Chunks {
@@ -526,8 +544,11 @@ func advance(e *waveobj.Effort, note string, now int64, by NoteAuthor) {
 		chunkNote(e, active, text, now, by)
 		effortEvent(e, "chunk-done", e.Chunks[active].Label, note, now)
 	}
-	for i, c := range e.Chunks {
-		if c.Status == "pending" || c.Status == "blocked" || c.Status == "deferred" {
+	// The order of work lists every active chunk first, and the server does not forbid a second one. Taking its first
+	// entry (waveobj.NextChunkIndexOf) would re-pick that other active chunk and open nothing, so advance takes the
+	// first entry that is not active.
+	for _, i := range waveobj.ChunkOrderOfWorkOf(e.Chunks) {
+		if e.Chunks[i].Status != "active" {
 			e.Chunks[i].Status = "active"
 			chunkNote(e, i, "activated", now, by)
 			return
@@ -550,6 +571,14 @@ func validDue(due string) error {
 	}
 	if _, err := time.Parse(DueLayout, due); err != nil {
 		return fmt.Errorf("EC-INVALID-DUE: %q is not a date (YYYY-MM-DD)", due)
+	}
+	return nil
+}
+
+// validPriority accepts "" (none, which ranks as medium) or one of waveobj.ChunkPriorities, spelled exactly.
+func validPriority(priority string) error {
+	if !waveobj.ValidChunkPriority(priority) {
+		return fmt.Errorf("EC-INVALID-PRIORITY: %q not one of critical|high|medium|low|information", priority)
 	}
 	return nil
 }

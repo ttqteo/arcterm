@@ -229,7 +229,7 @@ type EffortSummary struct {
 	Chunks      []EffortChunkSummary `json:"chunks,omitempty"`
 	Done        int                  `json:"done"`
 	Total       int                  `json:"total"`
-	ActiveChunk string               `json:"activechunk,omitempty"` // first chunk with status active, else first non-done label
+	ActiveChunk string               `json:"activechunk,omitempty"` // the chunk next in the order of work (waveobj.NextChunkIndex): the active chunk, else the highest-ranked pending one
 	UpdatedTs   int64                `json:"updatedts"`
 	PinnedTs    int64                `json:"pinnedts,omitempty"` // when it was pinned to the Brief's cards; 0 = not pinned
 	LastNote    *EffortLastNote      `json:"lastnote,omitempty"` // the newest note on the effort or any chunk

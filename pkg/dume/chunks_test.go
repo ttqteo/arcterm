@@ -75,6 +75,82 @@ func TestSummarize(t *testing.T) {
 	}
 }
 
+// withPriority is c carrying a priority level.
+func withPriority(c waveobj.EffortChunk, priority string) waveobj.EffortChunk {
+	c.Priority = priority
+	return c
+}
+
+func waitingLabels(s Summary) []string {
+	var out []string
+	for _, r := range s.Waiting {
+		out = append(out, r.EffortOID+"/"+r.Chunk)
+	}
+	return out
+}
+
+// DUM-E's queue follows the order of work: within one initiative the highest-ranked waiting chunk is next, ties by
+// position; initiatives keep their order
+func TestSummarizeWaitingFollowsTheOrderOfWork(t *testing.T) {
+	live := func(string) bool { return false }
+	efforts := []*waveobj.Effort{
+		{OID: "e1", Title: "One", Project: "arcterm", Status: "active", Chunks: []waveobj.EffortChunk{
+			withPriority(chunk("a", "pending", Owner), "low"),
+			withPriority(chunk("b", "pending", Owner), "critical"),
+			chunk("c", "pending", Owner),                               // unset ranks as medium
+			withPriority(chunk("d", "pending", Owner), "information"),  // information opens last
+			withPriority(chunk("mine", "pending", "me"), "critical"),   // not DUM-E's: never in its queue
+			withPriority(chunk("stuck", "blocked", Owner), "critical"), // parked: not waiting, whatever its level
+			withPriority(chunk("e", "pending", Owner), "medium"),       // ties with c: c comes first by position
+		}},
+		{OID: "e2", Title: "Two", Project: "arcterm", Status: "active", Chunks: []waveobj.EffortChunk{
+			withPriority(chunk("x", "pending", Owner), "low"),
+			withPriority(chunk("y", "pending", Owner), "high"),
+		}},
+	}
+	s := Summarize(efforts, live)
+	want := []string{"e1/b", "e1/c", "e1/e", "e1/a", "e1/d", "e2/y", "e2/x"}
+	if got := waitingLabels(s); strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Fatalf("Waiting = %v, want %v", got, want)
+	}
+	if s.Blocked != 1 {
+		t.Fatalf("Blocked = %d, want 1", s.Blocked)
+	}
+}
+
+// the rank is read off the whole initiative, but it only reorders waiting chunks: a DUM-E chunk waiting behind a
+// chunk of the person's own still comes in order of work among DUM-E's
+func TestSummarizeWaitingIgnoresOtherChunksWhenOrdering(t *testing.T) {
+	live := func(string) bool { return false }
+	efforts := []*waveobj.Effort{
+		{OID: "e1", Title: "One", Project: "arcterm", Status: "active", Chunks: []waveobj.EffortChunk{
+			chunk("mine", "active", "me"),
+			withPriority(chunk("a", "pending", Owner), "low"),
+			withPriority(chunk("other", "pending", "me"), "critical"),
+			withPriority(chunk("b", "pending", Owner), "high"),
+		}},
+	}
+	s := Summarize(efforts, live)
+	if got := strings.Join(waitingLabels(s), " "); got != "e1/b e1/a" {
+		t.Fatalf("Waiting = %v, want [e1/b e1/a]", got)
+	}
+}
+
+// only the waiting queue is ordered by level: chunks DUM-E has started keep their plan order
+func TestSummarizeLeavesOtherQueuesInPlanOrder(t *testing.T) {
+	live := func(string) bool { return false }
+	efforts := []*waveobj.Effort{
+		{OID: "e1", Title: "One", Project: "arcterm", Status: "active", Chunks: []waveobj.EffortChunk{
+			withPriority(chunk("a", "active", Owner, StartedNote("r1", "wave/dume-a"), ToLandNote("wave/dume-a", 1)), "low"),
+			withPriority(chunk("b", "active", Owner, StartedNote("r2", "wave/dume-b"), ToLandNote("wave/dume-b", 1)), "critical"),
+		}},
+	}
+	s := Summarize(efforts, live)
+	if len(s.ToLand) != 2 || s.ToLand[0].Chunk != "a" || s.ToLand[1].Chunk != "b" {
+		t.Fatalf("ToLand = %+v, want a then b (plan order)", s.ToLand)
+	}
+}
+
 func TestGoalTellsTheRunNotToLand(t *testing.T) {
 	g := Goal(Ref{EffortTitle: "Tidy", Chunk: "Remove dead code in pkg/x", Notes: []string{"see pkg/x/old.go"}})
 	for _, want := range []string{"Tidy", "Remove dead code in pkg/x", "see pkg/x/old.go", "Do not merge", "subagent"} {
