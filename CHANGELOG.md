@@ -38,6 +38,9 @@ and a picture given to a line that is not big.
   board scenarios", `$ npm test`) and holds Allow and Deny under it, so you no longer pick the agent or open its chat.
   A prompt with choices of its own, such as a plan approval, offers Answer in chat instead. <!-- big -->
   <!-- shot: none -->
+- History in a board's header (a clock with the turn count), beside Library → Boards' buttons too: every drawing the
+  agent asked for and every question, newest first, when and how it went. Press a drawn one and the board eases to its
+  drawing; hover one for the whole request.
 - `→` and `←` on a board step to the next and previous drawing, easing there as a click on its chip does, so a board
   of drawings reads like slides. A dense drawing read in parts still steps through its parts first.
 - A Note button on the nav rail, above Translate, and `Mod`+`Shift`+`N` open a new note straight away: you type its

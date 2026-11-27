@@ -4,6 +4,7 @@ import {
     agentAlive,
     boardFacts,
     elapsedLabel,
+    historyRows,
     statusTurn,
     talkTime,
     turnText,
@@ -165,5 +166,77 @@ describe("statusTurn: the line under the canvas", () => {
             view: { state: "failed" },
         });
         expect(ids(talk([failed, turn({ id: "c", state: "answering" })]))).toBe("c");
+    });
+});
+
+describe("historyRows: the History menu", () => {
+    const drawings = [
+        { id: "f1", title: "wavesrv startup" },
+        { id: "f2", title: "Results" },
+        { id: "f3", title: "Results" },
+    ];
+
+    it("lists every turn newest first, with who asked, when and its state", () => {
+        const rows = historyRows(
+            talk([
+                turn({ id: "a", kind: "request", title: "wavesrv startup", added: 9, answeredts: NOW - 60_000 }),
+                turn({ id: "b", kind: "ask", state: "forwarded", question: "why a queue?", title: undefined }),
+            ]),
+            drawings,
+            NOW
+        );
+        expect(rows.map((r) => r.id)).toEqual(["b", "a"]);
+        expect(rows[0]).toMatchObject({
+            by: "you",
+            state: "forwarded",
+            stateText: "Sent to the agent",
+            title: "why a queue?",
+            drawingId: null,
+        });
+        expect(rows[1]).toMatchObject({
+            by: "agent",
+            stateText: "Drawn",
+            detail: "+9 shapes",
+            time: "15:29",
+            drawingId: "f1",
+        });
+    });
+
+    it("finds an edit's drawing by its id, and a new one by the newest drawing of its title", () => {
+        const rows = historyRows(
+            talk([
+                turn({ id: "e", title: "wavesrv startup", drawingid: "f2", changed: 2 }),
+                turn({ id: "n", title: "Results", added: 3 }),
+                turn({ id: "g", title: "Gone drawing", added: 1 }),
+            ]),
+            drawings,
+            NOW
+        );
+        expect(rows.map((r) => [r.id, r.drawingId, r.detail])).toEqual([
+            ["g", null, "+1 shape"],
+            ["n", "f3", "+3 shapes"],
+            ["e", "f2", "2 changed"],
+        ]);
+    });
+
+    it("gives a failed turn its reason and no drawing, and keeps the whole brief for the tooltip", () => {
+        const failed = turn({
+            id: "x",
+            kind: "request",
+            state: "failed",
+            reason: "13 words",
+            context: "  Draw the timeline, 4 rows  ",
+        });
+        expect(historyRows(talk([failed]), drawings, NOW)[0]).toMatchObject({
+            stateText: "Couldn't draw",
+            detail: "13 words",
+            drawingId: null,
+            brief: "Draw the timeline, 4 rows",
+            title: "  Draw the timeline, 4 rows  ",
+        });
+    });
+
+    it("is empty with no talk", () => {
+        expect(historyRows(null, drawings, NOW)).toEqual([]);
     });
 });

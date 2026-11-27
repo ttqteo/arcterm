@@ -32,6 +32,11 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
   third line closes on the same reveal and the row does not get selected or dragged. Have two agents ask at once and
   answer one so the rows re-sort: a click on a button while its row slides does nothing. Then swap the changelog's
   `<!-- shot: none -->` for the picture the scenario leaves (`public/whatsnew/<next minor>-sidebar-permission-row.webp`).
+- [ ] (arcterm) **History in a board's header** (`boardhistory.tsx`, `historyRows`). Vitest and typecheck; no scenario
+  step. Open a board with several turns: a clock and the count sit left of the chat picker. Press it: the list scales
+  in from its top right, newest first, the drawing in view marked; press a drawn row → the list closes and the view
+  eases to that drawing; a failed row shows its reason and does nothing on a press; Esc or a press outside closes it.
+  Same in Library → Boards, left of Open in split. A board with no turns has no clock.
 - [ ] (arcterm) **An ask's Submit button shows ↵ once every question is answered** (`answerbar.tsx` submitButton,
   d58a5abbe). Lint only. Have an agent ask two questions, answer both: the Submit tab's button reads "✓ Submit ↵" and
   Enter sends; before the last answer the grey button has no ↵. Check the ↵ sits on the button's baseline and the

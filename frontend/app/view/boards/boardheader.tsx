@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The board cell's header: the board's name (a switcher while its chat has more than one board), its facts, the chat
-// the board reads (a picker of the project's live Claude chats, which moves the board to another), Hide or Show turns
-// (the turns column folded to a strip), Expand or Collapse (the cell over the whole grid), and Close. While a part of
+// the board reads (a picker of the project's live Claude chats, which moves the board to another), History (the board's
+// turns, boardhistory.tsx), Expand or Collapse (the cell over the whole grid), and Close. While a part of
 // the drawing in view is read (boardparts.ts), the facts give way to the part's name, a ‹ n/N › stepper and Whole
 // drawing; on the whole drawing a ‹ N parts › stepper starts the reading. The drawings themselves are the strip's row
 // (boardstrip.tsx), not the header's.
@@ -37,6 +37,7 @@ export interface BoardHeaderProps {
     chat?: { id: string; title: string; alive: boolean };
     chats?: readonly { id: string; name: string }[]; // the live Claude chats of the board's project, to move it to
     onChat?: (tabId: string) => void;
+    history?: ReactNode; // the History menu (boardhistory.tsx), before the chat picker
     onClose: () => void;
     parts?: readonly BoardPart[];
     part?: number | null;
@@ -251,6 +252,7 @@ export function BoardHeader({
     chat,
     chats,
     onChat,
+    history,
     parts = [],
     part = null,
     onPart,
@@ -364,6 +366,7 @@ export function BoardHeader({
                     </HeaderButton>
                 </span>
             ) : null}
+            {history}
             {chat != null && chats != null && onChat != null ? (
                 <ChatPicker chat={chat} chats={chats} onChat={onChat} />
             ) : null}
