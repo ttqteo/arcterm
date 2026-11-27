@@ -4,6 +4,7 @@
 import { openBugReport } from "@/app/cockpit/bugreportstore";
 import { reopenClosedAgent } from "@/app/cockpit/cockpit-actions";
 import { peekClickLabel } from "@/app/cockpit/ctrlheld";
+import { openNewNote } from "@/app/cockpit/quicknote";
 import { cheatsheetOpenAtom } from "@/app/cockpit/shortcuts-cheatsheet";
 import { openSidecar } from "@/app/cockpit/sidecaropen";
 import { escapeMenusOpenAtom } from "@/app/hook/useEscapeClose";
@@ -679,6 +680,18 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             label: "Translate",
             when: (ctx) => !ctx.modalOpen,
             run: () => toggleTranslate(),
+        },
+        {
+            // The rail's Note button: the search palette opened straight into a new note's editor (quicknote.ts). A chord,
+            // so it works from a focused terminal. Yields to an open modal, the palette included, where the Notes scope's
+            // own "New note" row does the same.
+            id: "new-note",
+            keys: "Mod:Shift:n",
+            group: "Global",
+            label: "New note",
+            paletteHidden: true, // the Notes scope's "New note" row is the same action
+            when: (ctx) => !ctx.modalOpen,
+            run: () => openNewNote(model),
         },
         {
             // Chat's focus read (chatfocusreadstore.ts), as the toggle beside Skim does: global across agents and

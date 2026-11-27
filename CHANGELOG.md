@@ -34,6 +34,9 @@ and a picture given to a line that is not big.
 
 ### Added
 
+- A Note button on the nav rail, above Translate, and `Mod`+`Shift`+`N` open a new note straight away: you type its
+  title and body and save it with `Ctrl`+`Enter`. Before, it took Search, the Notes scope and its New note row.
+  <!-- try: new-note -->
 - Chunks an agent proposes for its initiative now show as a Plan to review card at the end of its Chat, so you see
   them right under the reply that proposed them. Accept, rename or drop each one, or Accept all and continue, without
   opening the rail. The card goes once you have decided them all and the agent moves on. <!-- big -->
