@@ -46,6 +46,8 @@ and a picture given to a line that is not big.
   was still awake stayed behind as a stray row with nobody to judge. A live agent you picked as a judge stays open.
 - When you resume a conversation that had a judge, ⚖ under a reply offers "Resume Judge: …" first. It reopens that same
   judge with what it read in the earlier rounds, so you don't have to brief a new one.
+- With a Vietnamese (Telex) or other input method on, the chat box's `/` command menu and `@` list show while you type,
+  not only after the word is committed: `/co` or `@a` lists its matches right away.
 
 ## 1.11.0 — 2026-11-26
 

@@ -17,9 +17,9 @@
 //
 // `onChange` fires when the text, the caret or whether the selection is on a pill (`EditorLike.onPill`) changed, so a click
 // that only moves the caret, or selects a pill, calls it with the same text.
-// While an IME composition (Telex, Pinyin…) is on, nothing is reported and nothing is rebuilt: the text arrives when the
-// composition ends. A `value` that comes from outside meanwhile is held and drawn when the composition ends (in place of
-// the text typed), so the editor never says its own text over it.
+// While an IME composition (Telex, Pinyin…) is on, its text is reported as typed (the menus read a word whose last
+// syllable is still marked) but nothing is rebuilt. A `value` that comes from outside meanwhile is held and drawn when the
+// composition ends (in place of the text typed), so the editor never says its own text over it.
 // The grey ghost text after the last character (`ghost`) is drawn over the text without being in it, in an overlay that
 // mirrors it and scrolls as the editor does (GhostScroll). A bash command's leading `!` (`bash`) is in `value` but not in the editor: it is drawn as an accent marker
 // beside it, a gap before the command, as Claude Code's own box does (chateditormodel.ts `bangSkip`); every text and offset
@@ -876,9 +876,12 @@ const Bridge = forwardRef<EditorLike, BridgeProps>(function Bridge({ props, said
     useLayoutEffect(
         () =>
             editor.registerUpdateListener(({ editorState, tags }) => {
-                if (tags.has("external") || editor.isComposing()) {
+                if (tags.has("external")) {
                     return;
                 }
+                // a composition's text is told as it is typed, so the `/` menu and the `@` picker read a word a Telex
+                // syllable is still marked in (`@a`, `/co`). It comes back as the same `value`, which redraws nothing.
+                // An outside value held for the composition's end still wins: nothing is told over it
                 if (held.current) {
                     release.current();
                     return;
