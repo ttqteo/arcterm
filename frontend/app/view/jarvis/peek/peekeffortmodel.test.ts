@@ -56,6 +56,44 @@ describe("effortPeekModel", () => {
     });
 });
 
+// a chunk saved for later is kept on Jarvis, not worked: the peek's bar, its count and its list read the plan alone
+describe("effortPeekModel with chunks saved for later", () => {
+    const later = (label: string, status: string): EffortChunk => ({ ...chunk(label, status), later: true });
+    const withLater = {
+        ...EFFORT,
+        chunks: [
+            later("saved A", "pending"),
+            chunk("one", "done", "slice 1"),
+            later("saved B", "active"),
+            chunk("two", "active", "slice 2"),
+            chunk("three", "pending"),
+            later("saved C", "done"),
+        ],
+    } as Effort;
+    const m = effortPeekModel(withLater);
+
+    it("draws one segment per plan chunk", () => {
+        expect(m.segments).toEqual(["done", "active", "pending"]);
+    });
+
+    it("counts the plan's done chunks only", () => {
+        expect(m.progress).toBe("1 of 3 chunks done");
+        expect(m.doneLine).toBe("1 done · slice 1");
+    });
+
+    it("lists the plan's remaining chunks numbered by their place in the plan, never a later one", () => {
+        expect(m.remaining.map((c) => [c.n, c.label, c.active])).toEqual([
+            [2, "two", true],
+            [3, "three", false],
+        ]);
+    });
+
+    it("has nothing remaining and no bar when every chunk is later", () => {
+        const only = effortPeekModel({ ...EFFORT, chunks: [later("saved A", "pending")] } as Effort);
+        expect(only).toMatchObject({ segments: [], remaining: [], doneLine: null, progress: "0 of 0 chunks done" });
+    });
+});
+
 describe("effortPeekFacts", () => {
     it("is gone when the effort is missing", () => {
         expect(effortPeekFacts(undefined)).toEqual({ gone: true });

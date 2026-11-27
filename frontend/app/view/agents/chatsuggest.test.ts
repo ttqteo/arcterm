@@ -286,7 +286,12 @@ describe("initiativeChips", () => {
     const me = { kind: "agent", oref: "agent:t1" };
     const other = { kind: "agent", oref: "agent:t2" };
     const plan = (
-        ...chunks: { label: string; status: string; workrefs?: { kind: string; oref: string; ts?: number }[] }[]
+        ...chunks: {
+            label: string;
+            status: string;
+            later?: boolean;
+            workrefs?: { kind: string; oref: string; ts?: number }[];
+        }[]
     ) => ({
         chunks,
     });
@@ -366,6 +371,45 @@ describe("initiativeChips", () => {
         expect(initiativeChips(plan({ label: "Idea", status: "proposed", workrefs: [me] }), "t1", true, true)).toEqual(
             []
         );
+    });
+
+    // a chunk saved for later is kept on Jarvis, not worked: no chip ticks it or sends the agent on to it
+    describe("with chunks saved for later", () => {
+        it("goes on past a later chunk, whether it comes before the agent's chunk, right after it or last", () => {
+            const effort = plan(
+                { label: "Saved first", status: "pending", later: true },
+                { label: "Build", status: "done", workrefs: [me] },
+                { label: "Saved next", status: "pending", later: true },
+                { label: "Scenario", status: "pending" }
+            );
+            expect(initiativeChips(effort, "t1", false, false)).toEqual([
+                { text: "go on with: Scenario", kind: "next", source: "rule", chunk: "Scenario" },
+            ]);
+        });
+
+        it("offers nothing when the only chunk left is later", () => {
+            const effort = plan(
+                { label: "Build", status: "done", workrefs: [me] },
+                { label: "Saved", status: "pending", later: true }
+            );
+            expect(initiativeChips(effort, "t1", false, true)).toEqual([]);
+        });
+
+        it("never offers to tick a later chunk the agent holds, nor treats the plan as its own", () => {
+            const held = plan(
+                { label: "Saved", status: "active", later: true, workrefs: [me] },
+                { label: "Build", status: "pending" }
+            );
+            expect(initiativeChips(held, "t1", true, true)).toEqual([]);
+            expect(
+                initiativeChips(
+                    plan({ label: "Saved", status: "active", later: true, workrefs: [me] }),
+                    "t1",
+                    true,
+                    true
+                )
+            ).toEqual([]);
+        });
     });
 });
 

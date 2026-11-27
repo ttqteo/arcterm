@@ -9,6 +9,7 @@
 // initiativepopovermodel.ts, whose `agentChunk` is the one definition of "the chunk this agent is on". Pure: no jotai, no
 // RPC; initiativebandstore.ts sends the writes.
 
+import { isLater } from "@/app/view/jarvis/laterchunk";
 import { attachAgentOp } from "@/app/view/jarvis/proposedmodel";
 import { chunkRef } from "@/app/view/jarvis/trackeredit";
 import { switchLine } from "./chatinitiative";
@@ -22,6 +23,8 @@ export type BandChunk = {
     label: string;
     status: string;
     stage?: string;
+    // saved for later (EffortChunk.later): the tab never lists it, offers it or counts it
+    later?: boolean;
     workrefs?: BandWorkRef[];
 };
 
@@ -33,8 +36,8 @@ const settled = (status: string) => status === "done" || status === "skipped";
 /** Who holds a chunk: an agent (by its tab id) or a run (by its oid). */
 export type BandHolder = { kind: "agent" | "run"; id: string };
 
-/** One row of the Initiative tab's chunk list. `n` is the chunk's place in the plan from 1 (a proposed chunk before it counts), as
- *  the switch line numbers it. `kind` says why it is listed: `done` the chunk this agent finished last, `mine` the one it
+/** One row of the Initiative tab's chunk list. `n` is the chunk's place in the plan from 1 (a proposed chunk or a chunk saved for
+ *  later before it counts), as the switch line numbers it. `kind` says why it is listed: `done` the chunk this agent finished last, `mine` the one it
  *  is on, `next` one of the next two, `other` a live chunk someone else holds, `plan` only in the full list. */
 export type BandRow = {
     label: string;
@@ -52,9 +55,10 @@ function holderOf(w: BandWorkRef): BandHolder {
 
 /** Pure: whether a chunk offers Work on this: it is pending, active, blocked or deferred, and no one holds it (any
  *  workref at all: the agent's own, another agent's or a run's). So never the agent's own chunk, nor a done, skipped or
- *  proposed one. */
+ *  proposed one, nor a chunk saved for later. */
 export function canWorkOn(chunk: BandChunk): boolean {
     return (
+        chunk.later !== true &&
         (chunk.status === "pending" ||
             chunk.status === "active" ||
             chunk.status === "blocked" ||
@@ -71,7 +75,10 @@ export function canWorkOn(chunk: BandChunk): boolean {
 export function bandRows(effort: BandEffort, tabId: string): { window: BandRow[]; all: BandRow[]; total: number } {
     const ref = "agent:" + tabId;
     const own = agentChunk(effort, tabId);
-    const entries = (effort.chunks ?? []).map((c, i) => ({ c, n: i + 1 })).filter(({ c }) => c.status !== "proposed");
+    // a chunk saved for later is held out, but still counts in `n`: the server's list, which the switch line numbers, has it
+    const entries = (effort.chunks ?? [])
+        .map((c, i) => ({ c, n: i + 1 }))
+        .filter(({ c }) => c.status !== "proposed" && !isLater(c));
 
     // the last chunk this agent finished: the newest workref of its own among its done chunks, the later chunk on a tie
     let lastDone: BandChunk | null = null;

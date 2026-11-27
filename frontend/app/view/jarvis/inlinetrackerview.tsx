@@ -21,6 +21,7 @@ import {
     ChevronRight,
     Circle,
     CircleAlert,
+    CornerUpLeft,
     Ellipsis,
     Minus,
     Pause,
@@ -94,6 +95,8 @@ export type TrackerEdits = {
     total: number;
     stages: string[]; // stageOptions(chunks), for "Move to stage"
     onSetStatus: (label: string, status: string) => void;
+    // a chunk saved for later joins the plan ("Not later", on false) where it stands in the chunk order, or goes back
+    onSetLater: (label: string, on: boolean) => void;
     onRenameChunk: (label: string, next: string) => void;
     // the proposed group's decisions: Accept makes the chunks pending, Drop removes them
     onAcceptProposed: (labels: string[]) => void;
@@ -165,8 +168,9 @@ export function InitiativeDetail({
     // A chunk that arrives or leaves alone opens or folds on the spring; the plan's first draw, another initiative's (the
     // filter) and 3+ chunks at once (a folded stage unfolding past its preview) show at once. A rename changes a row's id,
     // so it reads as one chunk leaving and one arriving, which swap in place without moving the rows below.
+    // (the chunks of the Later group count too: one moving between the plan and the group leaves one list and joins the other)
     const batch = useSpringBatch(
-        rows.flatMap((r) => (r.kind === "chunk" ? [r.id] : [])),
+        rows.flatMap((r) => (r.kind === "chunk" ? [r.id] : r.kind === "later" ? r.rows.map((l) => l.id) : [])),
         rows[0]?.oref
     );
 
@@ -224,7 +228,14 @@ export function InitiativeDetail({
             // a folded stage still shows its preview, and its "+ Add chunk" under it
             openStage = r;
         }
-        if (openStage != null && (i + 1 === rows.length || rows[i + 1].kind === "stage")) {
+        // the Later group is no part of the run before it: that run ends on the row above the group
+        if (r.kind === "later") {
+            continue;
+        }
+        if (
+            openStage != null &&
+            (i + 1 === rows.length || rows[i + 1].kind === "stage" || rows[i + 1].kind === "later")
+        ) {
             addAfter.set(i, openStage);
         }
     }
@@ -237,324 +248,368 @@ export function InitiativeDetail({
         }
     }
 
+    // One row of the plan. A chunk saved for later is drawn by this same function inside the Later group (`later`): it is
+    // no part of the plan, so no "+ Add chunk" follows it, and its menu moves it back to the plan in place of the moves.
+    const drawRow = (row: DetailRow, i: number, later = false): React.ReactNode => {
+        const tail = addAfter.get(i);
+        const add =
+            tail != null ? (
+                <AddChunkRow stage={tail.stage} onAdd={(label) => edits.onAddChunk(label, tail.stage, tail.at)} />
+            ) : null;
+        if (row.kind === "pending") {
+            return (
+                <p key={row.id} className="px-1.5 py-2 text-[12px] leading-[1.55] text-muted">
+                    {row.message}
+                </p>
+            );
+        }
+        // the row head above already reads the fraction, the next chunk and what is blocked; the
+        // facts row only feeds the footer's count
+        if (row.kind === "facts") {
+            return null;
+        }
+        if (row.kind === "proposed") {
+            return <ProposedGroup key={row.id} rows={row.rows} edits={edits} />;
+        }
+        if (row.kind === "more") {
+            return (
+                <Fragment key={row.id}>
+                    <button
+                        type="button"
+                        data-jarvis-stage-more={row.n}
+                        title="Show every chunk here"
+                        onClick={() => onToggleStage(row.stageId, true)}
+                        className={cn(
+                            "flex cursor-pointer items-center self-start px-2 py-1.5 text-[11px] text-ink-mid hover:text-ink-hi",
+                            FOCUS
+                        )}
+                    >
+                        +{row.n} more {row.n === 1 ? "chunk" : "chunks"}
+                    </button>
+                    {add}
+                </Fragment>
+            );
+        }
+        if (row.kind === "stage") {
+            const menuId = row.id + "#menu";
+            return (
+                <Fragment key={row.id}>
+                    <div
+                        data-jarvis-tracker-stage={row.stage}
+                        aria-expanded={!row.collapsed}
+                        className={stageHeadClass(row.first)}
+                    >
+                        <button
+                            type="button"
+                            aria-label="Toggle stage"
+                            onClick={() => onToggleStage(row.id, row.collapsed)}
+                            className={cn(
+                                "flex w-3.5 flex-none cursor-pointer items-center justify-center text-ink-mid",
+                                FOCUS
+                            )}
+                        >
+                            {row.collapsed ? (
+                                <ChevronRight size={12} aria-hidden />
+                            ) : (
+                                <ChevronDown size={12} aria-hidden />
+                            )}
+                        </button>
+                        {renameInput(
+                            row.id,
+                            row.stage,
+                            (next) => edits.onRenameStage(row.at, next),
+                            "text-[11.5px] font-semibold"
+                        ) ?? (
+                            <button
+                                type="button"
+                                title="Double-click to rename"
+                                onClick={() => onToggleStage(row.id, row.collapsed)}
+                                onDoubleClick={() => startEdit(row.id, row.stage)}
+                                className={cn(
+                                    "min-w-0 flex-1 cursor-pointer truncate text-left text-[11.5px] font-semibold text-primary",
+                                    FOCUS
+                                )}
+                            >
+                                {row.stage === "" ? "unstaged" : row.stage}
+                            </button>
+                        )}
+                        <StageBar done={row.done} total={row.total} />
+                        <span className="w-7 flex-none text-[10.5px] tabular-nums text-ink-mid">{row.fraction}</span>
+                        <button
+                            type="button"
+                            aria-label="Stage actions"
+                            onClick={() => setMenu(menu === menuId ? null : menuId)}
+                            className={cn(
+                                "flex h-5 w-[22px] flex-none cursor-pointer items-center justify-center rounded-[5px] border text-ink-mid hover:border-edge-mid hover:text-ink-hi",
+                                menu === menuId ? "border-edge-strong" : "border-transparent",
+                                FOCUS
+                            )}
+                        >
+                            <Ellipsis size={14} aria-hidden />
+                        </button>
+                        <Menu open={menu === menuId} className="right-1 top-[calc(100%-2px)] w-40">
+                            {/* the unstaged run has no name to rename or label to delete */}
+                            {row.stage === "" ? (
+                                <MenuItem onClick={() => startEdit(row.id, row.stage)}>Name this stage</MenuItem>
+                            ) : (
+                                <>
+                                    <MenuItem onClick={() => startEdit(row.id, row.stage)}>Rename stage</MenuItem>
+                                    <MenuItem
+                                        danger
+                                        onClick={() => {
+                                            setMenu(null);
+                                            edits.onDeleteStage(row.at);
+                                        }}
+                                    >
+                                        Delete stage
+                                    </MenuItem>
+                                </>
+                            )}
+                        </Menu>
+                    </div>
+                    {add}
+                </Fragment>
+            );
+        }
+        // The chunks saved for later: kept on Jarvis, not worked, so they sit under the plan in a group of their
+        // own, each on the ordinary chunk row. The rows are their own list on the spring, so one leaving
+        // for the plan (Not later) folds away here while it opens there.
+        if (row.kind === "later") {
+            // the group opens and folds on the spring like a row (RevealItem), so the first item saved, or the last one
+            // moved back to the plan, does not snap the page
+            return (
+                <RevealItem key={row.id} batch={batch}>
+                    <div
+                        role="group"
+                        aria-label="Later"
+                        data-initiative-later-group={row.rows.length}
+                        className="flex flex-col"
+                    >
+                        <div className={stageHeadClass(i === 0)}>
+                            <span className="min-w-0 flex-1 truncate text-[11.5px] font-semibold text-ink-mid">
+                                Later · {row.rows.length}
+                            </span>
+                        </div>
+                        <AnimatePresence initial={false} custom={batch}>
+                            {row.rows.map((l) =>
+                                drawRow(
+                                    {
+                                        kind: "chunk",
+                                        id: l.id,
+                                        oref: row.oref,
+                                        row: l.row,
+                                        notes: l.notes,
+                                        next: false,
+                                    },
+                                    -1,
+                                    true
+                                )
+                            )}
+                        </AnimatePresence>
+                    </div>
+                </RevealItem>
+            );
+        }
+        const selected = cursor === row.id;
+        const label = row.row.label;
+        const due = chunkDueChip(row.row.due, row.row.status, localDay(new Date()));
+        const chip = staleChip(row.row.status, stale?.get(label));
+        const menuId = row.id + "#menu";
+        const otherStages = [...edits.stages, ""].filter((s) => s !== row.row.stage);
+        // the chunk picked up next is raised and marked with an accent →, its status word "next"
+        const next = row.next;
+        // the add row is a presence child of its own, so a chunk folding away does not hold the "+ Add chunk"
+        // that moves to the new last row of its run
+        return [
+            <RevealItem key={row.id} batch={batch} className="relative">
+                <div
+                    role="button"
+                    tabIndex={-1}
+                    aria-pressed={selected}
+                    title="Click to open · double-click to rename"
+                    onClick={() => clickChunk(row.id)}
+                    onDoubleClick={() => startEdit(row.id, label)}
+                    data-jarvis-tracker-chunk={label}
+                    data-jarvis-next-chunk={next ? "true" : undefined}
+                    className={cn(
+                        "group/chunk my-px flex w-full min-w-0 cursor-pointer items-start gap-2.5 rounded-[6px] px-2 py-[7px] text-left",
+                        selected
+                            ? "bg-surface-selected"
+                            : next
+                              ? "bg-surface-raised hover:bg-surface-hover"
+                              : "hover:bg-surface-hover"
+                    )}
+                >
+                    <span className="flex h-[17px] w-3.5 flex-none items-center justify-center">
+                        {next ? (
+                            <ArrowRight size={12} strokeWidth={2.4} aria-hidden className="text-accent" />
+                        ) : (
+                            <ToneIcon tone={row.row.tone} />
+                        )}
+                    </span>
+                    {renameInput(row.id, label, (next) => edits.onRenameChunk(label, next), "text-[12px]") ?? (
+                        <span
+                            className={cn(
+                                "min-w-0 flex-1 line-clamp-2 text-[12.5px] leading-[17px]",
+                                selected
+                                    ? "font-semibold text-primary"
+                                    : next
+                                      ? "text-primary"
+                                      : row.row.status === "active"
+                                        ? "font-medium text-ink-hi"
+                                        : row.row.status === "done" || row.row.status === "skipped"
+                                          ? "text-ink-mid"
+                                          : "text-ink-hi",
+                                row.row.status === "skipped" && "line-through"
+                            )}
+                        >
+                            {label}
+                        </span>
+                    )}
+                    {due != null ? (
+                        <span
+                            data-jarvis-chunk-due={row.row.due}
+                            title={due.come ? "Due: it waits in Needs you" : "The day it comes due"}
+                            className={cn(
+                                "flex-none text-[10.5px] tabular-nums",
+                                due.come ? "font-semibold text-asking" : "text-ink-mid"
+                            )}
+                        >
+                            {due.text}
+                        </span>
+                    ) : null}
+                    {chip != null ? (
+                        <span
+                            data-jarvis-chunk-stale={chip.gone ? "gone" : "changed"}
+                            title={chip.title}
+                            className={cn(
+                                "flex-none whitespace-nowrap text-[10.5px] leading-[17px]",
+                                chip.gone ? "font-semibold text-asking" : "text-ink-mid"
+                            )}
+                        >
+                            {chip.text}
+                        </span>
+                    ) : null}
+                    {/* a column of its own, so the status words line up down the plan */}
+                    <span className="w-11 flex-none text-right text-[10.5px] leading-[17px] tabular-nums text-muted">
+                        {row.notes > 0 ? `${row.notes} ${row.notes === 1 ? "note" : "notes"}` : ""}
+                    </span>
+                    <button
+                        type="button"
+                        title={next ? `Next · ${row.row.status} · change status` : "Change status"}
+                        data-jarvis-chunk-status={row.row.status}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setMenu(menu === menuId ? null : menuId);
+                        }}
+                        className={cn(
+                            "flex min-w-[64px] flex-none cursor-pointer items-center justify-end gap-1 rounded-[5px] px-1.5 py-0.5 text-[10.5px] font-semibold hover:bg-surface-hover",
+                            next ? "text-accent" : TONE_FG[row.row.tone],
+                            FOCUS
+                        )}
+                    >
+                        {next ? "next" : row.row.status}
+                        <ChevronDown
+                            size={11}
+                            aria-hidden
+                            className="text-muted opacity-0 group-hover/chunk:opacity-100"
+                        />
+                    </button>
+                </div>
+                <Menu open={menu === menuId} className="right-1 top-[calc(100%+2px)] w-[184px]">
+                    <MenuHead>Status</MenuHead>
+                    {STATUSES.map((s) => (
+                        <MenuItem
+                            key={s}
+                            active={s === row.row.status}
+                            glyph={<ToneIcon tone={chunkTone(s)} />}
+                            onClick={() => {
+                                setMenu(null);
+                                if (s !== row.row.status) {
+                                    edits.onSetStatus(label, s);
+                                }
+                            }}
+                        >
+                            {s}
+                        </MenuItem>
+                    ))}
+                    <MenuRule />
+                    <MenuItem onClick={() => startEdit(row.id, label)}>Rename</MenuItem>
+                    {later ? (
+                        // a chunk saved for later has no place in the plan to move within
+                        <MenuItem
+                            glyph={<CornerUpLeft size={12} aria-hidden />}
+                            onClick={() => {
+                                setMenu(null);
+                                edits.onSetLater(label, false);
+                            }}
+                        >
+                            Not later
+                        </MenuItem>
+                    ) : (
+                        <>
+                            <MenuItem
+                                glyph={<ArrowUp size={12} aria-hidden />}
+                                hint={formatChordString("Alt:ArrowUp")}
+                                disabled={!edits.canMove(label, "up")}
+                                onClick={() => {
+                                    setMenu(null);
+                                    edits.onMoveChunk(label, "up");
+                                }}
+                            >
+                                Move up
+                            </MenuItem>
+                            <MenuItem
+                                glyph={<ArrowDown size={12} aria-hidden />}
+                                hint={formatChordString("Alt:ArrowDown")}
+                                disabled={!edits.canMove(label, "down")}
+                                onClick={() => {
+                                    setMenu(null);
+                                    edits.onMoveChunk(label, "down");
+                                }}
+                            >
+                                Move down
+                            </MenuItem>
+                            {otherStages.length > 0 ? (
+                                <>
+                                    <MenuRule />
+                                    <MenuHead>Move to stage</MenuHead>
+                                    {otherStages.map((s) => (
+                                        <MenuItem
+                                            key={s || "~"}
+                                            glyph={<ArrowRight size={12} aria-hidden />}
+                                            onClick={() => {
+                                                setMenu(null);
+                                                edits.onMoveToStage(label, s);
+                                            }}
+                                        >
+                                            {s || "unstaged"}
+                                        </MenuItem>
+                                    ))}
+                                </>
+                            ) : null}
+                        </>
+                    )}
+                    <MenuRule />
+                    <MenuItem
+                        danger
+                        onClick={() => {
+                            setMenu(null);
+                            edits.onDeleteChunk(label);
+                        }}
+                    >
+                        Delete chunk
+                    </MenuItem>
+                </Menu>
+            </RevealItem>,
+            add != null ? <Fragment key={row.id + "#add"}>{add}</Fragment> : null,
+        ];
+    };
+
     return (
         <div data-jarvis-initiative-detail="sheet" className="flex flex-col pb-4">
             <AnimatePresence initial={false} custom={batch}>
-                {rows.map((row, i) => {
-                    const tail = addAfter.get(i);
-                    const add =
-                        tail != null ? (
-                            <AddChunkRow
-                                stage={tail.stage}
-                                onAdd={(label) => edits.onAddChunk(label, tail.stage, tail.at)}
-                            />
-                        ) : null;
-                    if (row.kind === "pending") {
-                        return (
-                            <p key={row.id} className="px-1.5 py-2 text-[12px] leading-[1.55] text-muted">
-                                {row.message}
-                            </p>
-                        );
-                    }
-                    // the row head above already reads the fraction, the next chunk and what is blocked; the
-                    // facts row only feeds the footer's count
-                    if (row.kind === "facts") {
-                        return null;
-                    }
-                    if (row.kind === "proposed") {
-                        return <ProposedGroup key={row.id} rows={row.rows} edits={edits} />;
-                    }
-                    if (row.kind === "more") {
-                        return (
-                            <Fragment key={row.id}>
-                                <button
-                                    type="button"
-                                    data-jarvis-stage-more={row.n}
-                                    title="Show every chunk here"
-                                    onClick={() => onToggleStage(row.stageId, true)}
-                                    className={cn(
-                                        "flex cursor-pointer items-center self-start px-2 py-1.5 text-[11px] text-ink-mid hover:text-ink-hi",
-                                        FOCUS
-                                    )}
-                                >
-                                    +{row.n} more {row.n === 1 ? "chunk" : "chunks"}
-                                </button>
-                                {add}
-                            </Fragment>
-                        );
-                    }
-                    if (row.kind === "stage") {
-                        const menuId = row.id + "#menu";
-                        return (
-                            <Fragment key={row.id}>
-                                <div
-                                    data-jarvis-tracker-stage={row.stage}
-                                    aria-expanded={!row.collapsed}
-                                    className={stageHeadClass(row.first)}
-                                >
-                                    <button
-                                        type="button"
-                                        aria-label="Toggle stage"
-                                        onClick={() => onToggleStage(row.id, row.collapsed)}
-                                        className={cn(
-                                            "flex w-3.5 flex-none cursor-pointer items-center justify-center text-ink-mid",
-                                            FOCUS
-                                        )}
-                                    >
-                                        {row.collapsed ? (
-                                            <ChevronRight size={12} aria-hidden />
-                                        ) : (
-                                            <ChevronDown size={12} aria-hidden />
-                                        )}
-                                    </button>
-                                    {renameInput(
-                                        row.id,
-                                        row.stage,
-                                        (next) => edits.onRenameStage(row.at, next),
-                                        "text-[11.5px] font-semibold"
-                                    ) ?? (
-                                        <button
-                                            type="button"
-                                            title="Double-click to rename"
-                                            onClick={() => onToggleStage(row.id, row.collapsed)}
-                                            onDoubleClick={() => startEdit(row.id, row.stage)}
-                                            className={cn(
-                                                "min-w-0 flex-1 cursor-pointer truncate text-left text-[11.5px] font-semibold text-primary",
-                                                FOCUS
-                                            )}
-                                        >
-                                            {row.stage === "" ? "unstaged" : row.stage}
-                                        </button>
-                                    )}
-                                    <StageBar done={row.done} total={row.total} />
-                                    <span className="w-7 flex-none text-[10.5px] tabular-nums text-ink-mid">
-                                        {row.fraction}
-                                    </span>
-                                    <button
-                                        type="button"
-                                        aria-label="Stage actions"
-                                        onClick={() => setMenu(menu === menuId ? null : menuId)}
-                                        className={cn(
-                                            "flex h-5 w-[22px] flex-none cursor-pointer items-center justify-center rounded-[5px] border text-ink-mid hover:border-edge-mid hover:text-ink-hi",
-                                            menu === menuId ? "border-edge-strong" : "border-transparent",
-                                            FOCUS
-                                        )}
-                                    >
-                                        <Ellipsis size={14} aria-hidden />
-                                    </button>
-                                    <Menu open={menu === menuId} className="right-1 top-[calc(100%-2px)] w-40">
-                                        {/* the unstaged run has no name to rename or label to delete */}
-                                        {row.stage === "" ? (
-                                            <MenuItem onClick={() => startEdit(row.id, row.stage)}>
-                                                Name this stage
-                                            </MenuItem>
-                                        ) : (
-                                            <>
-                                                <MenuItem onClick={() => startEdit(row.id, row.stage)}>
-                                                    Rename stage
-                                                </MenuItem>
-                                                <MenuItem
-                                                    danger
-                                                    onClick={() => {
-                                                        setMenu(null);
-                                                        edits.onDeleteStage(row.at);
-                                                    }}
-                                                >
-                                                    Delete stage
-                                                </MenuItem>
-                                            </>
-                                        )}
-                                    </Menu>
-                                </div>
-                                {add}
-                            </Fragment>
-                        );
-                    }
-                    const selected = cursor === row.id;
-                    const label = row.row.label;
-                    const due = chunkDueChip(row.row.due, row.row.status, localDay(new Date()));
-                    const chip = staleChip(row.row.status, stale?.get(label));
-                    const menuId = row.id + "#menu";
-                    const otherStages = [...edits.stages, ""].filter((s) => s !== row.row.stage);
-                    // the chunk picked up next is raised and marked with an accent →, its status word "next"
-                    const next = row.next;
-                    // the add row is a presence child of its own, so a chunk folding away does not hold the "+ Add chunk"
-                    // that moves to the new last row of its run
-                    return [
-                        <RevealItem key={row.id} batch={batch} className="relative">
-                            <div
-                                role="button"
-                                tabIndex={-1}
-                                aria-pressed={selected}
-                                title="Click to open · double-click to rename"
-                                onClick={() => clickChunk(row.id)}
-                                onDoubleClick={() => startEdit(row.id, label)}
-                                data-jarvis-tracker-chunk={label}
-                                data-jarvis-next-chunk={next ? "true" : undefined}
-                                className={cn(
-                                    "group/chunk my-px flex w-full min-w-0 cursor-pointer items-start gap-2.5 rounded-[6px] px-2 py-[7px] text-left",
-                                    selected
-                                        ? "bg-surface-selected"
-                                        : next
-                                          ? "bg-surface-raised hover:bg-surface-hover"
-                                          : "hover:bg-surface-hover"
-                                )}
-                            >
-                                <span className="flex h-[17px] w-3.5 flex-none items-center justify-center">
-                                    {next ? (
-                                        <ArrowRight size={12} strokeWidth={2.4} aria-hidden className="text-accent" />
-                                    ) : (
-                                        <ToneIcon tone={row.row.tone} />
-                                    )}
-                                </span>
-                                {renameInput(
-                                    row.id,
-                                    label,
-                                    (next) => edits.onRenameChunk(label, next),
-                                    "text-[12px]"
-                                ) ?? (
-                                    <span
-                                        className={cn(
-                                            "min-w-0 flex-1 line-clamp-2 text-[12.5px] leading-[17px]",
-                                            selected
-                                                ? "font-semibold text-primary"
-                                                : next
-                                                  ? "text-primary"
-                                                  : row.row.status === "active"
-                                                    ? "font-medium text-ink-hi"
-                                                    : row.row.status === "done" || row.row.status === "skipped"
-                                                      ? "text-ink-mid"
-                                                      : "text-ink-hi",
-                                            row.row.status === "skipped" && "line-through"
-                                        )}
-                                    >
-                                        {label}
-                                    </span>
-                                )}
-                                {due != null ? (
-                                    <span
-                                        data-jarvis-chunk-due={row.row.due}
-                                        title={due.come ? "Due: it waits in Needs you" : "The day it comes due"}
-                                        className={cn(
-                                            "flex-none text-[10.5px] tabular-nums",
-                                            due.come ? "font-semibold text-asking" : "text-ink-mid"
-                                        )}
-                                    >
-                                        {due.text}
-                                    </span>
-                                ) : null}
-                                {chip != null ? (
-                                    <span
-                                        data-jarvis-chunk-stale={chip.gone ? "gone" : "changed"}
-                                        title={chip.title}
-                                        className={cn(
-                                            "flex-none whitespace-nowrap text-[10.5px] leading-[17px]",
-                                            chip.gone ? "font-semibold text-asking" : "text-ink-mid"
-                                        )}
-                                    >
-                                        {chip.text}
-                                    </span>
-                                ) : null}
-                                {/* a column of its own, so the status words line up down the plan */}
-                                <span className="w-11 flex-none text-right text-[10.5px] leading-[17px] tabular-nums text-muted">
-                                    {row.notes > 0 ? `${row.notes} ${row.notes === 1 ? "note" : "notes"}` : ""}
-                                </span>
-                                <button
-                                    type="button"
-                                    title={next ? `Next · ${row.row.status} · change status` : "Change status"}
-                                    data-jarvis-chunk-status={row.row.status}
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        setMenu(menu === menuId ? null : menuId);
-                                    }}
-                                    className={cn(
-                                        "flex min-w-[64px] flex-none cursor-pointer items-center justify-end gap-1 rounded-[5px] px-1.5 py-0.5 text-[10.5px] font-semibold hover:bg-surface-hover",
-                                        next ? "text-accent" : TONE_FG[row.row.tone],
-                                        FOCUS
-                                    )}
-                                >
-                                    {next ? "next" : row.row.status}
-                                    <ChevronDown
-                                        size={11}
-                                        aria-hidden
-                                        className="text-muted opacity-0 group-hover/chunk:opacity-100"
-                                    />
-                                </button>
-                            </div>
-                            <Menu open={menu === menuId} className="right-1 top-[calc(100%+2px)] w-[184px]">
-                                <MenuHead>Status</MenuHead>
-                                {STATUSES.map((s) => (
-                                    <MenuItem
-                                        key={s}
-                                        active={s === row.row.status}
-                                        glyph={<ToneIcon tone={chunkTone(s)} />}
-                                        onClick={() => {
-                                            setMenu(null);
-                                            if (s !== row.row.status) {
-                                                edits.onSetStatus(label, s);
-                                            }
-                                        }}
-                                    >
-                                        {s}
-                                    </MenuItem>
-                                ))}
-                                <MenuRule />
-                                <MenuItem onClick={() => startEdit(row.id, label)}>Rename</MenuItem>
-                                <MenuItem
-                                    glyph={<ArrowUp size={12} aria-hidden />}
-                                    hint={formatChordString("Alt:ArrowUp")}
-                                    disabled={!edits.canMove(label, "up")}
-                                    onClick={() => {
-                                        setMenu(null);
-                                        edits.onMoveChunk(label, "up");
-                                    }}
-                                >
-                                    Move up
-                                </MenuItem>
-                                <MenuItem
-                                    glyph={<ArrowDown size={12} aria-hidden />}
-                                    hint={formatChordString("Alt:ArrowDown")}
-                                    disabled={!edits.canMove(label, "down")}
-                                    onClick={() => {
-                                        setMenu(null);
-                                        edits.onMoveChunk(label, "down");
-                                    }}
-                                >
-                                    Move down
-                                </MenuItem>
-                                {otherStages.length > 0 ? (
-                                    <>
-                                        <MenuRule />
-                                        <MenuHead>Move to stage</MenuHead>
-                                        {otherStages.map((s) => (
-                                            <MenuItem
-                                                key={s || "~"}
-                                                glyph={<ArrowRight size={12} aria-hidden />}
-                                                onClick={() => {
-                                                    setMenu(null);
-                                                    edits.onMoveToStage(label, s);
-                                                }}
-                                            >
-                                                {s || "unstaged"}
-                                            </MenuItem>
-                                        ))}
-                                    </>
-                                ) : null}
-                                <MenuRule />
-                                <MenuItem
-                                    danger
-                                    onClick={() => {
-                                        setMenu(null);
-                                        edits.onDeleteChunk(label);
-                                    }}
-                                >
-                                    Delete chunk
-                                </MenuItem>
-                            </Menu>
-                        </RevealItem>,
-                        add != null ? <Fragment key={row.id + "#add"}>{add}</Fragment> : null,
-                    ];
-                })}
+                {rows.map((row, i) => drawRow(row, i))}
             </AnimatePresence>
             {newStage?.chunk != null ? (
                 // a stage is a label on chunks, so this header is a placeholder until its first chunk lands

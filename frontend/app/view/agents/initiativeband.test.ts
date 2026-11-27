@@ -156,6 +156,59 @@ describe("bandRows", () => {
     });
 });
 
+// A chunk saved for later is kept on Jarvis, not worked: the Initiative tab never lists it, offers it, or counts it. These
+// plans put one ahead of the agent's own, among the next ones, and last, where a rule reading the list in order meets it.
+describe("bandRows with chunks saved for later", () => {
+    const later = (label: string, status = "pending", workrefs?: Ref[]) => ({
+        ...chunk(label, status, workrefs),
+        later: true,
+    });
+    const effort = {
+        oid: "7655bf18",
+        chunks: [
+            later("Saved first"),
+            chunk("Decide", "done", [me(10)]),
+            later("Saved held", "active", [other()]),
+            chunk("Build", "active", [me(20)]),
+            later("Saved among the next"),
+            chunk("Scenario", "pending"),
+            chunk("Polish", "pending"),
+            later("Saved last", "blocked"),
+        ],
+    };
+
+    it("never lists one, in the window or in the full list", () => {
+        const { window, all } = bandRows(effort, "t1");
+        expect(window.map((r) => [r.label, r.kind])).toEqual([
+            ["Decide", "done"],
+            ["Build", "mine"],
+            ["Scenario", "next"],
+            ["Polish", "next"],
+        ]);
+        expect(all.map((r) => r.label)).toEqual(["Decide", "Build", "Scenario", "Polish"]);
+    });
+
+    it("counts only the plan, and numbers a chunk by its place in the server's list", () => {
+        const { all, total } = bandRows(effort, "t1");
+        expect(total).toBe(4);
+        expect(all.map((r) => r.n)).toEqual([2, 4, 6, 7]);
+    });
+
+    it("never takes one for the agent's own chunk, nor for a chunk another holder has", () => {
+        const mineLater = { chunks: [later("Saved", "active", [me()]), chunk("A", "pending")] };
+        expect(bandRows(mineLater, "t1").window.map((r) => [r.label, r.kind])).toEqual([["A", "next"]]);
+    });
+
+    it("is empty for an initiative whose only chunks are later", () => {
+        expect(bandRows({ chunks: [later("A"), later("B", "done")] }, "t1")).toEqual({ window: [], all: [], total: 0 });
+    });
+
+    it("offers no Work on this for one", () => {
+        expect(canWorkOn(later("Saved"))).toBe(false);
+        expect(canWorkOn(later("Saved", "active"))).toBe(false);
+    });
+});
+
 describe("holderTag", () => {
     const nameOf = (id: string) => (id === "t2" ? "Claude 2" : undefined);
 

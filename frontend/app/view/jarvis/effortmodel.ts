@@ -1,3 +1,5 @@
+import { planChunks } from "./laterchunk";
+
 export type ChunkTone = "done" | "active" | "blocked" | "deferred" | "skipped" | "pending";
 
 const TONES: Record<string, ChunkTone> = {
@@ -171,7 +173,7 @@ export function stageOptions(rows: { stage: string }[]): string[] {
 
 // the chunk an initiative picks up next: the active one, else the first not yet settled, a proposed one not
 // being settled or open. It is the rule the backend's summary leg applies, so every surface that names "next"
-// names the same chunk.
+// names the same chunk. The caller passes the plan (planChunks): a chunk saved for later is never next.
 export function nextChunk<T extends { status: string }>(chunks: T[]): T | undefined {
     return (
         chunks.find((c) => c.status === "active") ??
@@ -209,8 +211,9 @@ export type EffortFacts = {
 // The sheet's header block: the facts, the progress, the chunk picked up next, and the children still in
 // play. Parent and children come off the briefing's summaries because that is the one list holding every effort.
 export function effortFacts(effort: Effort, all: EffortSummary[]): EffortFacts {
-    // a proposed chunk is a suggestion, not yet work: every count here is over the rest, as the summary's is
-    const chunks = (effort.chunks ?? []).filter((c) => c.status !== "proposed");
+    // a proposed chunk is a suggestion, not yet work, and a chunk saved for later is kept rather than worked: every count
+    // here is over the rest, as the summary's is
+    const chunks = planChunks((effort.chunks ?? []).filter((c) => c.status !== "proposed"));
     const meta: [string, string][] = [["project", effort.project ?? "none"]];
     if (effort.ticket != null && effort.ticket !== "") {
         meta.push(["ticket", effort.ticket]);

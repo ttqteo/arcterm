@@ -29,6 +29,7 @@ import {
     removeChunks,
     renameChunk,
     renameEffort,
+    setChunkLater,
     setChunkStage,
     setChunkStatus,
     setEffortStatus,
@@ -40,6 +41,7 @@ import { initiativeSheetAtom, showInitiativeActivity } from "./initiativesheetst
 import type { TrackerEdits } from "./inlinetrackerview";
 import { briefSheetOpenAtom } from "./jarvisstore";
 import { clearSubject } from "./jarvissubjectstore";
+import { isLater } from "./laterchunk";
 import { canRemove, chunkRef, moveTarget, stageMoveTarget, stageRunLabels } from "./trackeredit";
 
 export type EditsDeps = {
@@ -65,8 +67,11 @@ export function buildTrackerEdits(deps: EditsDeps): TrackerEdits {
     // their own, outside its stage runs, its cursor and its positions, and a chunk waiting out its delete is not drawn
     // at all: a stage run's index from the sheet counts without it, so the edits must too, or for the undo window a
     // stage edit lands on the run after the one clicked. Refs sent to the server still run over `chunks`, which has
-    // them all.
-    const planOnly = chunks.filter((c) => c.status !== "proposed" && !pendingDeletes.has(chunkKey(oref, c.label)));
+    // them all. A chunk saved for later is drawn apart too, in the Later group, so it is no part of a stage run, a move
+    // target or a position here either.
+    const planOnly = chunks.filter(
+        (c) => c.status !== "proposed" && !isLater(c) && !pendingDeletes.has(chunkKey(oref, c.label))
+    );
     const indexOf = (label: string) => chunks.findIndex((c) => c.label === label);
     const ref = (label: string) => chunkRef(chunks, label);
     // A position the plan computes (moveTarget, stageMoveTarget, a run's end), as the server counts it: the proposed
@@ -98,11 +103,19 @@ export function buildTrackerEdits(deps: EditsDeps): TrackerEdits {
         title: effort.title,
         effortStatus: status,
         total: chunks.length,
-        stages: stageOptions(chunks),
+        // a stage only a later chunk carries is not one to move a plan chunk into
+        stages: stageOptions(chunks.filter((c) => !isLater(c))),
         onSetStatus: (label, next) => {
             const prev = chunks.find((c) => c.label === label)?.status ?? "pending";
             run(() => setChunkStatus(oref, ref(label), next));
             briefUndo.notify(`Marked “${label}” ${next}`, () => run(() => setChunkStatus(oref, ref(label), prev)));
+        },
+        // "Not later" joins a chunk to the plan where it stands in the chunk order; its Undo puts the mark back
+        onSetLater: (label, on) => {
+            run(() => setChunkLater(oref, ref(label), on));
+            briefUndo.notify(on ? `Saved “${label}” for later` : `Moved “${label}” into the plan`, () =>
+                run(() => setChunkLater(oref, ref(label), !on))
+            );
         },
         onRenameChunk: (label, next) => run(() => renameChunk(oref, chunks, label, next)),
         // Accept is immediate and its Undo puts the chunks back as proposed. Drop waits out the undo window like a

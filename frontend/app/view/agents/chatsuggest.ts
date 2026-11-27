@@ -20,6 +20,7 @@
 // it draws the chips that fit whole (fitChips), however many. Pure: chatsuggeststore.ts holds the
 // model's answers and makes the call, chatpane.tsx wires the two.
 
+import { planChunks } from "@/app/view/jarvis/laterchunk";
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
 import type { HintPart } from "./chatboxstate";
 import { agentChunk } from "./initiativepopovermodel";
@@ -44,7 +45,12 @@ export interface ChatChip {
 
 /** The part of an initiative the initiative rule reads. A workref's `ts` is when it was attached (ms). */
 export interface ChipEffort {
-    chunks?: { label: string; status: string; workrefs?: { kind: string; oref: string; ts?: number }[] }[];
+    chunks?: {
+        label: string;
+        status: string;
+        later?: boolean;
+        workrefs?: { kind: string; oref: string; ts?: number }[];
+    }[];
 }
 
 /** What a chip is drawn with: its kind's icon, a reply that asks for a build ("build đi", "build it") the hammer, and
@@ -285,7 +291,7 @@ export function ruleChips(
  *  was attached to after that (a switch, or Mark done carrying it forward) was not that turn's work, so it offers no
  *  done:; a workref with no stamp, or no `turnEnded`, is as it always was. Once every chunk the agent held is settled,
  *  the next one after them that no other agent holds is offered as a message to go on with. A proposed chunk is nobody's
- *  work yet. */
+ *  work yet, and a chunk saved for later is kept rather than worked: neither is ticked or gone on with. */
 export function initiativeChips(
     effort: ChipEffort | null | undefined,
     tabId: string,
@@ -293,7 +299,7 @@ export function initiativeChips(
     vi: boolean,
     turnEnded?: number
 ): ChatChip[] {
-    const chunks = (effort?.chunks ?? []).filter((c) => c.status !== "proposed");
+    const chunks = planChunks(effort?.chunks ?? []).filter((c) => c.status !== "proposed");
     if (chunks.length === 0) {
         return [];
     }

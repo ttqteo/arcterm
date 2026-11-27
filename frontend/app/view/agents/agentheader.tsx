@@ -118,7 +118,7 @@ import {
     type HeaderWidth,
 } from "./headermodel";
 import { initiativeLinkPickerAtom } from "./initiativepopover";
-import { chipCount } from "./initiativepopovermodel";
+import { chipCount, linkChunk } from "./initiativepopovermodel";
 import { KeyTip } from "./keytip";
 import { openLauncher } from "./launcherstore";
 import { rosterSeededAtom } from "./liveagents";
@@ -306,7 +306,8 @@ function LinkToInitiative({ agent, project, width }: { agent: AgentVM; project: 
                 }
                 await loadEffortDetail(oref, Number.MAX_SAFE_INTEGER);
                 const chunks = globalStore.get(effortDetailAtom).get(oref)?.chunks ?? [];
-                const chunk = chunks.find((c) => c.status === "active") ?? chunks.find((c) => c.status === "pending");
+                // the plan's active chunk, else its first pending one: a chunk saved for later is never the one picked
+                const chunk = linkChunk(chunks);
                 if (chunk != null) {
                     await attachAgent(oref, chunkRef(planEditChunks(chunks), chunk.label), agent.id);
                 }

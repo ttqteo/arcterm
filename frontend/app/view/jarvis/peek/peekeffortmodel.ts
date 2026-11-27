@@ -6,6 +6,7 @@
 
 import { effortFacts, type ChunkTone } from "../effortmodel";
 import { effortChunkRows } from "../effortstore";
+import { planChunks } from "../laterchunk";
 import type { PeekFacts } from "../peekstore";
 
 export type PeekChunk = { n: number; label: string; status: string; tone: ChunkTone; active: boolean };
@@ -25,7 +26,8 @@ export type EffortPeekModel = {
 
 export function effortPeekModel(effort: Effort): EffortPeekModel {
     const facts = effortFacts(effort, []);
-    const rows = effortChunkRows(effort);
+    // the plan alone: a chunk saved for later is kept on Jarvis, not worked, so the bar, the count and the list leave it out
+    const rows = planChunks(effortChunkRows(effort));
     const doneRows = rows.filter((r) => r.tone === "done");
     const stages = [...new Set(doneRows.map((r) => r.stage).filter((s) => s !== ""))];
     const objective = [...(effort.notes ?? [])].sort((a, b) => a.ts - b.ts)[0]?.text;

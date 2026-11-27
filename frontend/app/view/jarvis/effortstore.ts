@@ -25,6 +25,7 @@ export type ChunkRowModel = {
     trail: EffortNote[];
     owner?: string;
     due?: string; // YYYY-MM-DD, `wsh effort chunk due`
+    later?: boolean; // saved for later (`wsh effort chunk later`): kept on Jarvis, not part of the initiative's plan
     workrefs: ChunkWorkRef[];
 };
 
@@ -41,6 +42,7 @@ export function effortChunkRows(effort: Effort): ChunkRowModel[] {
             trail,
             owner: c.owner,
             due: c.due,
+            later: c.later,
             workrefs: c.workrefs ?? [],
         };
     });
@@ -109,6 +111,11 @@ export async function advanceChunk(oref: string, note?: string): Promise<void> {
 }
 export async function setChunkStatus(oref: string, chunk: string, status: string, note?: string): Promise<void> {
     await mutateEffort(oref, [{ op: "setChunkStatus", chunk, status, note }]);
+}
+// Turn a chunk's later mark on or off (EffortOp setChunkLater). `chunk` is a ref as chunkRef gives it; with the mark off the
+// chunk joins the plan where it stands in the chunk order.
+export async function setChunkLater(oref: string, chunk: string, on: boolean): Promise<void> {
+    await mutateEffort(oref, [{ op: "setChunkLater", chunk, later: on }]);
 }
 export async function reopenChunk(oref: string, chunk: string): Promise<void> {
     await mutateEffort(oref, [{ op: "reopen", chunk }]);

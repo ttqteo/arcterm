@@ -5,10 +5,13 @@
 // latest note, the status word, and the rows its keys move over. Pure: no jotai, no RPC.
 
 import { chunkTone, type ChunkTone } from "@/app/view/jarvis/effortmodel";
+import { planChunks } from "@/app/view/jarvis/laterchunk";
 
 type PopoverChunk = {
     label: string;
     status: string;
+    // saved for later (EffortChunk.later): kept on Jarvis, never the plan's work, so every read below leaves it out
+    later?: boolean;
     workrefs?: { kind: string; oref: string }[];
     notes?: { ts: number; text: string }[];
 };
@@ -19,19 +22,19 @@ const settled = (status: string) => status === "done" || status === "skipped";
 // "The chunk this agent is on", the one definition the band, `m`, the done: / go on with: chips and the Terminal popover
 // share: the live (not done, not skipped) chunk whose workrefs hold this agent's tab, an active one first when legacy
 // data attached it to several. Nothing else: the initiative's active chunk does not stand in for an agent that holds none,
-// and a proposed chunk is nobody's work yet. Null when there is no such chunk.
+// a proposed chunk is nobody's work yet, and a chunk saved for later is not worked. Null when there is no such chunk.
 export function agentChunk<T extends PopoverChunk>(effort: { chunks?: T[] }, tabId: string): T | null {
     const ref = "agent:" + tabId;
-    const live = (effort.chunks ?? []).filter(
+    const live = planChunks(effort.chunks ?? []).filter(
         (c) => c.status !== "proposed" && !settled(c.status) && (c.workrefs ?? []).some((w) => w.oref === ref)
     );
     return live.find((c) => c.status === "active") ?? live[0] ?? null;
 }
 
 // The next pending chunks after `label` in plan order (from the top with none), by label. A chunk that is deferred,
-// blocked or proposed is not "next".
+// blocked, proposed or saved for later is not "next".
 export function nextChunks(effort: { chunks?: PopoverChunk[] }, label: string | null, limit = 2): string[] {
-    const chunks = effort.chunks ?? [];
+    const chunks = planChunks(effort.chunks ?? []);
     const from = label == null ? 0 : chunks.findIndex((c) => c.label === label) + 1;
     return chunks
         .slice(from)
@@ -57,14 +60,14 @@ export function proposedCount(effort: { chunks?: PopoverChunk[] }): number {
     return (effort.chunks ?? []).filter((c) => c.status === "proposed").length;
 }
 
-// The bar and the count, over the plan as the Brief's row counts it: a proposed chunk is not work until accepted and a
-// skipped one leaves the total.
+// The bar and the count, over the plan as the Brief's row counts it: a proposed chunk is not work until accepted, a
+// skipped one leaves the total, and a chunk saved for later is not the plan's.
 export function popoverProgress(effort: { chunks?: PopoverChunk[] }): {
     segments: ChunkTone[];
     done: number;
     total: number;
 } {
-    const chunks = (effort.chunks ?? []).filter((c) => c.status !== "proposed" && c.status !== "skipped");
+    const chunks = planChunks(effort.chunks ?? []).filter((c) => c.status !== "proposed" && c.status !== "skipped");
     return {
         segments: chunks.map((c) => chunkTone(c.status)),
         done: chunks.filter((c) => c.status === "done").length,
@@ -86,7 +89,7 @@ export type PopoverStatusTone = "success" | "working" | "asking" | "muted" | "fa
 
 // The word at the right of the kicker. Blocked first: it is the one state that waits on someone.
 export function popoverStatus(effort: PopoverEffort, agentState: string): { text: string; tone: PopoverStatusTone } {
-    const chunks = (effort.chunks ?? []).filter((c) => c.status !== "proposed");
+    const chunks = planChunks(effort.chunks ?? []).filter((c) => c.status !== "proposed");
     if (chunks.some((c) => c.status === "blocked")) {
         return { text: "blocked", tone: "asking" };
     }
@@ -101,6 +104,13 @@ export function popoverStatus(effort: PopoverEffort, agentState: string): { text
         return { text: "paused", tone: "faint" };
     }
     return agentState === "working" ? { text: "at work", tone: "working" } : { text: "agent open", tone: "success" };
+}
+
+// The chunk linking an agent to an initiative attaches it to: the plan's active chunk, else its first pending one (a later
+// chunk, kept rather than worked, is never picked, wherever it stands in the list). Undefined when the plan has neither.
+export function linkChunk<T extends { status: string; later?: boolean }>(chunks: T[]): T | undefined {
+    const plan = planChunks(chunks);
+    return plan.find((c) => c.status === "active") ?? plan.find((c) => c.status === "pending");
 }
 
 // The rows the cursor moves over: the chunk this agent is on, then the next ones.
