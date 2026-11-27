@@ -61623,12 +61623,18 @@ const ssRowState = (cat, suffix) => `(() => {
 const SS_HEAD = `document.querySelector('[data-storage-head]')`;
 const ssToast = (text) =>
     `[...document.querySelectorAll('[data-notification-toast]')].some((t) => (t.textContent || '').includes(${JSON.stringify(text)}))`;
+// How long a wait on the server's scan or sizing lasts, in seconds: 180 for a scan (it lists build output, walks none and
+// leaves the package caches to a background walk, so what is left to wait for is the listing: 1m23s measured under load,
+// spec "Added in fix round 1"), 600 for Stop sizing, which lets the walk in progress finish (the next real repo, minutes
+// under load), and for the package caches to land (step 7b). ARC_STORAGE_SCAN_WAIT_S replaces the default for a run on a
+// loaded machine.
+const ssWaitSecs = (dflt) => (Number(process.env.ARC_STORAGE_SCAN_WAIT_S) > 0 ? Number(process.env.ARC_STORAGE_SCAN_WAIT_S) : dflt);
 // a scan that started at or after `since` has landed in the page, and none is running
 const ssWaitScan = (h, since) =>
     polishWaitFor(
         h,
         `Number(${SS_HEAD}?.getAttribute('data-storage-scanned') ?? 0) >= ${since} && !${SS_HEAD}.hasAttribute('data-storage-scanning')`,
-        60000
+        ssWaitSecs(180) * 1000
     );
 // settings.json is the vault's, which the packaged app shares; a write can lose a rename race, so three tries
 const ssSetConfig = async (h, patch) => {
@@ -61673,10 +61679,6 @@ const ssConfirm = async (h, openExpr, label) => {
     return text;
 };
 // The build-output sizing steps (7c-7f). docs/superpowers/specs/2026-11-27-storage-lazy-build-sizes-design.md.
-// How long a wait on the server's scan or sizing lasts: 180 s for a scan (it lists build output and walks none, so what
-// is left to wait for is the package caches), 600 s for Stop sizing, which lets the walk in progress finish (the next
-// real repo, minutes under load). ARC_STORAGE_SCAN_WAIT_S raises both for a run on a loaded machine.
-const ssWaitSecs = (dflt) => (Number(process.env.ARC_STORAGE_SCAN_WAIT_S) > 0 ? Number(process.env.ARC_STORAGE_SCAN_WAIT_S) : dflt);
 // asks for a scan and waits for it to land in the server's report, not the page's; returns when it was asked and how long
 // it took. A Rescan asked while another scan runs is followed by a second scan at once, so the wait covers both.
 const ssRescanAndWait = async (h, waitSecs) => {
@@ -61838,9 +61840,11 @@ const settingsStorage = {
             // The scan that saw the fixtures ends the wait. A Rescan asked while the auto-clean's scan runs is followed by
             // a second scan at once, so the wait covers the rest of the first and all of the second. The scan lists the
             // build output of every folder an agent worked in (also the real ones: this app reads ~/.claude) and walks
-            // none of it: a folder is sized when its project's row opens or by Size all (steps 7c-7f). What a scan still
-            // takes is the other categories, the package caches the longest: 5 s on an idle machine, a minute when
-            // loaded ("storage scan took" in waveapp.log). So it waits while a scan runs, for up to 180 s
+            // none of it: a folder is sized when its project's row opens or by Size all (steps 7c-7f). It no longer waits
+            // on the package caches either: they land from a background walk (step 7b waits for them). What a scan
+            // still takes is the listing of build output and the small categories: measured on a loaded machine
+            // (spec "Added in fix round 1"), the listing took 1m23s and every other category but the caches under 0.1 s,
+            // while the caches (59 GB) took 2m14s on their own. So it waits while a scan runs, for up to 180 s
             // (ARC_STORAGE_SCAN_WAIT_S raises it for a run on a loaded machine), and says how long it waited.
             const scan = await ssRescanAndWait(h, ssWaitSecs(180));
             ctx.scanFrom = scan.from;
@@ -62327,7 +62331,22 @@ const settingsStorage = {
         );
 
         // 7b. package caches: their own card, each cache a row with its own Remove or why it stays, no Clean all. No step
-        // presses one: they are the developer's real caches
+        // presses one: they are the developer's real caches. A scan no longer waits on them (spec call 18): they land from
+        // a background walk, minutes under load, and the report has no packagecaches category until the first walk ends.
+        // So the step waits for the server's report to hold it before it reads the card, then for the page to draw its rows.
+        const cachesFrom = Date.now();
+        const cachesLanded = await ssWaitStorage(
+            h,
+            (r) => (r?.categories ?? []).some((c) => c.category === "packagecaches"),
+            ssWaitSecs(600),
+            1000
+        );
+        const cachesWaitedSecs = Math.round((Date.now() - cachesFrom) / 1000);
+        const cacheItems = (cachesLanded.report?.categories ?? []).find((c) => c.category === "packagecaches")?.items?.length ?? 0;
+        if (cachesLanded.ok && cacheItems > 0) {
+            // the page gets the category from the same event that published it: a moment, not a walk
+            await polishWaitFor(h, `(${ssCard("packagecaches")}?.querySelectorAll('[data-storage-row]').length ?? 0) > 0`, 10000);
+        }
         await ssExpand(h, "packagecaches");
         const caches = await h.ev(`(() => {
             const card = ${ssCard("packagecaches")};
@@ -62345,8 +62364,12 @@ const settingsStorage = {
         await h.shot("cdp-shots/settings-storage-7b-caches.png");
         rec(
             "7b. package caches: the card says they are shared by every project, has no Clean all, and every cache row has its own Remove or a reason it stays",
-            caches != null && caches.blurb && !caches.cleanAll && caches.everyRowActs,
-            JSON.stringify(caches)
+            cachesLanded.ok && caches != null && caches.blurb && !caches.cleanAll && caches.everyRowActs,
+            `${
+                cachesLanded.ok
+                    ? `the package caches landed in the report after a wait of ${cachesWaitedSecs} s (${cacheItems} caches)`
+                    : `no packagecaches category in the server's report after ${cachesWaitedSecs} s`
+            }; ${JSON.stringify(caches)}`
         );
 
         // 8. a clean re-checks at removal: the clean tree changes after the scan, so the server skips it
