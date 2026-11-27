@@ -193,6 +193,16 @@ func TestSystemPromptGivesEveryOptionAReply(t *testing.T) {
 	}
 }
 
+func TestSystemPromptOffersABoardForASummary(t *testing.T) {
+	// the person's boards are mostly summaries (progress over time, results with numbers, a roadmap), not architecture:
+	// a reply that sums one up in words gets a chip that puts it on a board, and a report of the agent's own edits does not
+	for _, rule := range []string{"Putting on a board what it summed up in words", "a list of what the agent itself changed this turn is a report"} {
+		if !strings.Contains(systemPrompt, rule) {
+			t.Fatalf("system prompt lost the rule %q", rule)
+		}
+	}
+}
+
 func TestBuildPromptNoRecommendFirst(t *testing.T) {
 	// the chips no longer open with the agent's own lean: the model orders the answers and picks for itself. (The rule
 	// "even when the agent recommends another" stays, so the word alone is no test.)
