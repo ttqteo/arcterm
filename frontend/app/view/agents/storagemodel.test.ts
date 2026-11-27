@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+    buildDetailText,
     buildProjectRows,
     cleanableTotal,
     cleanAllIds,
@@ -7,9 +8,13 @@ import {
     confirmFor,
     dayKey,
     formatSize,
+    isWalking,
     lastUsedText,
     sessionRows,
     shouldNudge,
+    sizeAllLabel,
+    sizedAgoText,
+    sizeText,
     skippedOf,
     storageCards,
     usedTotal,
@@ -352,6 +357,160 @@ describe("buildProjectRows", () => {
             build([item("C:\\work\\app\\dist", { kind: "build", label: "dist", detail: "C:\\work\\app\\" })])
         );
         expect(rows[0].name).toBe("app");
+    });
+});
+
+// Build output's kept sizes: pkg/storage lists every folder and fills Bytes / SizedTs from what was last sized
+// (0 and no sizedts for a folder never sized), so the card says `not sized` from sizedts, never from bytes.
+describe("kept build sizes", () => {
+    const folder = (project: string, dir: string, bytes: number, sizedts?: number, modts?: number) =>
+        item(`${project}/${dir}`, { kind: "build", label: dir, detail: project, bytes, sizedts, modts });
+    const cardOf = (items: StorageItem[]) =>
+        storageCards(
+            { ...report, categories: [{ category: "buildoutput", bytes: 0, cleanablebytes: 0, items }] },
+            "30",
+            NOW,
+            {}
+        )[0];
+    const rowsOf = (items: StorageItem[]) => buildProjectRows(cardOf(items));
+
+    describe("sizeText", () => {
+        it("says not sized until the folder was sized, whatever its bytes", () => {
+            expect(sizeText(0, undefined)).toBe("not sized");
+            expect(sizeText(0, 0)).toBe("not sized");
+            expect(sizeText(5 * MB, 0)).toBe("not sized");
+        });
+        it("shows a size once there is one, 0 included: an empty folder was sized", () => {
+            expect(sizeText(152 * MB, NOW - DAY)).toBe("152 MB");
+            expect(sizeText(0, NOW)).toBe("0 KB");
+        });
+    });
+
+    describe("a project's sized state", () => {
+        it("is not sized when none of its folders has a size", () => {
+            const [p] = rowsOf([folder("/p", "node_modules", 0), folder("/p", "target", 0, 0)]);
+            expect(p.sizedTs).toBe(0);
+            expect(p.bytes).toBe(0);
+            expect(sizeText(p.bytes, p.sizedTs)).toBe("not sized");
+        });
+        it("shows the sum of the kept sizes when only some folders were sized (call 11)", () => {
+            const [p] = rowsOf([
+                folder("/p", "node_modules", 7 * MB, NOW - 3 * DAY),
+                folder("/p", "target", 0),
+                folder("/p", "dist", 2 * MB, NOW - DAY),
+            ]);
+            expect(p.bytes).toBe(9 * MB);
+            expect(sizeText(p.bytes, p.sizedTs)).toBe("9 MB");
+            // the folder never sized says so itself, and the ones sized show their own kept size
+            expect(p.folders.map((f) => sizeText(f.bytes, f.sizedts))).toEqual(["7 MB", "2 MB", "not sized"]);
+        });
+        it("dates the project by the oldest kept size among the folders that have one", () => {
+            const [p] = rowsOf([
+                folder("/p", "node_modules", 7 * MB, NOW - 3 * DAY),
+                folder("/p", "target", 0), // never sized: no ts to count
+                folder("/p", "dist", 2 * MB, NOW - DAY),
+            ]);
+            expect(p.sizedTs).toBe(NOW - 3 * DAY);
+        });
+        it("keeps the project order: last used first, then size, an unsized project counting 0 bytes", () => {
+            const rows = rowsOf([
+                folder("/sized", "dist", 5 * MB, NOW - DAY, NOW - 30 * DAY),
+                folder("/unsized", "dist", 0, undefined, NOW - 30 * DAY),
+                folder("/old", "dist", 0, undefined, NOW - 90 * DAY),
+                folder("/new", "dist", 9 * MB, NOW - DAY, NOW - DAY),
+            ]);
+            expect(rows.map((r) => r.name)).toEqual(["old", "sized", "unsized", "new"]);
+        });
+    });
+
+    describe("sizedAgoText", () => {
+        it("says how long ago, from a day on", () => {
+            expect(sizedAgoText(NOW - DAY, NOW)).toBe("sized 1 day ago");
+            expect(sizedAgoText(NOW - 2 * DAY, NOW)).toBe("sized 2 days ago");
+            expect(sizedAgoText(NOW - 2 * DAY - 5 * 60 * 60 * 1000, NOW)).toBe("sized 2 days ago");
+            expect(sizedAgoText(NOW - 40 * DAY, NOW)).toBe("sized 40 days ago");
+        });
+        it("says nothing for a size from the last day, a project never sized or a clock ahead", () => {
+            expect(sizedAgoText(NOW, NOW)).toBe("");
+            expect(sizedAgoText(NOW - DAY + 1, NOW)).toBe("");
+            expect(sizedAgoText(0, NOW)).toBe("");
+            expect(sizedAgoText(NOW + DAY, NOW)).toBe("");
+        });
+    });
+
+    describe("buildDetailText", () => {
+        it("adds the sized text after the last-used text, and only when there is one", () => {
+            expect(buildDetailText(NOW - 19 * DAY, NOW - 2 * DAY, NOW)).toBe("used 19 days ago · sized 2 days ago");
+            expect(buildDetailText(0, NOW - 3 * DAY, NOW)).toBe("no agent session · sized 3 days ago");
+            expect(buildDetailText(NOW - 19 * DAY, NOW - 60 * 60 * 1000, NOW)).toBe("used 19 days ago");
+            expect(buildDetailText(NOW - 19 * DAY, 0, NOW)).toBe("used 19 days ago");
+        });
+    });
+
+    describe("sizeAllLabel", () => {
+        it("is Size all when nothing is queued or walking", () => {
+            expect(sizeAllLabel(undefined)).toBe("Size all");
+            expect(sizeAllLabel(null)).toBe("Size all");
+        });
+        it("counts the project in hand: Done + 1 of Total", () => {
+            expect(sizeAllLabel({ queued: ["/a"], walking: "/b", done: 2, total: 12 })).toBe("Stop sizing (3 of 12)");
+            expect(sizeAllLabel({ queued: [], walking: "/b", done: 0, total: 1 })).toBe("Stop sizing (1 of 1)");
+        });
+        it("never reads past the total: between two projects of a queue nothing is walking", () => {
+            expect(sizeAllLabel({ queued: ["/c"], done: 12, total: 12 })).toBe("Stop sizing (12 of 12)");
+            expect(sizeAllLabel({ queued: [], done: 5, total: 4 })).toBe("Stop sizing (4 of 4)");
+        });
+    });
+
+    describe("isWalking", () => {
+        it("is true only for the project being walked, not for the ones queued", () => {
+            const sizing = { queued: ["/b", "/c"], walking: "/a", done: 0, total: 3 };
+            expect(isWalking(sizing, "/a")).toBe(true);
+            expect(isWalking(sizing, "/b")).toBe(false);
+            expect(isWalking({ queued: ["/a"], done: 1, total: 2 }, "/a")).toBe(false);
+            expect(isWalking(undefined, "/a")).toBe(false);
+        });
+    });
+
+    describe("totals", () => {
+        it("add the kept sizes, a folder never sized counting 0", () => {
+            const items = [
+                folder("/p", "node_modules", 7 * MB, NOW - 3 * DAY),
+                folder("/p", "target", 0),
+                folder("/q", "dist", 0),
+            ];
+            const rep: StorageReport = {
+                ...report,
+                categories: [{ category: "buildoutput", bytes: 7 * MB, cleanablebytes: 7 * MB, items }],
+            };
+            expect(cleanableTotal(rep, "30", NOW)).toBe(7 * MB);
+            expect(usedTotal(rep)).toBe(7 * MB + 43 * MB);
+        });
+    });
+
+    describe("confirmFor build output", () => {
+        const confirm = (items: StorageItem[]) => {
+            const card = cardOf(items);
+            return confirmFor(card, card.rows, "30", false, false);
+        };
+        it("leaves the size out for a project none of whose folders was sized, rather than say 0 KB", () => {
+            const c = confirm([folder("/p", "node_modules", 0), folder("/p", "target", 0)]);
+            expect(c.message).toBe(
+                "Remove the build output of p: node_modules, target? The next build or install recreates it."
+            );
+            expect(c.title).toBe("Remove build output");
+            expect(c.confirmLabel).toBe("Remove");
+        });
+        it("shows the kept sum otherwise, as the row does", () => {
+            const c = confirm([folder("/p", "node_modules", 7 * MB, NOW - 3 * DAY), folder("/p", "target", 0)]);
+            expect(c.message).toBe(
+                "Remove the build output of p (7 MB): node_modules, target? The next build or install recreates it."
+            );
+        });
+        it("counts a size of 0 as a size: an empty folder was sized", () => {
+            const c = confirm([folder("/p", "target", 0, NOW)]);
+            expect(c.message).toContain("build output of p (0 KB)");
+        });
     });
 });
 

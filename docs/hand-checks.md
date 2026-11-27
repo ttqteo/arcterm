@@ -24,6 +24,20 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
 
 ## 2026-11-27
 
+- [ ] (arcterm) **Storage: the Build output row's spinner.** Settings → Storage, Build output: open a project whose
+  size is over a day old (or `not sized`). Its row shows a small spinner left of the size while its folders are walked
+  and the spinner goes when the walk lands, with nothing else on the row shifting: the size cell, the Remove button and
+  the label stay where they were. Only the project being walked spins, not the ones queued behind it (press Size all
+  and watch the spinner hop down the list). With reduced motion the spinner shows without turning. No scenario watches
+  it (`settings-storage` steps 7c-7f read the end states from the DOM only).
+- [ ] (arcterm) **Storage: `not sized` becoming a number.** On a project row that reads `not sized`, open it: when its
+  walk lands the cell swaps to the size in place (same width, no jump), and a size over a day old adds `sized N days
+  ago` after `used …` in the detail line. Open its folders: each shows its own size, or `not sized` for one never
+  measured.
+- [ ] (arcterm) **Storage: Size all and Stop sizing.** Press Size all on Build output: the button turns to `Stop sizing
+  (1 of N)` and counts up as each project lands, the card's size and the head's total growing with it. Press Stop
+  sizing: the project in hand finishes, the button goes back to `Size all` and the rest stay as they were. Leave
+  Settings and come back mid-run: the button and the spinner are still there.
 - [ ] (arcterm) **Save for later: the What's new picture.** Take it with `node scripts/whatsnew-shot.mjs save-later
   --selector [data-jarvis-brief-region="later-chunks"]` (the Brief with a few later items on screen), then swap the
   CHANGELOG line's `<!-- shot: none -->` for the comment it prints, in one commit (spec "Builder's calls" 17). Until

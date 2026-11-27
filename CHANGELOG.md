@@ -30,6 +30,13 @@ in the dev app: `node scripts/whatsnew-shot.mjs <topic> [--selector <css>]` writ
 `whatsnew.test.ts` fails a big line with neither (in Unreleased and from 1.9.0 on), a missing file, one over 120 KB,
 and a picture given to a line that is not big.
 
+## Unreleased
+
+### Changed
+
+- Settings → Storage lists build output at once and sizes a project when you open its row, or all of them with Size all.
+  A project not sized yet reads `not sized`, and one sized more than a day ago says how long ago.
+
 ## 1.12.0 — 2026-11-27
 
 ### Added
