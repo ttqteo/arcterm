@@ -12,7 +12,7 @@ import (
 )
 
 func (ws *WshServer) NoteAddCommand(ctx context.Context, data wshrpc.CommandNoteAddData) (*waveobj.UserNote, error) {
-	return notestore.Add(data.Title, data.Body)
+	return notestore.Add(data.Title, data.Body, notestore.Source{Project: data.Project, Session: data.Session})
 }
 
 func (ws *WshServer) NoteListCommand(ctx context.Context) ([]*waveobj.UserNote, error) {

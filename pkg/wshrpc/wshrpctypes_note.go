@@ -21,6 +21,9 @@ type NoteCommands interface {
 type CommandNoteAddData struct {
 	Title string `json:"title"`
 	Body  string `json:"body,omitempty"`
+	// where it was written (Chat's Add note): kept in the file's frontmatter, and an edit keeps them
+	Project string `json:"project,omitempty"`
+	Session string `json:"session,omitempty"`
 }
 
 type CommandNoteUpdateData struct {

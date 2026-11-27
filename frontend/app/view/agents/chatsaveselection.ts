@@ -62,9 +62,12 @@ function localDay(now: Date): string {
     return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
-/** The body a saved passage carries, as an idea's first note or a note's text: where it was said, then the quote. */
-export function savedBody(text: string, from: SavedFrom, now: Date): string {
+/** The body a saved passage carries, as an idea's first note or a note's text: where it was said, then the quote.
+ *  `withAddress` false leaves the `agent:<tabid>` address out: a note keeps the conversation's id in its frontmatter,
+ *  which outlives the tab (the address only opens while the tab is up). */
+export function savedBody(text: string, from: SavedFrom, now: Date, withAddress = true): string {
     const name = squash(from.name);
-    const source = `From agent ${name !== "" ? `"${name}" ` : ""}(agent:${from.agentId}), ${localDay(now)}`;
+    const where = [name !== "" ? `"${name}"` : "", withAddress ? `(agent:${from.agentId})` : ""].filter(Boolean);
+    const source = `From agent${where.length > 0 ? " " + where.join(" ") : ""}, ${localDay(now)}`;
     return `${source}\n\n${selectionQuoteBlock(text)}`;
 }

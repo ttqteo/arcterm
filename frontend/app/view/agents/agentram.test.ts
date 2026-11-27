@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { agentRamBytes, needsConsumersPoll, runRamBytes } from "./agentram";
+import { agentRamBytes, bgTaskRamBytes, needsConsumersPoll, runRamBytes } from "./agentram";
 
 const MB = 1024 * 1024;
 
@@ -99,5 +99,34 @@ describe("needsConsumersPoll", () => {
         expect(needsConsumersPoll(true, snap(true))).toBe(false);
         expect(needsConsumersPoll(true, null)).toBe(false);
         expect(needsConsumersPoll(false, snap(false))).toBe(false);
+    });
+});
+
+describe("bgTaskRamBytes", () => {
+    const withTasks = (tasks: ResMonShellTask[]): ResMonSnapshotData =>
+        snap(true, [{ ...group("job:1:1", "blk", 300 * MB), tasks }]);
+
+    it("matches a Bash task by its command, the start nearest the task's winning", () => {
+        const s = withTasks([
+            { command: "cargo build", createts: 1_000, cpu: 0, mem: 100 * MB },
+            { command: "cargo build", createts: 9_000, cpu: 0, mem: 1200 * MB },
+            { command: "npm test", createts: 9_000, cpu: 0, mem: 50 * MB },
+        ]);
+        expect(bgTaskRamBytes("blk", { command: "cargo build", startMs: 8_800 }, s)).toBe(1200 * MB);
+        expect(bgTaskRamBytes("blk", { command: "cargo build", startMs: 1_100 }, s)).toBe(100 * MB);
+    });
+
+    it("matches a PowerShell task by its id", () => {
+        const s = withTasks([{ taskid: "b7k2", createts: 5, cpu: 0, mem: 80 * MB }]);
+        expect(bgTaskRamBytes("blk", { taskId: "b7k2", command: "Get-ChildItem" }, s)).toBe(80 * MB);
+    });
+
+    it("is null with no reading for it", () => {
+        const s = withTasks([{ command: "cargo build", createts: 1, cpu: 0, mem: MB }]);
+        expect(bgTaskRamBytes("blk", { command: "npm test" }, s)).toBeNull();
+        expect(bgTaskRamBytes("other", { command: "cargo build" }, s)).toBeNull();
+        expect(bgTaskRamBytes(undefined, { command: "cargo build" }, s)).toBeNull();
+        expect(bgTaskRamBytes("blk", { command: "cargo build" }, snap(false))).toBeNull();
+        expect(bgTaskRamBytes("blk", { command: "cargo build" }, null)).toBeNull();
     });
 });

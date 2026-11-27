@@ -86,6 +86,7 @@ import {
     type RailHas,
     type ResizableTab,
 } from "./agentrailtabs";
+import { bgTaskRamAtom } from "./agentramstore";
 import type { AgentsViewModel } from "./agents";
 import { displayAgeMs, formatAgeShort, type AgentVM } from "./agentsviewmodel";
 import { setAgentView } from "./agentview";
@@ -519,12 +520,14 @@ function BackgroundTaskRow({
     task,
     live,
     now,
+    blockId,
     onOpen,
     onStop,
 }: {
     task: BackgroundTask;
     live: boolean;
     now: number;
+    blockId: string | undefined; // the agent's terminal while it is live: whose Resource Manager group holds the task
     onOpen?: () => void;
     onStop?: () => void;
 }) {
@@ -532,6 +535,8 @@ function BackgroundTaskRow({
     const label = bgTaskStatusLabel(task.status, live);
     const elapsed = bgTaskElapsed(task, now);
     const running = label === "running";
+    // what the command and everything it started hold, Git Bash's out-of-job processes included (bgTaskRamBytes)
+    const ram = useAtomValue(bgTaskRamAtom(running && task.monitor !== true ? blockId : undefined, task));
     const Chevron = open ? ChevronDown : ChevronRight;
     return (
         <div
@@ -550,6 +555,17 @@ function BackgroundTaskRow({
                     <Chevron size={12} strokeWidth={2} aria-hidden className="shrink-0 text-muted" />
                     <span className={cn("h-[6px] w-[6px] shrink-0 rounded-full", BG_DOT[label])} />
                     <span className="min-w-0 flex-1 truncate text-[11.5px] text-secondary">{task.label}</span>
+                    {ram != null ? (
+                        <span
+                            data-bg-task-ram=""
+                            className={cn(
+                                "whitespace-nowrap text-[10.5px] tabular-nums",
+                                ram.warn ? "text-warning" : "text-muted"
+                            )}
+                        >
+                            {ram.label}
+                        </span>
+                    ) : null}
                     <span className="whitespace-nowrap text-[10.5px] tabular-nums text-muted">
                         {elapsed !== "" ? elapsed : label}
                     </span>
@@ -1503,6 +1519,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                         key={t.toolUseId}
                         task={t}
                         live={live}
+                        blockId={live ? agent.blockId : undefined}
                         now={now}
                         onStop={
                             // the kill finds the task among the agent block's job object: Windows only

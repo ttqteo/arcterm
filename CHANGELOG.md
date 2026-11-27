@@ -40,6 +40,13 @@ and a picture given to a line that is not big.
   an initiative, `wsh effort show` and the agent's Initiative tab follow the same order, so a chunk no longer has to move
   up the plan, and change its number, to come first. <!-- big -->
   <!-- shot: 1.12.0-chunk-priority.webp -->
+- A running background command shows how much RAM it holds, beside how long it has run, in the sidebar and in the
+  agent's Background tasks. On Windows an agent's RAM now counts what its commands run too, such as a build's compilers,
+  which it used to leave out.
+
+- A box on a board can link to another drawing: press it and the board eases there, then Back in the header (or
+  Backspace) returns. Ask the agent for "the detail of this box, linked from it" and the drawer draws the detail and
+  sets the link in one go.
 - Answer an agent's permission prompt from its sidebar row: the row says what the agent asks ("subagent · Update the
   board scenarios", `$ npm test`) and holds Allow and Deny under it, so you no longer pick the agent or open its chat.
   A prompt with choices of its own, such as a plan approval, offers Answer in chat instead. <!-- big -->
@@ -59,6 +66,8 @@ and a picture given to a line that is not big.
 - Each Claude agent names the Claude account it runs on, left of the model under the chat box.
 - Right-click text you selected in Chat to keep it: Save as idea puts it on Jarvis's Ideas to plan later, Add note
   saves it as a note. Each is named by the passage's first sentence and keeps the passage with the agent it came from.
+  A note made this way shows its project as a badge in Notes, and Open conversation above it takes you back to the
+  conversation, even after its tab has closed.
 - A Focus board button in the agent header while a board is split beside the agent: one press folds the sidebar, hides
   the rail and gives the board 7 parts of 10 (chat 3 : board 7); a second press puts the layout back as it was.
 - Buttons on a board's strip, beside Edit: Copy view puts the board on the clipboard as a picture, just as it shows at

@@ -29,6 +29,28 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
   Jarvis initiative card with a long plan, open the status word of the last chunk: the whole menu, Priority to Rename,
   can be reached (it scrolls into view inside the plan, or opens upward) and nothing is cut off under the window edge.
 
+- [ ] (arcterm) **A background command's RAM** (`pkg/resmon/shelltaskmem.go`, `agentram.ts bgTaskRamBytes`,
+  `agenttree.tsx BgTaskRam`, `agentdetailsrail.tsx`). Go and vitest only, no dev app run. With the sidebar's RAM field
+  on, have an agent run a build in the background (`task tauri:build FAST=1`): its task row reads `running · 8m · 1.2
+  GB` within a few seconds of cargo starting, the agent row's RAM grows by about as much (it read 283 MB with 1.2 GB of
+  rustc running before), and the rail's Background tasks card shows the same figure. A `sleep 600` task shows a few MB.
+- [ ] (arcterm) **A Chat note keeps its project and conversation** (`palette-notesview.tsx`, notestore frontmatter).
+  In a real Claude agent's Chat select a sentence, right-click → Add note, then open the toast's Open: the note's row
+  shows its project as a small badge before the day, and above the note a badge and `Open conversation ↗`; the body's
+  first line reads `From agent "<name>", <day>` (no `agent:` address). Open conversation closes the palette and lands
+  on that agent's tab ("is already open" toast); close the tab, do it again: the conversation opens in a new tab. Edit
+  the note (`Ctrl`+`Enter`), save: badge and link stay. The vault file starts with `project:` / `session:` frontmatter.
+  A note made before this change shows no header. Not run live: `task verify:ui -- chat-quote` step 11 covers the end
+  state, never run here.
+
+- [ ] (arcterm) **Links between a board's drawings, and Back** (`boardlinks.ts`, `boardcanvas.tsx` follow/onLinkOpen,
+  `BoardBack`, `pkg/boarddrawer` `link`/`@new`). Go and vitest only, no real drawer run, no scenario step. On
+  `mit-thesis` harnesspov-method-retrace, have the agent `wsh board draw --ask "in 'Timeline liền mạch', link the box
+  '21/10 Thiết kế…' to the drawing 'Thiết kế 21/10'"`: the box gets Excalidraw's link mark. In view mode press the box
+  (not only the mark): the view eases to 'Thiết kế 21/10', a Back fades in left of History; press Back (or Backspace on
+  the canvas) → back to the timeline, Back fades out. A drag that starts on the box pans and does not follow. In Edit, a
+  press selects the box; its link mark still follows. Then `--ask "draw the detail of '22/10 M2' and link that box to
+  it"`: one turn adds the drawing and the link.
 - [ ] (arcterm) **Allow and Deny on an agent's sidebar row** (`permissionrow.tsx`, branch of the sidebar-permission-row
   run). Vitest and typecheck only; the end state is `task verify:ui -- sidebar-permission-row`, never run here (a run
   agent runs no CDP). With a real Claude agent outside a run, have it run a Bash command that asks permission: its row's

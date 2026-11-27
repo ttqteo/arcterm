@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -31,13 +32,14 @@ const (
 	// NotesDir holds one notes/<id>.md file per note.
 	NotesDir = "notes"
 
-	noteExt       = ".md"
-	dayLayout     = "2006-01-02"
-	titlePrefix   = "# "
-	fallbackSlug  = "note"
-	maxSlugLen    = 60
-	maxTitleLen   = 200
-	maxCollisions = 1000
+	noteExt          = ".md"
+	frontmatterFence = "---"
+	dayLayout        = "2006-01-02"
+	titlePrefix      = "# "
+	fallbackSlug     = "note"
+	maxSlugLen       = 60
+	maxTitleLen      = 200
+	maxCollisions    = 1000
 )
 
 var (
@@ -105,19 +107,108 @@ func slugOf(title string) string {
 	return slug
 }
 
-func render(title, body string) []byte {
+// Source is where a note was written: the project's name and the agent conversation's id. It is the file's
+// frontmatter, so the note still reads as markdown anywhere and Obsidian shows it as properties.
+type Source struct {
+	Project string
+	Session string
+}
+
+func oneLine(s string) string {
+	return strings.Join(strings.Fields(s), " ")
+}
+
+// a value YAML would read as something else (a colon-space, a comment, a leading indicator) goes in double quotes
+func yamlValue(v string) string {
+	if strings.Contains(v, ": ") || strings.Contains(v, " #") || strings.HasSuffix(v, ":") ||
+		strings.ContainsAny(v[:1], "\"'[]{}&*!|>%@`#,?-") {
+		return strconv.Quote(v)
+	}
+	return v
+}
+
+// the frontmatter block for src, with its closing line and a newline; "" when src is empty
+func frontmatterOf(src Source) string {
+	var b strings.Builder
+	for _, kv := range [][2]string{{"project", oneLine(src.Project)}, {"session", oneLine(src.Session)}} {
+		if kv[1] != "" {
+			b.WriteString(kv[0] + ": " + yamlValue(kv[1]) + "\n")
+		}
+	}
+	if b.Len() == 0 {
+		return ""
+	}
+	return frontmatterFence + "\n" + b.String() + frontmatterFence + "\n"
+}
+
+// splitFrontmatter cuts a leading `---` … `---` block off text (LF line ends). It returns the block as written,
+// closing fence and its newline included, so an edit writes back what it does not understand; "" when there is none.
+func splitFrontmatter(text string) (block, rest string) {
+	if !strings.HasPrefix(text, frontmatterFence+"\n") {
+		return "", text
+	}
+	start := len(frontmatterFence) + 1
+	for off := start; ; {
+		line, _, more := strings.Cut(text[off:], "\n")
+		next := off + len(line)
+		if more {
+			next++
+		}
+		if strings.TrimRight(line, " \t") == frontmatterFence {
+			return text[:next], text[next:]
+		}
+		if !more {
+			return "", text
+		}
+		off = next
+	}
+}
+
+func unquote(v string) string {
+	if len(v) >= 2 && v[0] == '"' && v[len(v)-1] == '"' {
+		if s, err := strconv.Unquote(v); err == nil {
+			return s
+		}
+	}
+	if len(v) >= 2 && v[0] == '\'' && v[len(v)-1] == '\'' {
+		return strings.ReplaceAll(v[1:len(v)-1], "''", "'")
+	}
+	return v
+}
+
+// sourceOf reads the project and session keys of a frontmatter block; other keys are left alone
+func sourceOf(block string) Source {
+	var src Source
+	for _, line := range strings.Split(block, "\n") {
+		key, val, ok := strings.Cut(line, ":")
+		if !ok {
+			continue
+		}
+		val = unquote(strings.TrimSpace(val))
+		switch strings.TrimSpace(key) {
+		case "project":
+			src.Project = val
+		case "session":
+			src.Session = val
+		}
+	}
+	return src
+}
+
+func render(front, title, body string) []byte {
 	body = strings.TrimSpace(body)
 	if body == "" {
-		return []byte(titlePrefix + title + "\n")
+		return []byte(front + titlePrefix + title + "\n")
 	}
-	return []byte(titlePrefix + title + "\n\n" + body + "\n")
+	return []byte(front + titlePrefix + title + "\n\n" + body + "\n")
 }
 
 // parse reads a note file. A file with no heading on its first line (one edited by hand) is all body,
-// titled by its id.
+// titled by its id. A frontmatter block above the heading gives the note its Source.
 func parse(id string, content []byte) *waveobj.UserNote {
-	text := strings.ReplaceAll(string(content), "\r\n", "\n")
-	note := &waveobj.UserNote{ID: id, Title: id, Day: id[:len(dayLayout)]}
+	block, text := splitFrontmatter(strings.ReplaceAll(string(content), "\r\n", "\n"))
+	src := sourceOf(block)
+	note := &waveobj.UserNote{ID: id, Title: id, Day: id[:len(dayLayout)], Project: src.Project, Session: src.Session}
 	first, rest, _ := strings.Cut(text, "\n")
 	if title, ok := strings.CutPrefix(first, titlePrefix); ok && strings.TrimSpace(title) != "" {
 		note.Title = strings.TrimSpace(title)
@@ -152,9 +243,9 @@ func notFound(id string) error {
 	return fmt.Errorf("note %s: %w", id, wstore.ErrNotFound)
 }
 
-// Add files a new note under today's date. A second note with the same title on the same day gets a
+// Add files a new note under today's date, src as its frontmatter. A second note with the same title on the same day gets a
 // numbered id.
-func Add(title, body string) (*waveobj.UserNote, error) {
+func Add(title, body string, src Source) (*waveobj.UserNote, error) {
 	title, err := cleanTitle(title)
 	if err != nil {
 		return nil, err
@@ -180,7 +271,7 @@ func Add(title, body string) (*waveobj.UserNote, error) {
 		if taken {
 			continue
 		}
-		content := render(title, body)
+		content := render(frontmatterOf(src), title, body)
 		if err := write(path, content); err != nil {
 			return nil, err
 		}
@@ -252,14 +343,16 @@ func Update(id, title, body string) error {
 	if err != nil {
 		return err
 	}
-	found, err := exists(path)
+	old, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return notFound(id)
+	}
 	if err != nil {
 		return fmt.Errorf("note file %s: %w", path, err)
 	}
-	if !found {
-		return notFound(id)
-	}
-	return write(path, render(title, body))
+	// the frontmatter stays as it was written: the editor shows the title and body only
+	front, _ := splitFrontmatter(strings.ReplaceAll(string(old), "\r\n", "\n"))
+	return write(path, render(front, title, body))
 }
 
 func Delete(id string) error {

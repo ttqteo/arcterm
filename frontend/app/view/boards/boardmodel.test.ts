@@ -172,6 +172,30 @@ function expectInside(frame: any, els: readonly any[]) {
     expect(b.maxY).toBeLessThanOrEqual(frame.y + frame.height);
 }
 
+describe("applyAnswer: links", () => {
+    it("links an overview box to the new drawing the same answer adds (@new)", () => {
+        const scene = inDrawing([rect("box", 0, 0, 100, 40)]);
+        const added = [rect("detail", 0, 0, 100, 40)];
+        const update = JSON.stringify([{ id: "box", link: "@new" }]);
+        const { scene: next, drawingId } = applyAnswer(scene, answer({ title: "Detail", update }), added, NOW);
+        expect(drawingId).not.toBe("d1");
+        expect(byId(next, "box").link).toBe(`?element=${drawingId}`);
+    });
+
+    it("makes a bare id a link, on an added shape and on an update, and clears one with an empty link", () => {
+        const scene = inDrawing([rect("a", 0, 0, 100, 40), { ...rect("b", 0, 100, 100, 40), link: "?element=a" }]);
+        const added = [{ ...rect("back", 0, 200, 100, 40), link: "d1" } as ExcalidrawElement];
+        const update = JSON.stringify([
+            { id: "a", link: "b" },
+            { id: "b", link: "" },
+        ]);
+        const { scene: next } = applyAnswer(scene, edit({ update }), added, NOW);
+        expect(byId(next, "back").link).toBe("?element=d1");
+        expect(byId(next, "a").link).toBe("?element=b");
+        expect(byId(next, "b").link).toBeNull();
+    });
+});
+
 describe("applyAnswer", () => {
     it("adds the converted shapes", () => {
         const scene = inDrawing(labelled("wavesrv", 0, 0, "wavesrv"));

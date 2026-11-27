@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"net/url"
 	"slices"
 	"strings"
 )
@@ -47,6 +48,7 @@ type sceneElement struct {
 	BackgroundColor string   `json:"backgroundColor"`
 	IsDeleted       bool     `json:"isDeleted"`
 	GroupIds        []string `json:"groupIds"`
+	Link            string   `json:"link"`
 }
 
 type binding struct {
@@ -69,6 +71,7 @@ type sceneLine struct {
 	Fill     string `json:"fill,omitempty"`
 	Group    string `json:"group,omitempty"` // the outermost group: a chart's shapes, or shapes grouped by hand
 	Frame    string `json:"frame,omitempty"` // the drawing the shape is in
+	Link     string `json:"link,omitempty"`  // the shape or drawing a press on it goes to (LinkTarget)
 	Selected bool   `json:"selected,omitempty"`
 }
 
@@ -119,6 +122,7 @@ func SceneSummary(boardFile []byte, selected []string) (Scene, error) {
 		if e.BackgroundColor != fillTransparent {
 			line.Fill = e.BackgroundColor
 		}
+		line.Link = LinkTarget(e.Link)
 		if e.StartBinding != nil {
 			line.Start = e.StartBinding.ElementId
 		}
@@ -148,4 +152,18 @@ func elementText(e sceneElement) string {
 
 func round(f float64) int {
 	return int(math.Round(f))
+}
+
+// LinkTarget is the id an element's link goes to on the board: Excalidraw's element link keeps it in the "element" query
+// parameter ("?element=<id>", or a full URL with it). "" for no link or a link elsewhere (a web page).
+func LinkTarget(link string) string {
+	i := strings.Index(link, "?")
+	if i < 0 {
+		return ""
+	}
+	q, err := url.ParseQuery(link[i+1:])
+	if err != nil {
+		return ""
+	}
+	return q.Get("element")
 }

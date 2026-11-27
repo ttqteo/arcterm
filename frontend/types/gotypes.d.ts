@@ -2668,6 +2668,8 @@ declare global {
     type CommandNoteAddData = {
         title: string;
         body?: string;
+        project?: string;
+        session?: string;
     };
 
     // wshrpc.CommandNoteDeleteData
@@ -5362,6 +5364,7 @@ declare global {
         cpu: number;
         mem: number;
         rows: ProcessInfo[];
+        tasks?: ResMonShellTask[];
     };
 
     // wshrpc.ResMonKillRtnData
@@ -5390,6 +5393,15 @@ declare global {
         gpu?: number;
         icon?: string;
         endable?: boolean;
+    };
+
+    // wshrpc.ResMonShellTask
+    type ResMonShellTask = {
+        taskid?: string;
+        command?: string;
+        createts: number;
+        cpu: number;
+        mem: number;
     };
 
     // wshrpc.ResMonSnapshotData
@@ -6520,6 +6532,8 @@ declare global {
         title: string;
         body?: string;
         day: string;
+        project?: string;
+        session?: string;
     };
 
     // wshrpc.VaultStatusRtnData

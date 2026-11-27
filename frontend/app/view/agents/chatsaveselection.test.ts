@@ -70,4 +70,11 @@ describe("savedBody", () => {
     it("leaves the name out when the agent has none", () => {
         expect(savedBody("x", { agentId: "t1", name: "" }, now)).toBe("From agent (agent:t1), 2026-11-27\n\n> x");
     });
+
+    it("leaves the tab address out for a note, whose frontmatter holds the conversation", () => {
+        expect(savedBody("x", { agentId: "t1", name: "loom" }, now, false)).toBe(
+            'From agent "loom", 2026-11-27\n\n> x'
+        );
+        expect(savedBody("x", { agentId: "t1", name: "" }, now, false)).toBe("From agent, 2026-11-27\n\n> x");
+    });
 });

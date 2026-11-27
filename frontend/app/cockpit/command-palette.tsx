@@ -1453,6 +1453,11 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
     const indexOf = new Map(flat.map((it, i) => [it.key, i]));
     const selected = flat[selClamped];
     const selectedNote = notesSplit ? noteByKey.get(selected?.key) : undefined;
+    // the conversation a note came from: its tab when one still holds it, else it opens again (openref openSession)
+    const openNoteSession = (sessionId: string) => {
+        close();
+        fireAndForget(() => openAddress(model, `session:${sessionId}`));
+    };
     const armedDelete = armed?.key === "del" && armed.target === selected?.key;
 
     // an armed delete is for the row it was pressed on, with the text as it then was
@@ -1920,12 +1925,14 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
                             rows={flat}
                             selected={selClamped}
                             note={selectedNote}
+                            notes={noteByKey}
                             query={nav.query}
                             overflow={capped[0].overflow}
                             listRef={listRef}
                             previewRef={previewRef}
                             onHover={setSel}
                             onFire={fire}
+                            onOpenSession={openNoteSession}
                         />
                     ) : (
                         <div
