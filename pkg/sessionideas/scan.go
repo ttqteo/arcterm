@@ -190,6 +190,41 @@ func ScanNow(ctx context.Context, s *Store, deps Deps, opts ScanOpts) error {
 	return stop
 }
 
+// Why a scan that never wrote its end is ended for it (EndUnfinishedScan): wavesrv stopped mid-scan, or the scan quit
+// without saving its end (a panic, or a save that failed part way).
+const (
+	EndedByShutdown = "arcterm closed before it finished"
+	EndedByFailure  = "it quit before it finished"
+)
+
+// EndUnfinishedScan ends the stored scan when it has no end time, as a stopped scan ends: EndedTs and LastScanTs now,
+// StoppedAt where it got to, Error why. A scan is running only while it has no end time (the Brief hides Scan then, and
+// Stop has nothing to cancel), so call it only when no scan runs in this process: at boot, and as the scan guard lets go.
+// What the scan found and marked stays, so Retry goes on from there. It says whether it ended one.
+func EndUnfinishedScan(s *Store, why string) (bool, error) {
+	ended := false
+	err := s.Update(func(d *wshrpc.SessionIdeasData) error {
+		if d.Scan == nil || d.Scan.EndedTs > 0 {
+			return errNothingToEnd
+		}
+		c := *d.Scan
+		c.EndedTs = s.Clock().UnixMilli()
+		c.StoppedAt = c.Done
+		c.Error = why
+		d.Scan = &c
+		d.LastScanTs = c.EndedTs
+		ended = true
+		return nil
+	})
+	if errors.Is(err, errNothingToEnd) {
+		return false, nil
+	}
+	return ended, err
+}
+
+// errNothingToEnd makes EndUnfinishedScan's Update write nothing and publish nothing when the scan has its end.
+var errNothingToEnd = errors.New("no unfinished scan")
+
 // stopText is what the scan's Error says: a stop by the person is "stopped", a model error is its own text, cut short.
 func stopText(ctx context.Context, err error) string {
 	if ctx.Err() != nil {

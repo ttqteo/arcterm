@@ -858,6 +858,89 @@ func TestSessionIdeasScanSecondStartRefusedWhileOneRuns(t *testing.T) {
 	}
 }
 
+// seedRunningScan stores a scan with no end time, as one reads while it runs.
+func seedRunningScan(t *testing.T) {
+	t.Helper()
+	if err := sessionideas.Default().Update(func(d *wshrpc.SessionIdeasData) error {
+		d.Scan = &wshrpc.SessionIdeasScan{Done: 1, Total: 3, StartedTs: 1000}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func storedScan(t *testing.T) wshrpc.SessionIdeasScan {
+	t.Helper()
+	d, err := sessionideas.Default().Load()
+	if err != nil || d.Scan == nil {
+		t.Fatalf("reading the stored scan: %+v, %v", d.Scan, err)
+	}
+	return *d.Scan
+}
+
+func TestSessionIdeasBootEndsTheScanTheLastServerLeftRunning(t *testing.T) {
+	emptySessionIdeas(t)
+	seedRunningScan(t)
+	endSessionIdeasScanLeftAtShutdown()
+	if sc := storedScan(t); sc.EndedTs <= 0 || sc.StoppedAt != 1 || sc.Error != sessionideas.EndedByShutdown {
+		t.Fatalf("the scan left running reads as stopped where it got to: %+v", sc)
+	}
+}
+
+func TestSessionIdeasBootLeavesAScanThisServerRunsAlone(t *testing.T) {
+	emptySessionIdeas(t)
+	release := make(chan struct{})
+	prev := runSessionIdeasScan
+	runSessionIdeasScan = func(ctx context.Context, opts sessionideas.ScanOpts) error {
+		seedRunningScan(t)
+		<-release
+		return nil
+	}
+	t.Cleanup(func() {
+		close(release)
+		waitScanIdle(t)
+		runSessionIdeasScan = prev
+	})
+	if err := startSessionIdeasScan(sessionideas.ScanOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for storedScanOrNil() == nil && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	endSessionIdeasScanLeftAtShutdown()
+	if sc := storedScan(t); sc.EndedTs != 0 {
+		t.Fatalf("a scan pressed before the boot pass is not taken for the last server's: %+v", sc)
+	}
+}
+
+func storedScanOrNil() *wshrpc.SessionIdeasScan {
+	d, _ := sessionideas.Default().Load()
+	return d.Scan
+}
+
+func TestSessionIdeasScanThatQuitsWithoutItsEndIsEndedAsTheGuardLetsGo(t *testing.T) {
+	emptySessionIdeas(t)
+	prev := runSessionIdeasScan
+	runSessionIdeasScan = func(ctx context.Context, opts sessionideas.ScanOpts) error {
+		seedRunningScan(t)
+		panic("a scan that dies part way")
+	}
+	t.Cleanup(func() { runSessionIdeasScan = prev })
+	if err := startSessionIdeasScan(sessionideas.ScanOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	waitScanIdle(t)
+	if sc := storedScan(t); sc.EndedTs <= 0 || sc.StoppedAt != 1 || sc.Error != sessionideas.EndedByFailure {
+		t.Fatalf("a scan that panicked is ended, not left running: %+v", sc)
+	}
+	if err := startSessionIdeasScan(sessionideas.ScanOpts{}); err == nil {
+		waitScanIdle(t)
+	} else {
+		t.Fatalf("the guard lets go after a panic: %v", err)
+	}
+}
+
 func TestSessionIdeasScanGuardLetsGoWhenAScanEnds(t *testing.T) {
 	emptySessionIdeas(t)
 	prev := runSessionIdeasScan

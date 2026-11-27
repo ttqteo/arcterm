@@ -24,6 +24,10 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
 
 ## 2026-11-27
 
+- [ ] (arcterm) **Session ideas: a scan cut off by a restart reads as stopped.** Go tests only. On a dev app, press Scan
+  now and stop the dev app (by PID) while it reads, then start it again: the region shows "The scan stopped at session
+  N of M: arcterm closed before it finished." with Retry, not a scan that runs forever with Scan now hidden; Retry goes
+  on from session N. (`pkg/sessionideas/scan.go` EndUnfinishedScan, `wshserver_sessionideasloop.go`)
 - [ ] (arcterm) **A board's drawing chip shows no focus ring on Shift** (`boardstrip.tsx` DrawingsRow, 6f0b0e5c9). Lint
   only, no dev app. Click drawing chip 1, scroll the canvas to drawing 2, hold Shift and scroll: no blue "[ ]" on
   chip 1. Then Tab onto a chip: its ring shows whole, inside the chip, not clipped top and bottom.
