@@ -1,14 +1,14 @@
 // sleep-keeps-ask: a sleeping agent keeps its question and its permission request in Chat
 // (docs/superpowers/specs/2026-11-27-sleep-keeps-ask-design.md, builder's calls 10-13; frontend/app/view/agents/
 // sleepheld.ts, sleepheldview.tsx, permissionmodel.ts permissionReadOnly / rowPermission, chatpane.tsx's ChatAsk).
-// One real tab with no controller: its block meta carries cmd claude, agent:sleeping and agent:sleepasking (the marks
-// wavesrv writes when it puts an agent to sleep while it asks), and wavesrv holds a real pending ask for it (the `ask`
-// RPC), so the roster, the kept question and the held answer all come from the app, not from a roster fixture. The
-// answer is really held: AnswerAgentCommand finds the block asleep with its asking mark (jarvis answerHeld) and keeps
-// the answer for the wake instead of typing it. Only the permission queue is a fixture (window.__arcAgentPermission),
-// as sidebar-permission-row's is: wavesrv drops a request when the agent wakes or restarts, and nothing runs here.
-// Nothing is woken: a wake would relaunch claude. Nothing is written to disk. kit is scenarios.mjs's RT_KIT
-// (waveService, polishWaitFor, polishNap).
+// One real tab with no controller: its block meta carries cmd claude, cmd:cwd (what makes the block a session terminal,
+// so a roster row), agent:sleeping and agent:sleepasking (the marks wavesrv writes when it puts an agent to sleep while
+// it asks), and wavesrv holds a real pending ask for it (the `ask` RPC), so the roster, the kept question and the held
+// answer all come from the app, not from a roster fixture. The answer is really held: AnswerAgentCommand finds the block
+// asleep with its asking mark (jarvis answerHeld) and keeps the answer for the wake instead of typing it. Only the
+// permission queue is a fixture (window.__arcAgentPermission), as sidebar-permission-row's is: wavesrv drops a request
+// when the agent wakes or restarts, and nothing runs here. Nothing is woken: a wake would relaunch claude. Nothing is
+// written to disk. kit is scenarios.mjs's RT_KIT (waveService, polishWaitFor, polishNap).
 
 import { focusAgent, tabFixtures } from "./agent-page-fixtures.mjs";
 
@@ -119,11 +119,15 @@ export default function (kit) {
                     const since = Date.now() - SLEPT_FOR_MS;
                     // the block as sleepAgent leaves it: no process (nothing starts one for a sleeping block), the resume
                     // command a wake would run, and both marks. makeTab sets the meta and reloads the block in the page.
+                    // cmd:cwd is the agent's folder, and the roster needs it: the sidebar counts a block as a session
+                    // terminal only when it is view term with a non-empty cmd:cwd (findSessionTermBlock), and a tab with no
+                    // terminal block is no row and no Chat.
                     const tab = await makeTab(h, ctx, {
                         label: LABEL,
                         blockMeta: {
                             view: "term",
                             cmd: "claude",
+                            "cmd:cwd": "~",
                             "cmd:args": ["--resume", "arc-verify-sleep-keeps-ask"],
                             "agent:sleeping": since,
                             "agent:sleepfreed": FREED_BYTES,
@@ -135,6 +139,19 @@ export default function (kit) {
                     await h.rpc("ask", { oref: `block:${tab.blockId}`, questions: [ASK] });
                     ctx.askRaised = true;
                     await focusAgent(h, tab.tabId);
+                    // Chat is the agent's default, pinned here so the steps never depend on a stored mode. The mode it had
+                    // is kept for teardown (ctx.chatMode is set before the pin, so a throw in it is still undone).
+                    ctx.chatMode = await h.ev(`window.__arcChatMode.get(${JSON.stringify(tab.tabId)})`);
+                    await h.ev(`(() => { window.__arcChatMode.set(${JSON.stringify(tab.tabId)}, "chat"); return true; })()`);
+                    // the roster and Chat are there before a step reads them: a failure now names where it stopped
+                    // instead of surfacing as four steps that read { chat: false } / { row: false }
+                    const row = `[data-agent-tree] [data-agent-row="${tab.tabId}"]`;
+                    const layer = `[data-agent-chat="${tab.tabId}"]`;
+                    if (!(await polishWaitFor(h, `!!document.querySelector(${JSON.stringify(row)})`, WAIT_MS))) {
+                        ctx.arrangeError = `the agent's row never reached the sidebar tree (${row}): the block is no session terminal, or the roster did not take the tab`;
+                    } else if (!(await polishWaitFor(h, `!!document.querySelector(${JSON.stringify(layer)})`, WAIT_MS))) {
+                        ctx.arrangeError = `the agent's row is in the tree but its Chat layer never drew (${layer}): the agent is not focused in Chat`;
+                    }
                 } catch (e) {
                     ctx.arrangeError = String(e?.message ?? e);
                 }
@@ -269,6 +286,14 @@ export default function (kit) {
                     }
                 };
                 if (ctx.blockId) await step("clear the queue", () => setQueue(h, ctx.blockId, []));
+                // the mode the tab had before the pin (Chat is the default, which setChatMode stores as no entry)
+                if (ctx.tabId != null && ctx.chatMode != null) {
+                    await step("put the chat mode back", () =>
+                        h.ev(
+                            `(() => { window.__arcChatMode.set(${JSON.stringify(ctx.tabId)}, ${JSON.stringify(ctx.chatMode)}); return true; })()`
+                        )
+                    );
+                }
                 // an ask the scenario never answered still sits in the registry
                 if (ctx.askRaised && !ctx.answered) {
                     await step("clear the ask", () => h.rpc("agentaskclear", `block:${ctx.blockId}`));
