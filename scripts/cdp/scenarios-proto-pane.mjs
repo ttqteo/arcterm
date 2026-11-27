@@ -104,6 +104,58 @@ const stateExpr = `(() => {
     };
 })()`;
 
+// What Send writes to the agent's terminal. Canvas Send types its line through sendToAgent (agentsubmit.ts: the line, then
+// Enter as a write of its own), which is controllerinput calls, never the agentprompt call that scenarios.mjs's
+// BS_TYPED_INSTALL records. So this records controllerinput: each write as the block it went to and its text (a resize
+// carries no input). Installed for Send's step, removed in teardown.
+const WRITES_INSTALL = `(() => {
+    const c = window.TabRpcClient;
+    if (!c) return false;
+    window.__protoWrites = [];
+    if (c.__protoOrig) return true;
+    c.__protoOrig = c.wshRpcCall;
+    const call = c.wshRpcCall.bind(c);
+    c.__protoWrap = (command, data, opts) => {
+        if (command === "controllerinput" && data?.inputdata64 && window.__protoWrites) {
+            try {
+                const bytes = Uint8Array.from(atob(data.inputdata64), (ch) => ch.charCodeAt(0));
+                window.__protoWrites.push({ block: data.blockid, text: new TextDecoder().decode(bytes) });
+            } catch {
+                // an undecodable write is not Send's line
+            }
+        }
+        return call(command, data, opts);
+    };
+    c.wshRpcCall = c.__protoWrap;
+    return true;
+})()`;
+const WRITES_REMOVE = `(() => {
+    const c = window.TabRpcClient;
+    window.__protoWrites = undefined;
+    if (c?.__protoOrig) {
+        if (c.wshRpcCall === c.__protoWrap) c.wshRpcCall = c.__protoOrig;
+        delete c.__protoOrig;
+        delete c.__protoWrap;
+    }
+    return true;
+})()`;
+const writesSince = (h, mark) => h.ev(`(window.__protoWrites ?? []).slice(${mark})`);
+// what the terminal itself writes back as its input (a pasted text's brackets, its focus reports) is not what Send typed
+const ESC = String.fromCharCode(27);
+const TERM_NOISE = new RegExp(`${ESC}\\[(?:20[01]~|[IO])`, "g");
+const typedTo = (writes, blockId) =>
+    writes
+        .filter((w) => w.block === blockId)
+        .map((w) => w.text)
+        .join("")
+        .replace(TERM_NOISE, "");
+// the shell's pty can break a long row with a hard newline, so rows are compared with every space dropped (as bsCount does)
+const squash = (s) => s.replace(/\s+/g, "");
+const countIn = (hay, line) => squash(hay).split(squash(line)).length - 1;
+// Send takes the window's picture of each marked screen before it types, then waits on the box's echo (agentsubmit.ts)
+const SEND_WAIT_MS = 10000;
+const TERM_WAIT_MS = 5000;
+
 const lettersOf = (chip) => chip?.letters.map((l) => l.letter).join("") ?? null;
 const pressed = (s, mode) => s?.modes.find(([m]) => m === mode)?.[1] === "true";
 const modeNames = (s) => (s?.modes ?? []).map(([m]) => m).join(",");
@@ -114,13 +166,10 @@ const screenIs = (name) =>
 
 export default function (kit) {
     const {
-        BS_TYPED_INSTALL,
-        BS_TYPED_REMOVE,
         CANVAS_SWAP,
         UI_ROUTE,
         arrangeProtoCanvas,
-        bsMark,
-        bsTyped,
+        bsTermText,
         canvasTabFrames,
         cgLeaveGallery,
         cgPress,
@@ -434,27 +483,56 @@ export default function (kit) {
                 if (!host) {
                     steps.push(skipStep("7. Send writes one picture per screen and one line naming both", "no Tauri host to capture the window in (the pictures Send saves); steps 1 to 6 and 8 did not need it"));
                 } else {
-                    await h.ev(BS_TYPED_INSTALL);
+                    await h.ev(WRITES_INSTALL);
                     const feedback = (n) => `.superpowers/design/${TOPIC}/feedback/${n}.png`;
                     const line =
                         `look at ${feedback("001")} — marks on ${PROTO_MAIN}, ${phraseOf(home, "A")}: 1 (no note)` +
                         ` | look at ${feedback("002")} — marks on ${PROTO_MAIN}, ${phraseOf(later, "B")}: 2 (no note)`;
-                    const before = await bsMark(h, ctx, line);
+                    const before = countIn(await bsTermText(h, ctx).catch(() => ""), line);
+                    const mark = await h.ev(`(window.__protoWrites ?? []).length`);
                     await h.ev(`document.querySelector(${JSON.stringify(`${PANE} [data-canvas-send]`)})?.click()`);
-                    const typed = await bsTyped(h, ctx, before, line);
+                    // Send is done when its Enter is written after the line; a moment more shows whether the line went twice
+                    let writes = [];
+                    for (let waited = 0; waited < SEND_WAIT_MS; waited += 250) {
+                        writes = await writesSince(h, mark);
+                        const soFar = typedTo(writes, ctx.blockId);
+                        const i = soFar.indexOf(line);
+                        if (i >= 0 && soFar.slice(i + line.length).includes("\r")) break;
+                        await polishNap(250);
+                    }
+                    await polishNap(500);
+                    writes = await writesSince(h, mark);
+                    let shown = before;
+                    let termError = null;
+                    for (let waited = 0; waited < TERM_WAIT_MS && shown <= before; waited += 250) {
+                        try {
+                            shown = countIn(await bsTermText(h, ctx), line);
+                        } catch (e) {
+                            termError = String(e?.message ?? e);
+                        }
+                        if (shown <= before) await polishNap(250);
+                    }
                     let files = [];
                     try {
                         files = readdirSync(join(ctx.cwd, ".superpowers", "design", TOPIC, "feedback")).sort();
                     } catch (e) {
                         files = [`unreadable: ${String(e?.message ?? e)}`];
                     }
+                    // the line goes once, to the agent's own block and to no other, and Enter follows it; the shell shows it. The
+                    // terminal's count is "more than before", not "one more": the shell runs the line and its error echoes it again
+                    const own = typedTo(writes, ctx.blockId);
+                    const at = own.indexOf(line);
+                    const once = at >= 0 && own.indexOf(line, at + 1) < 0;
+                    const entered = once && own.slice(at + line.length).includes("\r");
+                    const elsewhere = writes.filter((w) => w.block !== ctx.blockId && w.text.includes(line)).length;
                     rec(
                         "7. Send writes two pictures (001.png, 002.png: one per screen marked) and types one line into the agent's terminal naming both screens and slot danh sách = B",
-                        typed.detail.sent.length === 1 &&
-                            typed.detail.sent[0].block === ctx.blockId &&
-                            typed.detail.sent[0].text === line &&
+                        once &&
+                            entered &&
+                            elsewhere === 0 &&
+                            shown > before &&
                             JSON.stringify(files) === JSON.stringify(["001.png", "002.png"]),
-                        { files, ...typed.detail }
+                        { files, want: line, once, entered, elsewhere, inTerminal: shown > before, termError, writes: writes.map((w) => ({ block: w.block === ctx.blockId ? "agent" : w.block, text: w.text })) }
                     );
                 }
 
@@ -468,6 +546,11 @@ export default function (kit) {
                 await openLibraryTab(h, "canvases");
                 const carded = await polishWaitFor(h, `!!document.querySelector('[data-canvas-card="${TOPIC}"]')`, 10000);
                 const cardText = await h.ev(`(document.querySelector('[data-canvas-card="${TOPIC}"]')?.textContent || "").replace(/\\s+/g, " ").trim()`);
+                // the count is its own element on the card (the preview's corner chip), read there: in the card's whole text it
+                // runs into the board names before it and the topic after it ("…open it2 boardsverify-proto-pane")
+                const counts = await h.ev(`[...(document.querySelector('[data-canvas-card="${TOPIC}"]')?.querySelectorAll("span") ?? [])]
+                    .map((s) => (s.textContent || "").trim())
+                    .filter((t) => /^\\d+ boards?$/.test(t))`);
                 await h.ev(`document.querySelector('[data-canvas-card="${TOPIC}"]')?.click()`);
                 const viewer = await polishWaitFor(h, `document.querySelector('${VIEWER}') != null`, 15000);
                 const tabs = await h.ev(`[...document.querySelectorAll("[data-canvas-viewer-tab]")].map((b) => b.getAttribute("data-canvas-viewer-tab"))`);
@@ -475,11 +558,11 @@ export default function (kit) {
                 rec(
                     "1b. the Canvas gallery's card counts two boards and its viewer has a tab for the main and the static board and none for the screen file",
                     carded &&
-                        /\b2 boards\b/.test(cardText ?? "") &&
+                        JSON.stringify(counts) === '["2 boards"]' &&
                         viewer &&
                         tabs.length === 2 &&
                         noScreen(tabs),
-                    { carded, cardText, viewer, tabs }
+                    { carded, counts, cardText, viewer, tabs }
                 );
 
                 // back to the agent's canvas, where teardown leaves it
@@ -490,9 +573,9 @@ export default function (kit) {
             },
             async teardown(h, ctx) {
                 try {
-                    await h.ev(BS_TYPED_REMOVE);
+                    await h.ev(WRITES_REMOVE);
                 } catch (e) {
-                    console.error(`${NAME} teardown: removing the sent-line recorder failed: ${e?.message ?? e}`);
+                    console.error(`${NAME} teardown: removing the terminal-write recorder failed: ${e?.message ?? e}`);
                 }
                 await teardownCanvasBoards(h, ctx, NAME);
                 if (ctx.registered) await cgTeardown(h, ctx, NAME, PROJECT);
