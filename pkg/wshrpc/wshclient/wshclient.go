@@ -1454,6 +1454,12 @@ func JarvisStatusCommand(w *wshutil.WshRpc, data wshrpc.CommandJarvisStatusData,
 	return resp, err
 }
 
+// command "jobpeaksforget", wshserver.JobPeaksForgetCommand
+func JobPeaksForgetCommand(w *wshutil.WshRpc, data wshrpc.CommandJobPeaksForgetData, opts *wshrpc.RpcOpts) (*wshrpc.JobPeaksForgetResult, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.JobPeaksForgetResult](w, "jobpeaksforget", data, opts)
+	return resp, err
+}
+
 // command "jobqueuerunnow", wshserver.JobQueueRunNowCommand
 func JobQueueRunNowCommand(w *wshutil.WshRpc, data wshrpc.CommandJobQueueActData, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "jobqueuerunnow", data, opts)

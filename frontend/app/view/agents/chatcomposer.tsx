@@ -73,6 +73,7 @@ import { useBashComplete } from "./bashcomplete";
 import { bashGhost } from "./chatbash";
 import { noteBashRun, useBashHistory } from "./chatbashstore";
 import { ChatBgLine } from "./chatbgline";
+import { ChatBoardChip, setBoardPicked, useChatBoard } from "./chatboardchip";
 import { boxLayout, boxState, boxTabPlaceholder, type BoxState, type HintPart } from "./chatboxstate";
 import { ContextNudgeLine } from "./chatcontextnudgeline";
 import { ChatEditor, type KeyLike } from "./chateditor";
@@ -298,6 +299,8 @@ function ComposerBox({
     // Waking… under it until the transcript holds it. A wake that failed drops the bubble and puts the text
     // (useAgentSend) and the chips back. `wake` is the wake send in flight: its bubble and the paths of what rode along.
     const wake = useRef<{ pendingId: string | null; paths: string[]; runs: SleepRun[] } | null>(null);
+    // the board in the agent's split, offered under the box; picked, it rides the next message as `board:<id>`
+    const chatBoard = useChatBoard(agent.id);
     const {
         text: fullText,
         setText: setFullText,
@@ -315,6 +318,7 @@ function ComposerBox({
             }
         },
         wakeClears: true,
+        boardRef: chatBoard?.picked ? chatBoard.board.boardId : undefined,
         onWakeFailed: () => {
             const w = wake.current;
             wake.current = null;
@@ -539,8 +543,11 @@ function ComposerBox({
     const permission = usePermission(permissionOref);
     // A question of one is the exception (boxAnswersAsk): what is typed is sent as the ask's typed answer (the answer
     // path the card's own field uses, which locks the ask) instead of waiting behind it. Files riding the message can't
-    // go in an ask's answer, so with any attached it waits as before.
-    const answersAsk = !asleep && boxAnswersAsk(agent.ask) && att.attachments.length === 0;
+    // go in an ask's answer, so with any attached it waits as before. An agent put to sleep while it asked keeps its
+    // question (agent.sleeping.asking), and what is typed answers it the same way: wavesrv holds the answer for the wake
+    // and does not wake the agent. A sleeping agent with no question left takes it as the message that wakes it.
+    const answersAsk =
+        (!asleep || agent.sleeping?.asking === true) && boxAnswersAsk(agent.ask) && att.attachments.length === 0;
     const hold = asleep
         ? null
         : sendHold(permissionHolds(permission, agent.ask != null), agent.ask != null && !agent.ask.hold && !answersAsk);
@@ -649,6 +656,10 @@ function ComposerBox({
             putBackSleepRuns(agent.id, runs);
         }
         if (taken) {
+            // a picked board rides this one message only
+            if (chatBoard?.picked) {
+                setBoardPicked(agent.id, null);
+            }
             onSent?.(sent);
             recalled.current = { at: null, shown: "" };
             noteSent(agent.id, sent);
@@ -941,7 +952,11 @@ function ComposerBox({
         !bash && !waking && picked == null && caretNow === text.length
             ? chipGhost(tabChips, text, onGoOn != null)
             : null;
-    const shownGhost = ghost !== "" ? ghost : (chipGhostNow?.rest ?? "");
+    // an open `/` menu or `@` list ghosts the rest of its highlighted row (menughost.ts) ahead of a chip's; → or Tab
+    // takes it as a pick of that row
+    const menuGhostNow =
+        bash || waking ? null : ([promptBox.slash, promptBox.mention].find((m) => m.ghost !== "") ?? null);
+    const shownGhost = ghost !== "" ? ghost : (menuGhostNow?.ghost ?? chipGhostNow?.rest ?? "");
     // the chip that asks before its text replaces the typed one (sendSuggested): it is always the picked chip, so
     // whatever lets go of the pick (typing, Esc, Tab, a send) lets go of it too
     const [armedText, setArmed] = useState<string | null>(null);
@@ -1256,6 +1271,10 @@ function ComposerBox({
                                             ) {
                                                 e.preventDefault();
                                                 recalled.current = { at: null, shown: "" };
+                                                if (ghost === "" && menuGhostNow != null) {
+                                                    menuGhostNow.takeGhost();
+                                                    return;
+                                                }
                                                 if (ghost === "" && chipGhostNow != null) {
                                                     logPick(chipGhostNow.chip, "edit");
                                                     setTextAt(chipGhostNow.take, chipGhostNow.take.length);
@@ -1552,6 +1571,13 @@ function ComposerBox({
                                     />
                                     {asleep ? sleepingLine("Asleep", agent.sleeping!) : fallAsleepLabel(fallingAsleep!)}
                                 </div>
+                            </Fold>
+                        ) : null}
+                    </AnimatePresence>
+                    <AnimatePresence initial={false}>
+                        {chatBoard != null ? (
+                            <Fold key="board" className="min-w-0">
+                                <ChatBoardChip agentId={agent.id} chat={chatBoard} />
                             </Fold>
                         ) : null}
                     </AnimatePresence>

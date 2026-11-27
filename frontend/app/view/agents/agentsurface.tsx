@@ -1019,7 +1019,7 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                                 Terminal, awake, nothing covers it. Another harness asleep gets its
                                                 compact transcript. Never on the docked terminal (no cell). */}
                                             {cell != null && a.sleeping != null && !chatCapable(a) ? (
-                                                <SleepingTranscript agent={a} barred={multi} />
+                                                <SleepingTranscript agent={a} barred={multi} model={model} />
                                             ) : cell != null ? (
                                                 <ChatLayer model={model} agent={a} barred={multi} />
                                             ) : null}

@@ -8,22 +8,40 @@
 // transcript is the conversation as it stood when the agent slept; nothing writes to it while it sleeps, so it is read
 // once rather than streamed. The pane stays mounted under it at its size, so Wake brings the live terminal back with no
 // remount and no refit. Under the transcript, a message box: its Enter wakes the agent and sends what is typed as its
-// next message (useAgentSend's sleeping path).
+// next message (useAgentSend's sleeping path). An agent put to sleep while it asked keeps its question (liveAsk): the
+// ask card sits between the transcript and the box, and once answered the answer shows in its place with the line that
+// says it goes in when the agent wakes (sleepheldview.tsx), as in Chat.
 
 import { cn } from "@/util/util";
+import { AnimatePresence } from "motion/react";
 import { AgentComposer } from "./agentcomposer";
+import type { AgentsViewModel } from "./agents";
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
+import { AskRow } from "./channelsprimitives";
 import { CompactTranscript } from "./compacttranscript";
 import { AgentPathLinks } from "./pathlinkcontext";
+import { ChatHeldAnswer, useHeldAnswer } from "./sleepheldview";
 import { JumpToLatestPill, useStickToBottom } from "./sticktobottom";
 import { useTranscriptRead } from "./transcriptread";
 import { TranscriptSkeleton } from "./transcriptskeleton";
 
 const NO_ENTRIES: AgentEntry[] = [];
 
-// `barred`: the cell has a grid bar on top (h-[26px], gridcellbar.tsx), which stays visible above the transcript
-export function SleepingTranscript({ agent, barred }: { agent: AgentVM; barred: boolean }) {
+// `barred`: the cell has a grid bar on top (h-[26px], gridcellbar.tsx), which stays visible above the transcript. `model`
+// answers the kept question; without it the question is answered where the agent is listed (the rows, Needs you)
+export function SleepingTranscript({
+    agent,
+    barred,
+    model,
+}: {
+    agent: AgentVM;
+    barred: boolean;
+    model?: AgentsViewModel;
+}) {
     const entries = useTranscriptRead(agent.transcriptPath, agent.agent, false);
+    // a held command's card (Token burn, an Antigravity question) is answered in its dialog, not here
+    const asking = model != null && agent.ask != null && !agent.ask.hold;
+    const held = useHeldAnswer(agent);
     // where the reader left this sleep's conversation, kept while another agent takes the cell; a later sleep has more
     // to read, so it opens at the end
     const placeId = `sleeping:${agent.id}:${agent.sleeping?.since ?? 0}`;
@@ -52,6 +70,18 @@ export function SleepingTranscript({ agent, barred }: { agent: AgentVM; barred: 
                 </div>
                 <JumpToLatestPill show={!atBottom} onClick={jumpToBottom} />
             </div>
+            {/* the kept question, or its answer waiting for the wake: in the transcript's column, scrolling inside
+                itself when a tall card would take the transcript's room */}
+            {asking || held != null ? (
+                <div data-sleeping-ask={agent.id} className="max-h-[50%] flex-none overflow-y-auto px-[22px] pb-2">
+                    <div className="mx-auto w-full max-w-[760px]">
+                        {asking ? <AskRow model={model} agent={agent} alert /> : null}
+                        <AnimatePresence initial={false}>
+                            {held != null ? <ChatHeldAnswer key="held" agent={agent} held={held} /> : null}
+                        </AnimatePresence>
+                    </div>
+                </div>
+            ) : null}
             {/* the transcript's own column (CompactTranscript), so the box lines up under the last message; keyed, so a
                 draft belongs to one agent */}
             <div data-sleeping-composer={agent.id} className="flex-none px-[22px]">

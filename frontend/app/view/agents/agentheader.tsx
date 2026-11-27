@@ -44,6 +44,7 @@ import {
     GitCommitHorizontal,
     GitFork,
     LayoutGrid,
+    LayoutPanelLeft,
     Lightbulb,
     LightbulbOff,
     Maximize2,
@@ -61,6 +62,7 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { boardCellRef } from "../boards/boardcell";
 import { openBoardsAtom } from "../boards/boardentries";
 import { closeAgentChord, confirmCloseSession, interruptAgent } from "./agentactions";
 import { centerModeAtom, pairSelAtom, showTerminal } from "./agentcenter";
@@ -91,6 +93,8 @@ import { DONE_TITLE, doneSuggestion, ORIGIN_DONE_TITLE, startedRunLanded } from 
 import { fallAsleepLabel, useFallingAsleep } from "./fallasleepstore";
 import { isFinalStageId } from "./finalstage";
 import { floatModeAtom, toggleFloat } from "./floatstore";
+import { GridLayoutButton } from "./gridlayoutmenu";
+import { gridSizesAtom, sizesOf } from "./gridsash";
 import {
     agentGridAtom,
     currentGrid,
@@ -614,9 +618,17 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     const canSplit = blockId != null && !ended;
     // Focus board (boardfocus.ts): shown only while the grid on screen is a board split, and acts on that split
     const gridsProject = useAtomValue(projectGridsAtom).project ?? "";
-    const focusTarget = splitShown && !fullscreen ? boardFocusTarget(pruneMissing(gridState, cellIds)) : null;
+    const splitGrid = splitShown && !fullscreen ? pruneMissing(gridState, cellIds) : null;
+    const focusTarget = splitGrid != null ? boardFocusTarget(splitGrid) : null;
     const boardFocused = useAtomValue(boardFocusedAtom);
     const boardFocusOn = focusTarget != null && boardFocused(gridsProject, focusTarget);
+    // the layout menu (gridlayoutmenu.tsx) on the same button, on any split: its thumbnails name the cells
+    const gridSizes = sizesOf(useAtomValue(gridSizesAtom), gridsProject);
+    const cellName = (id: string): string =>
+        rosterAgents.find((a) => a.id === id)?.name ??
+        rosterTerminals.find((t) => t.id === id)?.name ??
+        boardCellRef(id)?.boardId ??
+        "";
 
     // The header's width level (headermodel.headerWidth), read from its own width: a 2x2 split's cell is narrow. Every
     // cluster stays; their words shorten, and Split, Float and Fullscreen fold into More.
@@ -1190,22 +1202,31 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                         {splitShown ? <span className="tabular-nums">{cellCount}</span> : null}
                     </button>
                 ) : null}
-                {focusTarget != null ? (
-                    <button
-                        type="button"
-                        data-board-focus={boardFocusOn ? "on" : "off"}
-                        aria-pressed={boardFocusOn}
-                        aria-label={boardFocusOn ? "Restore layout" : "Focus board"}
-                        onClick={() => toggleBoardFocus(gridsProject, focusTarget)}
+                {splitGrid != null ? (
+                    <GridLayoutButton
+                        model={model}
+                        grid={splitGrid}
+                        sizes={gridSizes}
+                        nameOf={cellName}
+                        onPress={focusTarget != null ? () => toggleBoardFocus(gridsProject, focusTarget) : undefined}
+                        pressed={focusTarget != null ? boardFocusOn : undefined}
+                        boardFocus={focusTarget != null ? (boardFocusOn ? "on" : "off") : undefined}
+                        ariaLabel={focusTarget == null ? "Layout" : boardFocusOn ? "Restore layout" : "Focus board"}
                         title={
-                            boardFocusOn
-                                ? "Restore layout: the sidebar, the rail and the split as they were"
-                                : "Focus board: fold the sidebar, hide the rail, chat 3 : board 7"
+                            focusTarget == null
+                                ? "Layout: pick where the cells go"
+                                : boardFocusOn
+                                  ? "Restore layout: the sidebar, the rail and the split as they were (rest the pointer here for layouts)"
+                                  : "Focus board: fold the sidebar, hide the rail, chat 3 : board 7 (rest the pointer here for layouts)"
                         }
                         className={cn(ICON_BTN, boardFocusOn && ICON_BTN_ON)}
                     >
-                        <Focus size={15} strokeWidth={1.8} aria-hidden />
-                    </button>
+                        {focusTarget != null ? (
+                            <Focus size={15} strokeWidth={1.8} aria-hidden />
+                        ) : (
+                            <LayoutPanelLeft size={15} strokeWidth={1.8} aria-hidden />
+                        )}
+                    </GridLayoutButton>
                 ) : null}
                 {blockId != null ? (
                     <>

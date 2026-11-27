@@ -156,6 +156,26 @@ export function relaySenderTab(pair: PairSides | null, msg: Pick<RelayMessage, "
     return named.length === 1 ? (named[0]?.tab ?? null) : null;
 }
 
+/** The name a sender shows under: its tab's name in the cockpit now, else the name the relay carried. A relay's names
+ *  are fixed when it is sent, so one sent before its judge had a name keeps the project's; the live tab corrects it. */
+export function liveSenderName(
+    stored: string,
+    tab: string | null,
+    agents: readonly { id: string; name: string }[]
+): string {
+    const live = tab != null ? agents.find((a) => a.id === tab)?.name?.trim() : undefined;
+    return live || stored;
+}
+
+/** The judges a brief names, each under its live name when the pair has exactly one judge of that name. */
+export function liveBriefJudges(
+    names: string[],
+    pair: PairSides | null,
+    agents: readonly { id: string; name: string }[]
+): string[] {
+    return names.map((name) => liveSenderName(name, relaySenderTab(pair, { from: "judge", name }), agents));
+}
+
 /** The key the n-th message of a relay item is drawn under, as an agent's prose part is (stepsPartKey): Chat's pair
  *  cards find their place by it. */
 export function relayPartKey(itemKey: string, n: number): string {

@@ -111,3 +111,31 @@ function readLine(refs: Ref[]): string {
         "only when the person asks you to. An id wsh read does not know (a commit, say) is something else: carry on without it."
     );
 }
+
+// the boards a prompt names, by id, whose shapes ride with it (boardShapesContext): two at most, so a prompt naming many
+// boards stays small
+export const MAX_SHAPE_BOARDS = 2;
+
+export function promptBoardIds(text: string): string[] {
+    return promptRefs(text)
+        .filter((r) => r.kind === "board")
+        .map((r) => r.id)
+        .slice(0, MAX_SHAPE_BOARDS);
+}
+
+// the line that carries a board's shapes (`wsh board shapes board:<id>`, "<id> <text>" per line) and asks claude to
+// link the ones its reply names: Chat draws [words](#shape-<id>) as a link that shows the shape on the board beside it.
+// null when the list is empty
+export function boardShapesContext(boardId: string, list: string): string | null {
+    const shapes = list.trim();
+    if (shapes === "") {
+        return null;
+    }
+    return (
+        `arc: the shapes of board:${boardId}, one per line as "<id> <text>" ("[drawing]" marks a drawing's title). When ` +
+        "your reply names one of them (quotes its text, a date or step on it, a box you discuss), link those words: " +
+        "`[the words](#shape-<id>)`, several shapes as `#shape-<id>,<id>`. The person clicks it to see the shape on the " +
+        "board. Link only ids from this list, never one you made up; link a shape where you name it, not every mention.\n" +
+        shapes
+    );
+}

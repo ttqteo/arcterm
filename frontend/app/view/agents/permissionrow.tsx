@@ -4,17 +4,21 @@
 // An agent's sidebar row answering its permission prompt (spec 2026-11-27-sidebar-permission-row-design.md): the second
 // line reads what the head of its queue asks in place of "asking" (PermissionRowNote), and a third line under it holds
 // Allow and Deny, "+N more · waiting 1m" or the refusal line (PermissionRowLine), with no hover needed. A head the row may
-// not allow (plan approval, an MCP tool) offers "Answer in chat" instead. The queue and the answer are the chat card's
-// (permissionstore.ts), and the rules what the row shows are permissionmodel.ts's (rowPermission).
+// not allow (plan approval, an MCP tool) offers "Answer in chat" instead. An agent put to sleep while it waited
+// (sleeping.asking) keeps its row's line read-only: Wake alone with the wait, in place of Allow and Deny. The queue and
+// the answer are the chat card's (permissionstore.ts), and the rules what the row shows are permissionmodel.ts's
+// (rowPermission).
 
 import { composerReveal } from "@/app/element/motiontokens";
 import { cn, fireAndForget } from "@/util/util";
 import { AnimatePresence, motion } from "motion/react";
 import type React from "react";
+import { wakeAgent, wakeErrorToast } from "./agentsleep";
 import type { AgentVM } from "./agentsviewmodel";
 import {
     cardShown,
     choiceAnswer,
+    permissionReadOnly,
     permissionRowLabel,
     permissionSummaryLine,
     permissionTitle,
@@ -25,6 +29,7 @@ import {
     type RowPermission,
 } from "./permissionmodel";
 import { answerPermission, usePermission, usePermissionRequestState } from "./permissionstore";
+import { useWaking } from "./wakingstore";
 
 // 22 px, the prototype's size (A-third-line.dc.html)
 const BTN =
@@ -41,18 +46,31 @@ export type RowPermissionState = {
     behind: number; // how many requests wait behind the head
     busy: boolean;
     error?: string;
+    // the agent the row is for: the read-only row's Wake wakes it, and names it if the wake fails
+    agent: Pick<AgentVM, "id" | "name">;
 };
 
 /** The row's view of agent's permission queue. `otherAsk`: another ask holds the row (a held card such as Token burn, a
- *  doc review, a brainstorm's ask), so the row offers no Allow. Only a row whose agent is awake and not idle reads the
- *  queue: an idle row (most of the tree) loads none, and the event still fills the atom for when it is read. */
+ *  doc review, a brainstorm's ask), so the row offers no Allow. Only a row whose agent is awake and not idle, or asleep
+ *  with its ask kept, reads the queue: an idle row (most of the tree) loads none, and the event still fills the atom for
+ *  when it is read. */
 export function useRowPermission(agent: AgentVM, otherAsk: boolean): RowPermissionState {
     const shown = cardShown(agent);
     const oref = agent.blockId != null && shown ? `block:${agent.blockId}` : undefined;
     const requests = usePermission(oref);
     const { busy, error } = usePermissionRequestState(oref, requests[0]?.id);
-    const row = oref != null ? rowPermission(requests, { shown, otherAsk, refused: error != null }) : null;
-    return { oref, row, behind: Math.max(0, requests.length - 1), busy, error };
+    const row =
+        oref != null
+            ? rowPermission(requests, { shown, otherAsk, refused: error != null, asleep: permissionReadOnly(agent) })
+            : null;
+    return {
+        oref,
+        row,
+        behind: Math.max(0, requests.length - 1),
+        busy,
+        error,
+        agent: { id: agent.id, name: agent.name },
+    };
 }
 
 /** The second line's words for a head the row shows, in place of "asking"; null when the row shows none. */
@@ -65,7 +83,11 @@ export function PermissionRowNote({ perm }: { perm: RowPermissionState }) {
     return (
         <span
             data-agent-perm-note
-            title={row.kind === "answer" ? permissionSummaryLine(row.head) : permissionTitle(row.head.toolname)}
+            title={
+                row.kind === "answer" || row.kind === "asleep"
+                    ? permissionSummaryLine(row.head)
+                    : permissionTitle(row.head.toolname)
+            }
             className={cn(
                 "min-w-0 max-w-[55%] truncate font-semibold text-warning",
                 label.mono && "font-mono text-[10.5px]"
@@ -108,6 +130,7 @@ export function PermissionRowLine({
     onOpenChat: () => void;
 }) {
     const { row, oref, busy, error } = perm;
+    const waking = useWaking(perm.agent.id);
     // a click aimed at the row's button while the row slides into place is dropped
     const guarded = (fn: () => void) => (e: React.MouseEvent<HTMLButtonElement>) => {
         e.stopPropagation();
@@ -122,6 +145,14 @@ export function PermissionRowLine({
             fireAndForget(() => answerPermission(oref, id, choiceAnswer(choice, screen)));
         }
     };
+    const wake = () =>
+        fireAndForget(async () => {
+            try {
+                await wakeAgent(perm.agent.id);
+            } catch (e) {
+                wakeErrorToast(perm.agent.name, e);
+            }
+        });
     const errorLine =
         error != null ? (
             <span
@@ -166,6 +197,29 @@ export function PermissionRowLine({
                         {rowWaitLine(perm.behind, row.head.ts, now)}
                     </span>
                 )}
+            </>
+        );
+    } else if (row?.kind === "asleep") {
+        // read-only: its process is gone, so Allow and Deny would type into nothing; waking it makes it ask again
+        body = (
+            <>
+                <button
+                    type="button"
+                    data-agent-perm-wake
+                    disabled={waking}
+                    title="Wake the agent: it asks again where it stopped"
+                    className={ALLOW_BTN}
+                    onClick={guarded(wake)}
+                >
+                    {waking ? "Waking…" : "Wake"}
+                </button>
+                <span className="min-w-0 flex-1" />
+                <span
+                    data-agent-perm-wait
+                    className="flex-none whitespace-nowrap text-[10.5px] tabular-nums text-muted"
+                >
+                    {rowWaitLine(perm.behind, row.head.ts, now)}
+                </span>
             </>
         );
     } else if (row?.kind === "chat") {

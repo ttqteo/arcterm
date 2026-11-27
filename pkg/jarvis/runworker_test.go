@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/wavetermdev/waveterm/pkg/agentask"
 	"github.com/wavetermdev/waveterm/pkg/blockcontroller"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
@@ -350,5 +351,33 @@ func TestStopRunWorkerDisarmsTheBlockForResync(t *testing.T) {
 	// the scrollback the evidence snapshot reads must survive the stop
 	if got.Meta.GetString(waveobj.MetaKey_Cmd, "") != "claude" {
 		t.Fatalf("stopping a worker must not erase the block's command, got %#v", got.Meta[waveobj.MetaKey_Cmd])
+	}
+}
+
+// the pause suspends the worker's open question before it ends the tree, so the mod's dying `wsh ask --wait` leaves it
+// pending (AskCommand); another block's question is not the worker's
+func TestSuspendRunWorkerSuspendsTheWorkersOpenAsk(t *testing.T) {
+	ctx := context.Background()
+	stubDestroy(t)
+	prev := agentask.GlobalRegistry
+	agentask.GlobalRegistry = agentask.MakeRegistry()
+	t.Cleanup(func() { agentask.GlobalRegistry = prev })
+	tabORef, blockId := newWorkerTab(t, waveobj.MetaMapType{
+		waveobj.MetaKey_Controller: "cmd",
+		waveobj.MetaKey_Cmd:        "claude",
+	})
+	workerAsk := waveobj.MakeORef(waveobj.OType_Block, blockId).String()
+	otherAsk := waveobj.MakeORef(waveobj.OType_Block, "cccccccc-cccc-4ccc-8ccc-cccccccccccc").String()
+	agentask.GlobalRegistry.Set(workerAsk, agentask.PendingAsk{AskId: "ask-w"})
+	agentask.GlobalRegistry.Set(otherAsk, agentask.PendingAsk{AskId: "ask-o"})
+
+	if err := SuspendRunWorker(ctx, tabORef); err != nil {
+		t.Fatalf("SuspendRunWorker: %v", err)
+	}
+	if !agentask.GlobalRegistry.SuspendedAsk(workerAsk, "ask-w") {
+		t.Fatal("the worker's open question must be suspended")
+	}
+	if agentask.GlobalRegistry.SuspendedAsk(otherAsk, "ask-o") {
+		t.Fatal("another block's question must not be suspended")
 	}
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/jobpeaks"
 	"github.com/wavetermdev/waveterm/pkg/memusage"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
+	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
 
@@ -73,6 +74,48 @@ func installPeaks(t *testing.T) *jobpeaks.Store {
 	jobpeaks.Default = s
 	t.Cleanup(func() { jobpeaks.Default = saved })
 	return s
+}
+
+func TestJobPeaksForgetTakesThePatternOrACommandLineInTheCwdsProject(t *testing.T) {
+	s := installPeaks(t)
+	main := repoAt(t)
+	wt := linkedWorktreeOf(t, main)
+	project := dirProject(main)
+	const gb = uint64(1) << 30
+	for _, p := range []uint64{4, 1, 10, 2} {
+		s.Record("scripts/verify.mjs", project, true, p*gb)
+	}
+	ws := &WshServer{}
+	// a command line, from a linked worktree: the main checkout's key
+	res, err := ws.JobPeaksForgetCommand(context.Background(), wshrpc.CommandJobPeaksForgetData{
+		Command: "node scripts/verify.mjs ./pkg/x", Cwd: wt,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Pattern != "scripts/verify.mjs" || res.Project != project || len(res.Dropped) != 1 || res.Dropped[0] != 10*gb {
+		t.Fatalf("result = %+v, want the 10 GB peak of scripts/verify.mjs in %s dropped", res, project)
+	}
+	if want := 4*gb + 4*gb/5; res.Bytes != want || !res.Measured {
+		t.Fatalf("figure = %d measured %v, want %d measured", res.Bytes, res.Measured, want)
+	}
+	// the pattern as the popover names it, every peak
+	res, err = ws.JobPeaksForgetCommand(context.Background(), wshrpc.CommandJobPeaksForgetData{
+		Command: "scripts/verify.mjs", Cwd: main, All: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Dropped) != 3 || len(res.Left) != 0 || res.Measured || res.Bytes != 0 {
+		t.Fatalf("result = %+v, want the 3 peaks left dropped and the table's figure next", res)
+	}
+	// nothing left to forget, and a directory of no project
+	for _, cwd := range []string{main, t.TempDir()} {
+		_, err = ws.JobPeaksForgetCommand(context.Background(), wshrpc.CommandJobPeaksForgetData{Command: "scripts/verify.mjs", Cwd: cwd})
+		if err == nil || !strings.Contains(err.Error(), "no measured peaks") {
+			t.Fatalf("%s: err = %v, want no measured peaks", cwd, err)
+		}
+	}
 }
 
 func TestJobProjectIsTheRepositoryRootOfTheBlocksCwd(t *testing.T) {

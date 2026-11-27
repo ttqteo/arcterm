@@ -14,6 +14,7 @@ import type { ReactNode } from "react";
 import type { InitiativeFace, StatusTone } from "./briefcards";
 import { SegmentBar } from "./briefrowviews";
 import { CURSOR_RING, cursorAttrs } from "./briefstyle";
+import type { ChunkPriority, PriorityCount } from "./chunkorder";
 
 export const STATUS_TEXT: Record<StatusTone, string> = {
     ok: "text-success",
@@ -27,6 +28,52 @@ export const NOTE_LABEL_TEXT: Record<NonNullable<InitiativeFace["noteLabel"]>, s
     "Blocked on": "text-asking",
     Done: "text-success",
 };
+
+// A level's badge wears the tone the chunk's own level word has in the tracker (priorityBadge): critical red on its
+// tint, high the bright ink, the rest fading down the scale
+const PRIORITY_PILL: Record<ChunkPriority, string> = {
+    critical: "border-error/40 bg-errorbg text-error font-semibold",
+    high: "border-edge-strong bg-pill text-ink-hi font-semibold",
+    medium: "border-edge-mid bg-pill text-ink-mid",
+    low: "border-edge-mid text-muted",
+    information: "border-edge-mid text-ink-faint",
+};
+
+const PRIORITY_WORD: Record<ChunkPriority, string> = {
+    critical: "critical",
+    high: "high",
+    medium: "medium",
+    low: "low",
+    information: "info",
+};
+
+// "1 critical  4 high …": how many open chunks carry each level, so the levels show without opening the initiative
+export function PriorityBadges({ counts, className }: { counts: PriorityCount[]; className?: string }) {
+    if (counts.length === 0) {
+        return null;
+    }
+    const said = counts.map((c) => `${c.n} ${c.level}`).join(", ");
+    return (
+        <span
+            data-jarvis-initiative-priorities={said}
+            title={`Open chunks: ${said}`}
+            className={cn("flex flex-none items-center gap-1", className)}
+        >
+            {counts.map((c) => (
+                <span
+                    key={c.level}
+                    data-priority={c.level}
+                    className={cn(
+                        "whitespace-nowrap rounded-[4px] border px-1 text-[10px] leading-[15px] tabular-nums",
+                        PRIORITY_PILL[c.level]
+                    )}
+                >
+                    {c.n} {PRIORITY_WORD[c.level]}
+                </span>
+            ))}
+        </span>
+    );
+}
 
 // the page cursor and the initiative open in the sheet. The cursor is the Brief's ring; the opened one keeps an
 // accent outline so it is found again under the dimmed page.
@@ -222,6 +269,7 @@ function InitiativeCard({
                     // a pinned topic: its sub-initiatives hold the work, so there is no count of its own
                     <span className="text-[20px] font-semibold text-ink-faint">Topic</span>
                 )}
+                <PriorityBadges counts={face.priorities} className="ml-1 self-center" />
                 <span className="flex-1" />
                 <span
                     data-jarvis-card-status

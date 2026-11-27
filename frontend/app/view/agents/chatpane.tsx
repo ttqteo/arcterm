@@ -39,6 +39,8 @@ import {
 } from "motion/react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { goalFromLines } from "../../../../claude/arc-mod/hooks/goal-core";
+import { BoardPointerContext } from "../boards/boardphrase";
+import { boardPointerShapesAtom } from "../boards/boardpointerstore";
 import { confirmCloseSession } from "./agentactions";
 import { canStop } from "./agentcomposer";
 import { getProcExitAtom } from "./agentcontrollerstore";
@@ -52,6 +54,7 @@ import { builderCheckView, procExited, type BuilderCheckView } from "./brainstor
 import { brainstormAtom, brainstormSeenAtom, shownBrainstormFile } from "./brainstormstore";
 import { canvasStateAtom } from "./canvasstore";
 import { AskRow } from "./channelsprimitives";
+import { useChatBoard } from "./chatboardchip";
 import { boxPlaceholder, type BoxState } from "./chatboxstate";
 import { answersTopic, brainstormCard, holdCard, type ChatCard } from "./chatbrainstorm";
 import { brainstormAnswersAtom, recordBrainstormAnswer } from "./chatbrainstormstore";
@@ -69,7 +72,7 @@ import { chatFocusReadOnAtom, chatFocusReadSizeAtom } from "./chatfocusreadstore
 import { FOCUS_LINE_CLASS, FOCUS_LINE_TITLE, useFocusRead } from "./chatfocusreadview";
 import { forkShowsSource, turnInFork } from "./chatfork";
 import { ChatGoalStrip } from "./chatgoal";
-import { isHandoffAsk } from "./chathandoff";
+import { boxAnswersAsk, isHandoffAsk } from "./chathandoff";
 import { ChatHandoffCard } from "./chathandoffcard";
 import { holdSwitchLine } from "./chatinitiativestore";
 import { cancelQueuedChat, chatBoxText, focusChatBox, replaceChatBox, submitIntoChatBox } from "./chatinsert";
@@ -151,6 +154,8 @@ import { runtimeLogo } from "./runtimelogo";
 import { runtimeMeta } from "./runtimemeta";
 import { ScreenDialogCard } from "./screendialogcard";
 import { shipGitAtom } from "./shipstore";
+import { answerWhileAsleepPlaceholder } from "./sleepheld";
+import { ChatHeldAnswer, useHeldAnswer } from "./sleepheldview";
 import { useStickToBottom } from "./sticktobottom";
 import { backgroundTasksByIdAtom } from "./subagentsstore";
 import { runningBackgroundTasks, turnStats, type TurnStats } from "./transcriptprojection";
@@ -753,9 +758,20 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
     const projects = useAtomValue(projectsAtom);
     const project = projects[agent.project ?? ""]?.path ?? "";
     const refLinks = useMemo(() => ({ model, project, selfId: agent.id }), [model, project, agent.id]);
+    // the board in the agent's split: the words of the conversation that point at its shapes light and show them
+    const chatBoard = useChatBoard(agent.id);
+    const boardId = chatBoard?.board.boardId ?? "";
+    const shapes = useAtomValue(boardPointerShapesAtom(boardId));
+    const boardName = chatBoard?.name ?? "";
+    const pointers = useMemo(
+        () => (boardId === "" || shapes == null || shapes.length === 0 ? null : { boardId, name: boardName, shapes }),
+        [boardId, boardName, shapes]
+    );
     return (
         <ChatRefLinks value={refLinks}>
-            <ChatPaneBody model={model} agent={agent} barred={barred} />
+            <BoardPointerContext.Provider value={pointers}>
+                <ChatPaneBody model={model} agent={agent} barred={barred} />
+            </BoardPointerContext.Provider>
         </ChatRefLinks>
     );
 }
@@ -967,8 +983,11 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
     // where the agent works, which the card of a turn's files names folders against: its own, else the transcript's
     // (a Claude record carries one a line or two in; the first 50 bound the parse for a transcript that has none)
     const cwd = useMemo(() => agent.cwd ?? (lines != null ? agentCwd(lines.slice(0, 50)) : null), [agent.cwd, lines]);
-    // a held command's card (a Token burn card, an Antigravity question) is answered in its dialog, not here
+    // a held command's card (a Token burn card, an Antigravity question) is answered in its dialog, not here. A sleeping
+    // agent that was put to sleep while it asked keeps its question (liveAsk), so it is drawn here as an awake one's is;
+    // an answer to it is held for the wake and shown under it (`heldAnswer`) once wavesrv has it
     const asking = agent.ask != null && !agent.ask.hold;
+    const heldAnswer = useHeldAnswer(agent);
     // a read that has not landed yet shows a skeleton; an agent switched back to shows its kept window at once while it
     // reads what was written since (ChatConversation draws those rows at once, not one by one on the spring: catchingUp).
     // One that failed (a transcript file that is not written yet, most often) and no transcript at all show the empty
@@ -1436,6 +1455,10 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
                                 <ChatAsk model={model} agent={agent} exited={exited} />
                             </div>
                         ) : null}
+                        {/* the answer given to a sleeping agent's question, until it wakes and takes it */}
+                        <AnimatePresence initial={false}>
+                            {heldAnswer != null ? <ChatHeldAnswer key="held" agent={agent} held={heldAnswer} /> : null}
+                        </AnimatePresence>
                     </div>
                 </div>
                 {/* floats over the scroller (the pinned prompt bar leaves room for it); not on the loading or empty state */}
@@ -1546,7 +1569,16 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
                                     showLocalCard(agent.id, route.panel, route.command);
                                 }
                             }}
-                            placeholder={boxPlaceholder(boxNow, agent.name, boxPlaceholderOverride(card), wakingNow)}
+                            placeholder={boxPlaceholder(
+                                boxNow,
+                                agent.name,
+                                boxPlaceholderOverride(card) ??
+                                    // a sleeping agent's kept question: what is typed answers it and does not wake the agent
+                                    (asleep && !wakingNow && agent.sleeping?.asking === true && boxAnswersAsk(agent.ask)
+                                        ? answerWhileAsleepPlaceholder(agent.name)
+                                        : null),
+                                wakingNow
+                            )}
                             dataAttrs={asleep ? { "data-sleeping-composer": agent.id } : undefined}
                         />
                     </div>

@@ -314,14 +314,15 @@ func (l livePairLink) Tokens(ctx context.Context, tab string, sinceMs int64) (in
 
 // Sleep puts the agent to sleep now, as a person's Sleep does: the same refusals (not idle, an engine run's, no session),
 // no compaction first, and the auto-sleep setting is not asked, because the sleep belongs to the round and not to the
-// idle rule. sleepAgent answers a sleep that background work stopped with no error and the work in Background: that is
-// an error here, so a refusal is never read as a sleep.
+// idle rule. An agent that waits on the person is refused too (autoSleepRefusal): a person's Sleep may leave its question
+// to wait, a round's may not. sleepAgent answers a sleep that background work stopped with no error and the work in
+// Background: that is an error here, so a refusal is never read as a sleep.
 func (l livePairLink) Sleep(ctx context.Context, tab string) error {
 	_, row, err := l.find(ctx, tab)
 	if err != nil {
 		return err
 	}
-	if err := sleepRefusal(row); err != nil {
+	if err := autoSleepRefusal(row); err != nil {
 		return err
 	}
 	rtn, err := sleepAgent(ctx, row, false)
@@ -334,7 +335,7 @@ func (l livePairLink) Sleep(ctx context.Context, tab string) error {
 	return nil
 }
 
-// Agent names the tab as the cockpit labels it: the session's title, else the tab's name (its launch name, often the
+// Agent names the tab as the cockpit labels it: its label, else the session's title, else the tab's name (often the
 // project's).
 func (l livePairLink) Agent(ctx context.Context, tab string) (agentpair.AgentFacts, error) {
 	_, row, err := l.find(ctx, tab)
@@ -345,11 +346,16 @@ func (l livePairLink) Agent(ctx context.Context, tab string) (agentpair.AgentFac
 	if err != nil {
 		return agentpair.AgentFacts{}, err
 	}
-	return agentpair.AgentFacts{Name: pairAgentName(row.AgentInfo), Harness: row.Harness, Project: row.Project, Cwd: row.Cwd, Transcript: tpath}, nil
+	return agentpair.AgentFacts{Name: pairAgentName(row.label, row.AgentInfo), Harness: row.Harness, Project: row.Project, Cwd: row.Cwd, Transcript: tpath}, nil
 }
 
-// pairAgentName is the name a pair stores for a side: the session's title, the cockpit's label, over the tab's name.
-func pairAgentName(a wshrpc.AgentInfo) string {
+// pairAgentName is the name a pair stores for a side, in the cockpit's order: the tab's label (a launched judge's
+// "Judge: <worker>", a rename), else the session's title, else the tab's name. A judge joins before its harness has named
+// its session, so without the label it would be stored under the tab's name, the project's.
+func pairAgentName(label string, a wshrpc.AgentInfo) string {
+	if l := strings.TrimSpace(label); l != "" {
+		return l
+	}
 	if t := strings.TrimSpace(a.Title); t != "" {
 		return t
 	}

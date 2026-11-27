@@ -32,7 +32,10 @@ const SLEEP_TIMEOUT_MS = 15_000;
 const VIEWING_REFRESH_MS = 60_000;
 
 /** Pure: the sleep keys of a block's meta as AgentVM.sleeping, or undefined for an awake agent (agent:sleeping absent,
- *  0, or not a time). A missing size counts as nothing freed; an empty failure reason as none. */
+ *  0, or not a time). A missing size counts as nothing freed; an empty failure reason as none. `asking` is the
+ *  agent:sleepasking mark wavesrv writes with agent:sleeping when the agent was put to sleep while it waited on you (a
+ *  question or a permission); it is read only as the boolean true, so a stale or odd value is no mark, and it never
+ *  makes an awake block asleep. */
 export function sleepingOf(meta: Record<string, unknown> | undefined | null): AgentVM["sleeping"] {
     const since = meta?.["agent:sleeping"];
     if (typeof since !== "number" || !(since > 0)) {
@@ -44,6 +47,7 @@ export function sleepingOf(meta: Record<string, unknown> | undefined | null): Ag
         since,
         freedBytes: typeof freed === "number" && freed > 0 ? freed : 0,
         ...(typeof failed === "string" && failed !== "" ? { wakeFailed: failed } : {}),
+        ...(meta?.["agent:sleepasking"] === true ? { asking: true } : {}),
     };
 }
 
@@ -89,7 +93,10 @@ export function sleepingStatus(
 /** Pure: the agent status the roster reads for a block. A held service's block (tool:service, pkg/services) has none:
  *  a program a service runs may start agents of its own (a dashboard calling `claude -p`), and their hooks report into
  *  the service's block, whose WAVETERM_BLOCKID they inherit. Read as an agent, the service would list twice in the
- *  sidebar, once as an agent and once as its service row. Every other block reads as sleepingStatus gives it. */
+ *  sidebar, once as an agent and once as its service row. An agent the server's boot is bringing back
+ *  (agent:restoring, pkg/blockcontroller/agentrestore.go) has no status until it reports, the status living in the
+ *  server's memory: it reads as idle from its meta meanwhile, or the first load would drop it from the split it was a
+ *  cell of and move focus off it. Every other block reads as sleepingStatus gives it. */
 export function rosterStatus(
     status: AgentStatusData | null | undefined,
     meta: Record<string, unknown> | undefined | null,
@@ -97,6 +104,20 @@ export function rosterStatus(
 ): AgentStatusData | null | undefined {
     if (meta?.["tool:service"] === true) {
         return undefined;
+    }
+    const restoring = meta?.["agent:restoring"];
+    const cmd = meta?.["cmd"];
+    if (!status?.state && typeof restoring === "number" && restoring > 0 && typeof cmd === "string" && cmd !== "") {
+        const transcript = meta?.["agent:transcriptpath"];
+        const cwd = meta?.["cmd:cwd"];
+        return {
+            oref,
+            state: "idle",
+            agent: cmd,
+            ts: restoring,
+            ...(typeof transcript === "string" && transcript !== "" ? { transcriptpath: transcript } : {}),
+            ...(typeof cwd === "string" && cwd !== "" ? { cwd } : {}),
+        };
     }
     return sleepingStatus(status, meta, oref);
 }

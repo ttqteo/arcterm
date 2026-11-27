@@ -38,6 +38,7 @@ import { compareOnAtom } from "@/app/view/agents/comparestore";
 import { councilChatNavAtom } from "@/app/view/agents/councilchatnav";
 import { docReviewStateAtom } from "@/app/view/agents/docreviewstore";
 import { historyFiltersAtom } from "@/app/view/agents/githistorystore";
+import { agentGridAtom } from "@/app/view/agents/gridstore";
 import { activeReviewKeyAtom, lineReviewsAtom } from "@/app/view/agents/linecommentstore";
 import { changesShownAtom } from "@/app/view/agents/railchangesstore";
 import { dockedTerminalAtom } from "@/app/view/agents/railstore";
@@ -105,6 +106,7 @@ export const PREDICATE_ATOMS: Atom<unknown>[] = [
     chatFocusReadIdsAtom, // buildAgentBindings: agent:focus-read-*
     docFocusReadOnAtom, // the same, in a markdown Preview
     liveJudgeAtom, // buildAgentBindings: agent:chat-judge
+    agentGridAtom, // buildAgentBindings: agent:layout-* and agent:swap-cells (gridlayoutstore.canApplyLayout)
 ];
 
 function bumpWhenVersion() {

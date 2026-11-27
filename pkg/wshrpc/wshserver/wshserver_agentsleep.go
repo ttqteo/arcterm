@@ -13,10 +13,12 @@ import (
 	"time"
 
 	"github.com/shirou/gopsutil/v4/process"
+	"github.com/wavetermdev/waveterm/pkg/agentask"
 	"github.com/wavetermdev/waveterm/pkg/agentctl"
 	"github.com/wavetermdev/waveterm/pkg/agentsleep"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/blockcontroller"
+	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/orchestrate"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wcore"
@@ -266,8 +268,18 @@ func pidsGone(pids []int32, wait time.Duration) []int32 {
 	}
 }
 
+// awaitsPerson reports whether row waits on the person: a question is open (agentsState folds it into the row's state
+// asking), or its raw status says it asks or waits for a permission, which is no ask in the registry. Sleep keeps such
+// an agent's ask for the person (sleepAgent), and sends no Esc and no compaction into its open dialog: the Esc dismisses
+// it, agentperm.NoteKey drops the permission queue with it, and /compact typed into it would answer it.
+func awaitsPerson(row *agentRow) bool {
+	return row.State == wshrpc.AgentsState_Asking ||
+		row.status.State == baseds.AgentState_Asking || row.status.State == baseds.AgentState_Waiting
+}
+
 // sleepRefusal is why a person's Sleep cannot apply to row, "" when it can. The time, the CPU and the
-// not-looking-at-it conditions are the loop's: a person who chose Sleep has waived them.
+// not-looking-at-it conditions are the loop's: a person who chose Sleep has waived them. An agent that waits on the
+// person is let through (awaitsPerson); the loop that sleeps idle agents skips its rows itself.
 func sleepRefusal(row *agentRow) error {
 	switch {
 	case row.State == wshrpc.AgentsState_Sleeping:
@@ -276,20 +288,63 @@ func sleepRefusal(row *agentRow) error {
 		return fmt.Errorf("agent %q works for run %s, which the engine owns; it cannot sleep", row.Name, row.RunId)
 	case !agentsleep.Harnesses[row.Harness]:
 		return fmt.Errorf("agent %q runs %s, which cannot resume a conversation; it cannot sleep", row.Name, row.Harness)
-	case row.State != wshrpc.AgentsState_Idle || row.status.State != baseds.AgentState_Idle:
-		what := row.State
-		if row.status.State == baseds.AgentState_Waiting {
-			what = "waiting for a permission"
-		}
-		return fmt.Errorf("agent %q is not idle (%s); only an idle agent can sleep", row.Name, what)
+	case !awaitsPerson(row) && (row.State != wshrpc.AgentsState_Idle || row.status.State != baseds.AgentState_Idle):
+		return fmt.Errorf("agent %q is not idle (%s); only an idle agent, or one waiting on the person, can sleep", row.Name, row.State)
 	}
 	return nil
 }
 
-// sleepAgent puts an idle agent to sleep: its process ends and its RAM is freed, and its tab and conversation
-// stay. Unless force is set, an agent with background work running is not slept; the work is returned in
-// Background instead, for the person to confirm. A tree that has not ended once destroyed and killed still leaves the
-// agent asleep, with its pids remembered for the wake to end (endLeftovers).
+// autoSleepRefusal is sleepRefusal for a sleep the person did not ask for, the sleep after a run and a pair round's:
+// those still refuse an agent that waits on the person. Leaving its question to wait is the person's call (Sleep, Clean
+// Slate), not a run's or a round's.
+func autoSleepRefusal(row *agentRow) error {
+	if err := sleepRefusal(row); err != nil {
+		return err
+	}
+	if awaitsPerson(row) {
+		return fmt.Errorf("agent %q is waiting on the person; it cannot sleep", row.Name)
+	}
+	return nil
+}
+
+// retireKeptAsk retires blockORef's pending ask when a sleep suspended it and nobody answered it, as LivePendingAsks
+// retires one: claimed, its waiter (none, once the sleep ended its tree) cancelled, and a Cleared published. The wake
+// restarts the process, which asks again (the nudge says so) and raises a fresh ask; an answer to the old one would
+// type into a picker that is not there. An ask no sleep suspended is left alone.
+func retireKeptAsk(blockORef string) {
+	pending, ok := agentask.GlobalRegistry.Get(blockORef)
+	if !ok || !agentask.GlobalRegistry.SuspendedAsk(blockORef, pending.AskId) {
+		return
+	}
+	claimed, ok := agentask.GlobalRegistry.Claim(blockORef, pending.AskId)
+	if !ok {
+		return
+	}
+	agentask.GlobalRegistry.ResolveWaiter(claimed.AskId, agentask.WaitResult{Cancelled: true})
+	publishAgentAsk(baseds.AgentAskData{ORef: blockORef, AskId: claimed.AskId, Cleared: true})
+}
+
+// wakeText is what a wake delivers once the agent is back. An agent slept while it waited on the person gets the sleep
+// nudge, which carries what the person answered meanwhile, and the person's message after it, as one message: two
+// deliveries back to back race the TUI's queued input. A Wake with no message delivers the nudge alone; an agent slept
+// idle gets only the message, "" for none.
+func wakeText(blockId string, slept bool, message string) string {
+	if !slept {
+		return message
+	}
+	text := jarvis.SleptNudge(waveobj.MakeORef(waveobj.OType_Block, blockId).String())
+	if message != "" {
+		text += "\n\n" + message
+	}
+	return text
+}
+
+// sleepAgent puts an idle agent, or one that waits on the person (awaitsPerson), to sleep: its process ends and its RAM
+// is freed, and its tab and conversation stay. An agent that waits on the person sleeps with its ask kept: the block is
+// marked (agent:sleepasking) so its wake sends a nudge, and its pending ask is suspended before the tree goes, so it
+// stays for the person to answer and the answer is held for the wake. Unless force is set, an agent with background work
+// running is not slept; the work is returned in Background instead, for the person to confirm. A tree that has not ended
+// once destroyed and killed still leaves the agent asleep, with its pids remembered for the wake to end (endLeftovers).
 func sleepAgent(ctx context.Context, row *agentRow, force bool) (*wshrpc.CommandAgentsSleepRtnData, error) {
 	// read the session before the controller goes: the exit publishes a bare idle with no transcript path
 	tpath, err := agentTranscriptPath(ctx, row)
@@ -332,12 +387,27 @@ func sleepAgent(ctx context.Context, row *agentRow, force bool) (*wshrpc.Command
 
 	pids := treePids(row.blockId)
 	freed := treeBytes(pids)
-	err = updateBlockMeta(ctx, row.blockId, waveobj.MetaMapType{
+	marks := waveobj.MetaMapType{
 		waveobj.MetaKey_CmdArgs:         args,
 		waveobj.MetaKey_AgentSleeping:   time.Now().UnixMilli(),
 		waveobj.MetaKey_AgentSleepFreed: int64(freed),
-	})
+		// deleted unless this agent waits on the person: a stale mark never rides into an idle sleep
+		waveobj.MetaKey_AgentSleepAsking: nil,
+	}
+	asking := awaitsPerson(row)
+	blockORef := waveobj.MakeORef(waveobj.OType_Block, row.blockId).String()
+	if asking {
+		// its wake sends a nudge, and the ask stays for the person: with the arc mod a Claude question is a `wsh ask
+		// --wait` inside the tree, and the tree's end would clear the ask unless it is suspended first
+		marks[waveobj.MetaKey_AgentSleepAsking] = true
+		agentask.GlobalRegistry.Suspend(blockORef)
+	}
+	err = updateBlockMeta(ctx, row.blockId, marks)
 	if err != nil {
+		if asking {
+			// nothing was destroyed: the agent runs on, and its --wait caller's end must clear the ask as before
+			agentask.GlobalRegistry.Unsuspend(blockORef)
+		}
 		return nil, err
 	}
 	destroyBlock(row.blockId)
@@ -391,7 +461,9 @@ func (ws *WshServer) AgentsSleepCommand(ctx context.Context, data wshrpc.Command
 // as a sleep would; the sleep loop puts the agent to sleep once the summary lands. nil when the Sleep goes ahead as it
 // is, sleepAgent reporting any trouble.
 func sleepAfterCompaction(ctx context.Context, row *agentRow, force bool, now time.Time) *wshrpc.CommandAgentsSleepRtnData {
-	if row.Harness != "claude" || !row.hasStream {
+	// an agent that waits on the person sleeps at once: /compact typed into its open dialog would answer or dismiss it,
+	// and the loop that finishes a compaction's sleep skips asking rows, so that sleep would never come
+	if row.Harness != "claude" || !row.hasStream || awaitsPerson(row) {
 		return nil
 	}
 	if pc, ok := compactPending(row.blockId, now); ok {
@@ -476,25 +548,37 @@ func joinWake(ctx context.Context, call *wakeCall, blockId, message string) erro
 
 // wakeMarkedAwake is a wake of an agent whose process runs while its block still says asleep: a wake in flight (its
 // process starts before it reports in), which it joins, or marks a wake could not clear, which it clears. The message
-// is delivered as to any awake agent. The cockpit reads the marks, so without this the row reads asleep over a running
-// agent and its Wake and its composer are refused.
+// is delivered as to any awake agent, and the question the sleep kept is retired with the marks. The cockpit reads the
+// marks, so without this the row reads asleep over a running agent and its Wake and its composer are refused.
 func wakeMarkedAwake(ctx context.Context, row *agentRow, message string) error {
 	wakeMu.Lock()
 	call, waking := wakeCalls[row.blockId]
 	wakeMu.Unlock()
 	if waking {
+		// the wake in flight delivers the nudge with its own message; a second nudge would tell the agent twice
 		return joinWake(ctx, call, row.blockId, message)
 	}
-	err := updateBlockMeta(ctx, row.blockId, waveobj.MetaMapType{
-		waveobj.MetaKey_AgentSleeping:   nil,
-		waveobj.MetaKey_AgentSleepFreed: nil,
-		waveobj.MetaKey_AgentWakeFailed: nil,
+	meta, err := readBlockMeta(ctx, row.blockId)
+	if err != nil {
+		return err
+	}
+	slept := meta.GetBool(waveobj.MetaKey_AgentSleepAsking, false)
+	// the question the sleep kept does not outlive the marks: once they are gone nothing holds an answer to it (answerHeld
+	// reads them), and the process that runs never drew its picker, so an answer would be typed into nothing. Retired
+	// first, as runWake retires it before its restart, so no answer slips in between the marks going and the ask going.
+	retireKeptAsk(waveobj.MakeORef(waveobj.OType_Block, row.blockId).String())
+	err = updateBlockMeta(ctx, row.blockId, waveobj.MetaMapType{
+		waveobj.MetaKey_AgentSleeping:    nil,
+		waveobj.MetaKey_AgentSleepFreed:  nil,
+		waveobj.MetaKey_AgentSleepAsking: nil,
+		waveobj.MetaKey_AgentWakeFailed:  nil,
 	})
 	if err != nil {
 		return err
 	}
-	if message != "" {
-		deliverAgentMessage(row.blockId, message)
+	// the process was restarted without a nudge, so this delivers it, with the answers held while the block slept
+	if text := wakeText(row.blockId, slept, message); text != "" {
+		deliverAgentMessage(row.blockId, text)
 	}
 	return nil
 }
@@ -513,6 +597,10 @@ func runWake(ctx context.Context, row *agentRow, message string, fresh bool) err
 	if err != nil {
 		return err
 	}
+	// a sleep that found the agent waiting on the person marked its block: its wake sends the sleep nudge, unless Start
+	// fresh opens a conversation with nothing to carry on from
+	slept := meta.GetBool(waveobj.MetaKey_AgentSleepAsking, false) && !fresh
+	blockORef := waveobj.MakeORef(waveobj.OType_Block, row.blockId).String()
 	update := waveobj.MetaMapType{waveobj.MetaKey_AgentWakeFailed: nil}
 	if fresh {
 		// Start fresh: the launch flags without any session, so it does not resume the one that failed
@@ -532,8 +620,9 @@ func runWake(ctx context.Context, row *agentRow, message string, fresh bool) err
 	// awake clears the marks of an agent that is running even though it has not reported in
 	awake := func() {
 		err := settle(waveobj.MetaMapType{
-			waveobj.MetaKey_AgentSleeping:   nil,
-			waveobj.MetaKey_AgentSleepFreed: nil,
+			waveobj.MetaKey_AgentSleeping:    nil,
+			waveobj.MetaKey_AgentSleepFreed:  nil,
+			waveobj.MetaKey_AgentSleepAsking: nil,
 		})
 		if err != nil {
 			log.Printf("agent wake: clearing the sleep marks of block %s: %v\n", row.blockId, err)
@@ -542,6 +631,13 @@ func runWake(ctx context.Context, row *agentRow, message string, fresh bool) err
 
 	if err := endLeftovers(row.blockId); err != nil {
 		return failed(err.Error())
+	}
+	// the question the sleep kept does not outlive the wake: the restarted process asks again, and an answer to the old
+	// one would type into a picker that is not there. Start fresh also drops what the person answered meanwhile, with the
+	// conversation it answered.
+	retireKeptAsk(blockORef)
+	if fresh {
+		agentask.TakeHeldAnswers(blockORef)
 	}
 	if err := resyncBlock(ctx, row.TabId, row.blockId); err != nil {
 		return failed(fmt.Sprintf("it could not start: %v", err))
@@ -574,8 +670,9 @@ func runWake(ctx context.Context, row *agentRow, message string, fresh bool) err
 		}
 	}
 	awake()
-	if message != "" {
-		deliverAgentMessage(row.blockId, message)
+	// built only now, so a wake that never saw the agent report in leaves the answers it would have carried held
+	if text := wakeText(row.blockId, slept, message); text != "" {
+		deliverAgentMessage(row.blockId, text)
 	}
 	return nil
 }

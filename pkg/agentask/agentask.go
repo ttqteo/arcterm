@@ -45,6 +45,9 @@ type PendingAsk struct {
 	Prose bool
 	// Hold mirrors CommandAskData.Hold: a working status never retires it.
 	Hold bool
+	// Suspended is set by Suspend: the agent's process is being ended on purpose, to be reopened in the same
+	// conversation, so a --wait caller that dies with it leaves the ask pending instead of clearing it.
+	Suspended bool
 	// the fields below are set only for an ask raised by a dag child.
 	Owner string
 	// Deadline is the UnixMilli past which a lead-owned ask moves to the user.
@@ -233,6 +236,30 @@ func (r *Registry) Update(oref, askId string, fn func(*PendingAsk)) bool {
 	fn(&p)
 	r.pending[oref] = p
 	return true
+}
+
+// Suspend marks oref's pending ask, if any, to outlive the process that raised it, and reports whether there was one.
+// The caller is about to end that process on purpose (a run's pause) and reopen it in the same conversation later.
+// With the arc mod a Claude question is a `wsh ask --wait` inside the agent's tree, and its end would otherwise clear
+// the ask (AskCommand) before the person could answer it. The mark rides on the ask itself: an answer, a clear, a
+// retire or a new ask takes it with the entry, and a kept ask whose process ended stays only while LivePendingAsks
+// finds a reason to keep it (a paused run).
+func (r *Registry) Suspend(oref string) bool {
+	return r.Update(oref, "", func(p *PendingAsk) { p.Suspended = true })
+}
+
+// Unsuspend undoes Suspend on oref's pending ask, if any, and reports whether there was one. A sleep whose write
+// failed before it ended the process calls it: the agent lives on, so its --wait caller's end must clear the ask again.
+func (r *Registry) Unsuspend(oref string) bool {
+	return r.Update(oref, "", func(p *PendingAsk) { p.Suspended = false })
+}
+
+// SuspendedAsk reports whether askId is the pending ask of oref and is marked Suspended.
+func (r *Registry) SuspendedAsk(oref, askId string) bool {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+	p, ok := r.pending[oref]
+	return ok && p.AskId == askId && p.Suspended
 }
 
 // awaitClear starts the clear timeout of an answer typed in full. A clear that already arrived mid-typing

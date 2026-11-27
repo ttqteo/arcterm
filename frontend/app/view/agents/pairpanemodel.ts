@@ -6,6 +6,7 @@
 // view's foot line (pairreadpane.tsx). Pure, so pairpanemodel.test.ts holds them.
 
 import type { AgentVM } from "./agentsviewmodel";
+import type { PairRow } from "./pairmodel";
 
 /** "12 s", "3 m", "2 h": a span as the top bar reads it, whole units, never negative. */
 export function shortSpan(ms: number): string {
@@ -106,4 +107,18 @@ export function quoteLine(text: string, max = 90): string {
     const cut = line.slice(0, max);
     const at = cut.lastIndexOf(" ");
     return `${(at > max / 2 ? cut.slice(0, at) : cut).trimEnd()}…`;
+}
+
+/** One entry of the conversation's list of judge and person messages (the pinned band's list, pinnedpromptbar.tsx): the
+ *  message's one line and who wrote it ("Judge", "Judge c3f1" while the pair has several, "You"). */
+export type PairPromptItem = { id: string; text: string; tag: string };
+
+/** Pure: the messages the conversation's pinned band and its list hold, in order: a judge's and the person's, never the
+ *  working agent's (its own Chat has its prompts) nor a system line or pause card. */
+export function pairPromptItems(rows: readonly PairRow[]): PairPromptItem[] {
+    return rows.flatMap((r) =>
+        (r.side === "right" || r.side === "wide") && r.pause == null
+            ? [{ id: r.id, text: quoteLine(r.text, 200), tag: r.judge != null ? `${r.who} ${r.judge}` : r.who }]
+            : []
+    );
 }

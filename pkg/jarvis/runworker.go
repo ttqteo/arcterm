@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wavetermdev/waveterm/pkg/agentask"
 	"github.com/wavetermdev/waveterm/pkg/blockcontroller"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wcore"
@@ -32,6 +33,11 @@ func StopRunWorker(ctx context.Context, workerORef string) error {
 // resync starts it again, until ResumeRunWorker re-arms it and reopens the session. A closed tab is no error. A var,
 // like ResumeRunWorker, so the engine's and the run tree's tests stub it.
 var SuspendRunWorker = func(ctx context.Context, workerORef string) error {
+	// before the tree ends: a question the worker has open must survive its `wsh ask --wait` dying with it, so the
+	// person can answer it while the run is paused (answerHeld) and the resume hands the answer over (PausedNudge)
+	for _, blockORef := range workerBlockORefs(ctx, workerORef) {
+		agentask.GlobalRegistry.Suspend(blockORef)
+	}
 	return endRunWorker(ctx, workerORef)
 }
 

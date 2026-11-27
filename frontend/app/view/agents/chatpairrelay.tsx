@@ -11,17 +11,33 @@ import { springReveal, turnTransition } from "@/app/element/motiontokens";
 import { usePartMotion } from "@/app/element/springbatch";
 import { openOrPeek } from "@/app/view/jarvis/openref";
 import { cn, fireAndForget } from "@/util/util";
+import { atom, useAtomValue } from "jotai";
 import { ArrowLeftRight, ArrowUpRight, ChevronRight, CornerDownRight, Hammer, Scale } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { AgentsViewModel } from "./agents";
 import { FOCUS_RING } from "./chatbrainstormparts";
 import { StepsPart } from "./chatsteplistview";
 import { CodeBlock } from "./codeblock";
 import { CouncilText } from "./councilchat";
 import { MarkdownMessage } from "./markdownmessage";
-import { briefJudges, relayPartKey, relaySenderTab, type PairRelay, type RelayMessage } from "./pairrelay";
-import { usePairOf } from "./pairstore";
+import {
+    briefJudges,
+    liveBriefJudges,
+    liveSenderName,
+    relayPartKey,
+    relaySenderTab,
+    type PairRelay,
+    type RelayMessage,
+} from "./pairrelay";
+import { markRelaySeen, usePairOf } from "./pairstore";
+
+const NO_AGENTS = atom<{ id: string; name: string }[]>([]);
+
+// the cockpit's roster, for the names its rows show now; none without a model
+function useRoster(model: AgentsViewModel | undefined): readonly { id: string; name: string }[] {
+    return useAtomValue(model?.agentsAtom ?? NO_AGENTS);
+}
 
 export function PairRelayView({
     relay,
@@ -37,6 +53,7 @@ export function PairRelayView({
     proseClass: string;
 }) {
     const pair = usePairOf(agentTabId)?.pair ?? null;
+    const roster = useRoster(model);
     if (relay.kind === "ended") {
         return <EndedLine commands={relay.commands} />;
     }
@@ -62,7 +79,7 @@ export function PairRelayView({
             {relay.brief != null ? (
                 <BriefLine
                     text={relay.brief}
-                    what={`arcterm paired this agent with ${briefJudges(relay.brief).join(", ")}${first != null ? ` · ${first}` : ""}`}
+                    what={`arcterm paired this agent with ${liveBriefJudges(briefJudges(relay.brief), pair, roster).join(", ")}${first != null ? ` · ${first}` : ""}`}
                 />
             ) : null}
             {relay.messages.map((msg, n) =>
@@ -76,6 +93,7 @@ export function PairRelayView({
                         msg={msg}
                         partKey={relayPartKey(itemKey, n)}
                         tabId={relaySenderTab(pair, msg)}
+                        pairId={pair?.id ?? null}
                         model={model}
                         proseClass={proseClass}
                     />
@@ -135,28 +153,33 @@ function ReplyCard({
     tabId,
     model,
     proseClass,
+    pairId = null,
 }: {
     msg: RelayMessage;
     partKey: string;
     tabId: string | null;
     model?: AgentsViewModel;
     proseClass: string;
+    pairId?: string | null; // the live pair a judge's reply was relayed in: on screen, it counts as read there
 }) {
     const [raw, toggleRaw] = useFold();
+    const shown = liveSenderName(msg.name, tabId, useRoster(model));
+    const headRef = useRef<HTMLDivElement>(null);
+    useRelaySeen(headRef, msg.from === "judge" ? pairId : null, tabId, msg);
     const role = msg.from === "judge" ? "judge" : "working agent";
     const Icon = msg.from === "judge" ? Scale : Hammer;
     const name = (
-        <span data-chat-relay-name title={msg.name} className="min-w-0 truncate font-medium text-primary">
-            {msg.name}
+        <span data-chat-relay-name title={shown} className="min-w-0 truncate font-medium text-primary">
+            {shown}
         </span>
     );
     return (
         <section
             data-chat-relay-msg={msg.from}
-            aria-label={`Reply from the ${role} ${msg.name}`}
+            aria-label={`Reply from the ${role} ${shown}`}
             className="flex w-[88%] min-w-0 flex-col gap-[10px] rounded-[12px] border border-edge-mid px-[14px] pb-[14px] pt-[10px]"
         >
-            <div className="flex min-w-0 items-center gap-2 text-[12.5px]">
+            <div ref={headRef} className="flex min-w-0 items-center gap-2 text-[12.5px]">
                 <span
                     aria-hidden
                     className="flex h-[22px] w-[22px] flex-none items-center justify-center rounded-[6px] bg-surface-raised text-secondary"
@@ -167,7 +190,7 @@ function ReplyCard({
                     <button
                         type="button"
                         data-chat-relay-open
-                        title={`Open ${msg.name}'s conversation`}
+                        title={`Open ${shown}'s conversation`}
                         onClick={(e) => fireAndForget(() => openOrPeek(model, { kind: "agent", tabId }, e))}
                         className={cn(
                             FOCUS_RING,
@@ -216,6 +239,43 @@ function ReplyCard({
             </div>
         </section>
     );
+}
+
+// A judge's reply in the working agent's Chat is read once its head comes on screen, with the window in front: the pair's
+// new-message count drops by it as the person scrolls. Another surface hides the Agent one (display: none), so its cards
+// never intersect there. Once is enough: the seen count only rises.
+function useRelaySeen(
+    ref: RefObject<HTMLElement | null>,
+    pairId: string | null,
+    judgeTab: string | null,
+    msg: RelayMessage
+): void {
+    const { time, raw } = msg;
+    useEffect(() => {
+        const el = ref.current;
+        if (el == null || pairId == null || judgeTab == null || typeof IntersectionObserver === "undefined") {
+            return;
+        }
+        let onScreen = false;
+        const mark = () => {
+            if (onScreen && document.visibilityState === "visible") {
+                stop();
+                fireAndForget(() => markRelaySeen(pairId, judgeTab, time, raw));
+            }
+        };
+        const observer = new IntersectionObserver((seen) => {
+            onScreen = seen.some((s) => s.isIntersecting);
+            mark();
+        });
+        // a card already on screen while the window was in the back is read when the window comes to the front
+        const stop = () => {
+            observer.disconnect();
+            document.removeEventListener("visibilitychange", mark);
+        };
+        observer.observe(el);
+        document.addEventListener("visibilitychange", mark);
+        return stop;
+    }, [ref, pairId, judgeTab, time, raw]);
 }
 
 // your own words the pair relayed: your bubble, saying where they went

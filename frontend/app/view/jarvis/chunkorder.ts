@@ -64,6 +64,26 @@ const BADGE_CLASS: Record<ChunkPriority, string> = {
     information: "text-ink-faint",
 };
 
+// How many open chunks carry each level, highest first, for the badges on an initiative's card and row ("1 critical",
+// "4 high"), so the levels show without opening it. Open is the order of work's statuses (pending, active, blocked,
+// deferred): done, skipped and proposed chunks are not counted, nor a chunk saved for later, nor one with no level or
+// one this build does not know. Levels with none are left out.
+export type PriorityCount = { level: ChunkPriority; n: number };
+
+const OPEN_STATUSES = new Set(["pending", "active", "blocked", "deferred"]);
+
+export function openPriorityCounts(chunks: { status: string; priority?: string; later?: boolean }[]): PriorityCount[] {
+    const counts = new Map<ChunkPriority, number>();
+    for (const c of chunks) {
+        if (isLater(c) || !OPEN_STATUSES.has(c.status) || !CHUNK_PRIORITIES.includes(c.priority as ChunkPriority)) {
+            continue;
+        }
+        const level = c.priority as ChunkPriority;
+        counts.set(level, (counts.get(level) ?? 0) + 1);
+    }
+    return CHUNK_PRIORITIES.filter((l) => counts.has(l)).map((level) => ({ level, n: counts.get(level) }));
+}
+
 export function priorityBadge(priority?: string): { text: string; className: string } | null {
     if (!priority || !CHUNK_PRIORITIES.includes(priority as ChunkPriority)) {
         return null;
