@@ -990,9 +990,9 @@ export function leavingLine(data: SessionIdeasData, now: number): string | null 
 }
 
 // A rough cost of one session's haiku call: its digest (cut at 60,000 characters) and the project's context. The mean of
-// the calls TestSessionIdeasMeasure made on 2026-11-27 once the prompt listed only the chunks a conversation shares words
-// with (5k-59k a call; docs/open-issues.md, RAM watch); the scan records the real numbers.
-export const SCAN_TOKENS_PER_SESSION = 25_000;
+// the calls TestSessionIdeasMeasure made on 2026-11-27 once the prompt listed only the chunks and commits a conversation
+// shares words with (5k-54k a call; docs/open-issues.md, RAM watch); the scan records the real numbers.
+export const SCAN_TOKENS_PER_SESSION = 22_000;
 
 /** A project the offer can scan alone: its Claude Code folder (the scan's key), its name, the folder its sessions were
  *  started in when one names it (the picker's filter matches it), and its quiet sessions not yet scanned. */
