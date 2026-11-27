@@ -79,6 +79,9 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- An agent that was waiting on a background command (a dev app coming up, a build) carries on after arcterm restarts:
+  it is told which of its commands the restart stopped and starts again what its work still needs. Before, it sat idle
+  until you typed something.
 - A long chunk title in the rail's Initiative tab reads across the whole row when you select it: Work on this sits on
   its own line under the title, no longer beside it squeezing the title into a narrow column of short lines.
 - The context ring under Chat's input drops right after a compaction: it shows what the compaction left (14k), not
