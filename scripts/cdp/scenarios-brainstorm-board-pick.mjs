@@ -53,6 +53,7 @@ export default function (kit) {
         BS_TOPIC,
         bsAgentTook,
         bsArrangeAgent,
+        bsHoldAgent,
         bsMark,
         bsMouseClick,
         bsShowFile,
@@ -146,6 +147,11 @@ export default function (kit) {
             const steps = [];
             const rec = (step, ok, detail) => steps.push({ step, ok, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
 
+            // The pick sends a line to the agent, which wavesrv types only into a shell that holds a process (it refuses a block
+            // whose shell holds nothing, as a killed agent's): bsHoldAgent starts a nested shell in the terminal, whose prompt
+            // is then the last row. It runs here, with the pane shown, where the terminal's scrollback has always read
+            const hold = await bsHoldAgent(h, ctx);
+
             // a line typed before the shell's first prompt can be lost, and the terminal is where a sent line is read
             let prompt = "";
             for (const start = Date.now(); Date.now() - start < PROMPT_WAIT_MS; await polishNap(250)) {
@@ -153,8 +159,9 @@ export default function (kit) {
                 prompt = rows.at(-1)?.trim() ?? "";
                 if (PROMPT.test(prompt)) break;
             }
-            rec("0. the agent's shell is at its prompt, so a sent line can be read", PROMPT.test(prompt), { lastRow: prompt });
-            if (!PROMPT.test(prompt)) return steps;
+            const held = hold.ok === true;
+            rec("0. the agent's shell is at its prompt, so a sent line can be read", PROMPT.test(prompt) && held, { lastRow: prompt, hold });
+            if (!PROMPT.test(prompt) || !held) return steps;
             await h.ev(TYPED_INSTALL);
 
             // 1. the question with a board tile per answer, and no board open

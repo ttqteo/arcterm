@@ -33198,7 +33198,9 @@ const canvasSwap = {
 // brainstorm.json, the agent's side of the protocol, and waits for the poller to draw it. A sent line is read
 // twice: from the page's own agentprompt calls, which say exactly what was sent, and from the terminal's
 // scrollback, which says it reached the shell (a session with no mod has it typed, and the shell runs each one as
-// a failing command). A sent line reads as the agent writing until the agent takes it, so between two sends
+// a failing command). wavesrv types a line only into a shell that holds a process (AgentPrompt refuses one with nothing
+// under it, as a killed agent's), so the arrange starts a nested shell in the terminal for the lines to be typed into
+// (bsHoldAgent). A sent line reads as the agent writing until the agent takes it, so between two sends
 // bsAgentTook plays the agent ending its turn.
 const BS_TOPIC = "consumer-lag-alerts";
 // a second topic revealed from the same terminal, whose file never parses
@@ -33530,7 +33532,9 @@ const bsRead = (h, ctx) =>
                 text: flat(p),
                 calls: [...p.querySelectorAll("span")].filter((s) => flat(s.firstElementChild) === "Agent’s call").length,
             })),
-            history: [...(pane?.querySelectorAll("[data-brainstorm-history] > div") ?? [])].map((r) => ({
+            // the rail is the pane's, or drawn in the details rail's place outside it (the details rail is open by default), so
+            // its entries are read from the document, as the rail, railText and railTabs below are
+            history: [...(document.querySelector("[data-brainstorm-rail]")?.querySelectorAll("[data-brainstorm-history] > div") ?? [])].map((r) => ({
                 label: flat(r.querySelector("span")),
                 text: flat(r),
                 picked: [...r.querySelectorAll("li[data-picked]")].map(flat),
@@ -33568,8 +33572,13 @@ const bsRead = (h, ctx) =>
             okBtn: btn(pane?.querySelector("[data-brainstorm-ok]")),
             confirm: btns("That’s right"),
             guessFor: btns("Guess for me").length,
+            // a crowded header drops the words of its view switch and keeps the icons (headermodel.nextHeaderLabels, which
+            // brings them back only once the header is wider than it was), so a segment with no text is named by its title
             switch: sw
-                ? [...sw.querySelectorAll("button")].map((b) => ({ label: flat(b), pressed: b.getAttribute("aria-pressed") }))
+                ? [...sw.querySelectorAll("button")].map((b) => ({
+                      label: flat(b) || (b.getAttribute("title") ?? "").replace(/ \\(.*$/, ""),
+                      pressed: b.getAttribute("aria-pressed"),
+                  }))
                 : null,
             hint: flat(document.querySelector("[data-footer-chips]")),
             compacted: flat(document.querySelector("[data-brainstorm-compacted]")),
@@ -33594,11 +33603,14 @@ const bsStates = (s) => Object.fromEntries((s?.parts ?? []).map((p) => [p.id, p.
 const bsPart = (s, id) => s?.parts?.find((p) => p.id === id);
 const bsBrief = (s) => ({ ok: s.ok, ms: s.ms, view: s.view, error: s.error, text: (s.text ?? "").slice(0, 300) });
 
-// clicks the button labelled `label` inside the scope, and says what it found
+// clicks the button labelled `label` inside the scope, and says what it found. A button is labelled by its text; one with
+// no text (the header's view switch with its words dropped, see bsRead's switch) by its title up to the " (" that opens
+// its keys, so "Brainstorm (b, Ctrl+Shift+B from the terminal)" is labelled Brainstorm
 const bsClick = (h, scope, label) =>
     h.ev(`(() => {
-        const b = [...(${scope}?.querySelectorAll("button") ?? [])]
-            .find((x) => (x.textContent || "").replace(/\\s+/g, " ").trim() === ${JSON.stringify(label)});
+        const named = (x) =>
+            (x.textContent || "").replace(/\\s+/g, " ").trim() || (x.getAttribute("title") ?? "").replace(/ \\(.*$/, "");
+        const b = [...(${scope}?.querySelectorAll("button") ?? [])].find((x) => named(x) === ${JSON.stringify(label)});
         if (!b) return "missing";
         if (b.disabled) return "disabled";
         b.click();
@@ -33794,6 +33806,56 @@ async function bsNothingTyped(h, mark) {
     await polishNap(BS_NOTHING_TYPED_MS);
     const sent = await bsSentSince(h, mark);
     return { ok: sent.length === 0, sent };
+}
+
+// --- a terminal whose shell holds a process, so a line sent to the agent is typed ----------------------------------------
+// AgentPrompt (wshserver_agentmsg.go unreachablePrompt) refuses a block whose shell is running with nothing under it:
+// shellHoldsNothing reads that as the agent that ran there having exited, "back at its shell prompt, its agent gone", and
+// nothing is typed. A plain terminal at its prompt, which is what openCanvasTerminal makes, is exactly that, so every line the
+// page sends it is refused: the recorder sees the call and the terminal never shows the line. What an agent is to its shell
+// is a child process that reads what is typed, so bsHoldAgent starts one, a nested shell of the root's own kind (it reads
+// the typed lines the way the root shell did and shows them as it does, and its last row is a prompt), and the root shell
+// waits on it. A scenario that sends lines to its agent calls it (brainstorm-mode in its own arrange, where its terminal is
+// shown; a scenario of bsArrangeAgent's right after bsShowFile, where its terminal's scrollback is known to read); the others
+// keep the plain shell they were written for.
+const BS_HOLD_WAIT_MS = 15000;
+
+// the terminal's scrollback rows that are not blank
+async function bsTermRows(h, ctx) {
+    return (await bsTermText(h, ctx, "\n").catch(() => "")).split("\n").filter((r) => r.trim() !== "");
+}
+
+// The line that starts the child, chosen by the root shell's own prompt. PowerShell starts the executable it is running
+// as, without its profile (a profile's prompt need not end in >); otherwise cmd on Windows (Git Bash's own child) and sh
+// elsewhere
+const bsHoldCommand = (prompt) =>
+    /^PS\b/.test(prompt) ? "& (Get-Process -Id $PID).Path -NoLogo -NoProfile" : process.platform === "win32" ? "cmd" : "sh";
+
+// Waits for the root shell's first prompt (a line typed before it can be lost), types the child's command and waits for the
+// child's prompt: a new last row after the one that held the command. Says whether it is up, the command and the last row;
+// never throws, since step 0 of the scenario that asked reports a hold that failed
+async function bsHoldAgent(h, ctx) {
+    let command = null;
+    let last = "";
+    try {
+        let before = [];
+        for (const start = Date.now(); Date.now() - start < BS_PROMPT_WAIT_MS; await polishNap(250)) {
+            before = await bsTermRows(h, ctx);
+            if (BS_PROMPT.test(before.at(-1)?.trim() ?? "")) break;
+        }
+        last = before.at(-1)?.trim() ?? "";
+        if (!BS_PROMPT.test(last)) return { ok: false, why: "the shell never reached its prompt", lastRow: last };
+        command = bsHoldCommand(last);
+        await h.rpc("controllerinput", { blockid: ctx.blockId, inputdata64: Buffer.from(`${command}\r`).toString("base64") });
+        for (const start = Date.now(); Date.now() - start < BS_HOLD_WAIT_MS; await polishNap(250)) {
+            const rows = await bsTermRows(h, ctx);
+            last = rows.at(-1)?.trim() ?? "";
+            if (rows.length > before.length && BS_PROMPT.test(last)) return { ok: true, command, lastRow: last };
+        }
+        return { ok: false, why: "the child's prompt never came", command, lastRow: last };
+    } catch (e) {
+        return { ok: false, why: `starting the child threw: ${String(e?.message ?? e)}`, command, lastRow: last };
+    }
 }
 
 const bsPublishStatus = (h, ctx) =>
@@ -34172,6 +34234,9 @@ const brainstormMode = {
             `!!document.querySelector('[data-agent-terminal="${ctx.tabId}"]') && !document.querySelector('[data-tree-terminal="${ctx.tabId}"]')`,
             BS_ROSTER_WAIT_MS
         );
+        // the lines this scenario sends are typed only into a shell that holds a process (bsHoldAgent): its prompt stays the
+        // last row, so step 0 still reads the agent at a prompt
+        if (ctx.inRoster) ctx.hold = await bsHoldAgent(h, ctx);
         return ctx;
     },
     async assert(h, ctx) {
@@ -34190,8 +34255,8 @@ const brainstormMode = {
         }
         rec(
             "0. the terminal is a roster agent at its shell's prompt",
-            ctx.inRoster === true && BS_PROMPT.test(prompt),
-            { tab: ctx.tabId, inRoster: ctx.inRoster, lastRow: prompt }
+            ctx.inRoster === true && BS_PROMPT.test(prompt) && ctx.hold?.ok === true,
+            { tab: ctx.tabId, inRoster: ctx.inRoster, lastRow: prompt, hold: ctx.hold }
         );
         if (!ctx.inRoster) return steps;
         await h.ev(BS_TYPED_INSTALL);
@@ -35399,7 +35464,8 @@ const brainstormMode = {
 // a terminal as brainstorm-mode does, reveals one brainstorm.json and judges the state its board draws. Nothing is
 // sent to the agent: brainstorm-mode covers the lines -----------------------------------------------------------------
 
-// a terminal made a roster agent, with the file written; teardown removes whatever was made
+// a terminal made a roster agent, with the file written; teardown removes whatever was made. Its shell holds nothing, so a
+// line the page sends the agent is refused: a scenario that sends lines calls bsHoldAgent once its pane is shown
 async function bsArrangeAgent(h, topic, file) {
     const cwd = mkdtempSync(join(tmpdir(), "verify-bs-reasons-"));
     const ctx = { cwd, topic, file: join(cwd, ".superpowers", "brainstorm", topic, "brainstorm.json") };
@@ -66396,6 +66462,7 @@ const BS_KIT = {
     bsAgentTook,
     bsPublishStatus,
     bsPublishProc,
+    bsHoldAgent,
     bsOpenDesign,
     bsCloseDesign,
     bsTermText,
