@@ -24,6 +24,7 @@ import { takeoverAgents } from "../library/libraryboardsmodel";
 import { askBoard, moveBoardToChat, rerouteBoardTurn, retryBoardTurn, stopBoardTurn } from "./boardactions";
 import { BoardAskBox } from "./boardaskbox";
 import { BoardCanvas, type BoardSelection } from "./boardcanvas";
+import { boardCommands } from "./boardcommands";
 import { boardKey } from "./boardentries";
 import { BoardHeader } from "./boardheader";
 import type { BoardPart } from "./boardparts";
@@ -86,10 +87,16 @@ function OpenCell({
     const [part, setPart] = useState<number | null>(null);
     const [turnsFolded, setTurnsFolded] = useAtom(turnsFoldedAtom(key));
     // the Edit switch and the drawings row the canvas publishes (boardstore.ts): in view mode a selection is only Show's,
-    // so a line asks about the drawing in view and about no shapes; in Edit about the drawing a selection names
+    // so a line asks about the drawing in view, and about the part being read as if its shapes were selected; in Edit
+    // about the drawing a selection names, and its shapes
     const editing = useAtomValue(boardEditingAtom(boardId));
     const drawings = useAtomValue(boardDrawingsAtom(boardId));
-    const askedSelection = editing ? selection : null;
+    const readPart = part != null ? (parts[part] ?? null) : null;
+    const askedSelection: BoardSelection | null = editing
+        ? selection
+        : readPart != null && readPart.ids.length > 0
+          ? { ids: readPart.ids, label: readPart.label }
+          : null;
     const askedDrawing = (editing ? drawings?.selected : null) ?? drawings?.inView ?? null;
 
     // the canvas is gone while another surface shows: what it had selected or shown goes with it
@@ -188,6 +195,7 @@ function OpenCell({
                 parts={parts}
                 part={part}
                 onPart={setPart}
+                onDeletePart={(p) => boardCommands(boardId)?.deletePart(p)}
             />
             {/* the same boxes either way, so expanding never remounts the canvas or drops a half-typed question. Wide
                 enough (640px), the expanded board has the canvas on the left and on its right the turns column with the
@@ -285,6 +293,7 @@ function OpenCell({
                                     <BoardAskBox
                                         editing={editing}
                                         selection={askedSelection}
+                                        part={editing ? null : (askedSelection?.label ?? null)}
                                         allowed={askAllowed(talk, alive)}
                                         placeholder={alive ? undefined : "Its chat has ended: pick a chat above to ask"}
                                         onAsk={(question) =>

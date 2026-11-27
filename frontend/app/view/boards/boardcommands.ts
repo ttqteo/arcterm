@@ -9,6 +9,7 @@
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { Drawing } from "./boarddrawings";
 import { bump } from "./boardmodel";
+import type { BoardPart } from "./boardparts";
 
 export type ExportKind = "png" | "svg";
 
@@ -19,6 +20,8 @@ export interface BoardCommands {
     exportDrawing(drawingId: string, kind: ExportKind): Promise<string | null>;
     // the drawing and everything in it, gone as one undo step; false when it was not on the board
     deleteDrawing(drawingId: string): boolean;
+    // the part's shapes (a part drawn by mistake), the view back on the whole drawing; false when none is left
+    deletePart(part: BoardPart): boolean;
 }
 
 const commands = new Map<string, BoardCommands[]>();

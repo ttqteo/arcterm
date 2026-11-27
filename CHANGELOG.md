@@ -49,6 +49,9 @@ and a picture given to a line that is not big.
 - Three buttons on a board's strip, beside Edit: Copy view puts the board on the clipboard as a picture, just as it
   shows at its zoom; Export saves the drawing in view as a PNG or SVG file; Delete removes the drawing in view, with an
   Undo on its toast.
+- While you read one part of a board (‹ 3/13 ›), the ask line under its turns asks about that part: its shapes go with
+  your question as if you had selected them, and the line says "Asking about" and the part's name. A trash button
+  beside the stepper deletes the part (one drawn by mistake), with an Undo on its toast.
 
 ### Changed
 

@@ -28,6 +28,9 @@ export interface PartElement {
     containerId?: string | null;
     text?: string;
     name?: string | null;
+    frameId?: string | null;
+    startBinding?: { elementId: string } | null;
+    endBinding?: { elementId: string } | null;
 }
 
 export interface BoardPart {
@@ -37,6 +40,9 @@ export interface BoardPart {
     y: number;
     w: number;
     h: number;
+    // the shapes the part holds, with their bound labels and the arrows and lines tied to them: what asking about the
+    // part sends as its selection, and what deleting it takes
+    ids: string[];
 }
 
 export interface Viewport {
@@ -116,7 +122,7 @@ function clusterPart(group: Box[], index: number): BoardPart {
     const r = Math.max(...group.map((b) => b.r));
     const b = Math.max(...group.map((bx) => bx.b));
     const titled = group.filter((bx) => bx.text !== "").sort((p, q) => p.y - q.y || p.x - q.x);
-    return { id: `part-${index}`, label: titled[0]?.text ?? "", x, y, w: r - x, h: b - y };
+    return { id: `part-${index}`, label: titled[0]?.text ?? "", x, y, w: r - x, h: b - y, ids: [] };
 }
 
 export function boardParts(elements: readonly PartElement[]): BoardPart[] {
@@ -130,8 +136,9 @@ export function boardParts(elements: readonly PartElement[]): BoardPart[] {
             y: f.y,
             w: f.width,
             h: f.height,
+            ids: [] as string[],
         }));
-        return named(readingOrder(parts));
+        return withIds(live, named(readingOrder(parts)), true);
     }
     const labels = new Map<string, string>();
     for (const el of live) {
@@ -163,10 +170,50 @@ export function boardParts(elements: readonly PartElement[]): BoardPart[] {
             if (groups.length < 2) {
                 return [];
             }
-            return named(readingOrder(groups.map((g, i) => clusterPart(g, i))));
+            return withIds(live, named(readingOrder(groups.map((g, i) => clusterPart(g, i)))), false);
         }
     }
     return [];
+}
+
+function centreIn(el: PartElement, p: BoardPart): boolean {
+    const cx = el.x + el.width / 2;
+    const cy = el.y + el.height / 2;
+    return cx >= p.x - 1 && cx <= p.x + p.w + 1 && cy >= p.y - 1 && cy <= p.y + p.h + 1;
+}
+
+// A frame part holds what is in its frame; a cluster, the shapes whose centre is inside it. Their bound labels go with
+// them, and an arrow or line tied to one of them, or tied to none and centred inside, so a deleted part leaves no arrow
+// pointing at nothing.
+function partIds(live: readonly PartElement[], p: BoardPart, byFrame: boolean): string[] {
+    const ids = new Set<string>();
+    for (const el of live) {
+        if (FRAME_TYPES.has(el.type) || LOOSE_TYPES.has(el.type) || (el.type === "text" && el.containerId)) {
+            continue;
+        }
+        if (byFrame ? el.frameId === p.id : centreIn(el, p)) {
+            ids.add(el.id);
+        }
+    }
+    for (const el of live) {
+        if (LOOSE_TYPES.has(el.type)) {
+            const ends = [el.startBinding?.elementId, el.endBinding?.elementId].filter((id) => id != null);
+            const inside = byFrame ? el.frameId === p.id : centreIn(el, p);
+            if (ends.some((id) => ids.has(id!)) || (ends.length === 0 && inside)) {
+                ids.add(el.id);
+            }
+        }
+    }
+    for (const el of live) {
+        if (el.type === "text" && el.containerId != null && ids.has(el.containerId)) {
+            ids.add(el.id);
+        }
+    }
+    return [...ids];
+}
+
+function withIds(live: readonly PartElement[], parts: BoardPart[], byFrame: boolean): BoardPart[] {
+    return parts.map((p) => ({ ...p, ids: partIds(live, p, byFrame) }));
 }
 
 // a part with no text is named by its place in the reading order

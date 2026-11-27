@@ -24,6 +24,12 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
 
 ## 2026-11-27
 
+- [ ] (arcterm) **Ask about, and delete, the part being read** (`boardsplit.tsx`, `boardaskbox.tsx`, `boardheader.tsx`,
+  `boardparts.ts` ids). Unit tests and typecheck; scenario boards-split 8c written, not run. On a dense board press
+  ‹ 8 parts ›: the ask line reads "Asking about <part>"; ask something and check the drawer's or agent's answer is about
+  that part's shapes only. Press the trash beside the stepper: the part's shapes go, the view eases back to the whole
+  drawing and the count drops by one; the toast's Undo brings them back. An arrow tied to a deleted part's box goes
+  with it.
 - [ ] (arcterm) **Board strip: Copy view, Export, Delete; Tidy gone** (`boardstrip.tsx`, `boardcanvas.tsx`,
   `boardshot.ts`). Unit tests and typecheck; scenario boards-split 18h written, not run (no dev app was up). Open a
   board with several drawings: the strip shows a camera, a download and a trash icon before Edit, and no Tidy. Zoom

@@ -48,6 +48,34 @@ describe("boardParts", () => {
         expect(parts.map((p) => p.label)).toEqual(["4 contributions", "Motivation"]);
     });
 
+    it("lists a part's shapes, their labels and the arrows tied to them", () => {
+        const parts = boardParts([
+            el("a", 0, 0),
+            text("a-label", 10, 10, "first", { containerId: "a" }),
+            el("b", 120, 0),
+            el("c", 1000, 0),
+            el("tie", 100, 25, 900, 0, {
+                type: "arrow",
+                startBinding: { elementId: "b" },
+                endBinding: { elementId: "c" },
+            }),
+            el("loose", 1020, 10, 40, 0, { type: "line" }),
+        ]);
+        expect(parts).toHaveLength(2);
+        expect([...parts[0].ids].sort()).toEqual(["a", "a-label", "b", "tie"]);
+        expect([...parts[1].ids].sort()).toEqual(["c", "loose", "tie"]);
+    });
+
+    it("lists what a frame part's frame holds", () => {
+        const parts = boardParts([
+            el("f1", 0, 0, 400, 300, { type: "frame", name: "Harness" }),
+            el("f2", 800, 0, 400, 300, { type: "frame", name: "Benchmark" }),
+            el("in1", 2000, 2000, 100, 50, { frameId: "f1" }),
+            el("in2", 820, 20, 100, 50, { frameId: "f2" }),
+        ]);
+        expect(parts.map((p) => p.ids)).toEqual([["in1"], ["in2"]]);
+    });
+
     it("lets no arrow or line join two parts", () => {
         const parts = boardParts([
             el("a", 0, 0),
@@ -109,7 +137,7 @@ describe("boardParts", () => {
 });
 
 describe("partViewport", () => {
-    const part: BoardPart = { id: "p", label: "p", x: 100, y: 200, w: 400, h: 300 };
+    const part: BoardPart = { id: "p", label: "p", x: 100, y: 200, w: 400, h: 300, ids: [] };
 
     it("shows a small part whole and centred, never above 1:1", () => {
         const vp = partViewport(part, 1000, 800);
@@ -163,9 +191,9 @@ describe("lerpViewport", () => {
 
 describe("partAt", () => {
     const parts: BoardPart[] = [
-        { id: "big", label: "big", x: 0, y: 0, w: 1000, h: 1000 },
-        { id: "inner", label: "inner", x: 100, y: 100, w: 200, h: 200 },
-        { id: "far", label: "far", x: 3000, y: 0, w: 100, h: 100 },
+        { id: "big", label: "big", x: 0, y: 0, w: 1000, h: 1000, ids: [] },
+        { id: "inner", label: "inner", x: 100, y: 100, w: 200, h: 200, ids: [] },
+        { id: "far", label: "far", x: 3000, y: 0, w: 100, h: 100, ids: [] },
     ];
     it("finds the smallest part holding the point, and none over empty board", () => {
         expect(partAt(parts, 150, 150)).toBe(1);
@@ -179,7 +207,7 @@ describe("partAt", () => {
 describe("viewToScene", () => {
     it("inverts partOnView", () => {
         const vp = { zoom: 0.3, scrollX: 120, scrollY: -40 };
-        const part: BoardPart = { id: "p", label: "p", x: 500, y: 700, w: 10, h: 10 };
+        const part: BoardPart = { id: "p", label: "p", x: 500, y: 700, w: 10, h: 10, ids: [] };
         const at = partOnView(part, vp);
         const back = viewToScene(vp, at.left, at.top);
         expect(back.x).toBeCloseTo(500);
@@ -188,7 +216,7 @@ describe("viewToScene", () => {
 });
 
 describe("needsParts", () => {
-    const a: BoardPart = { id: "a", label: "a", x: 0, y: 0, w: 200, h: 100 };
+    const a: BoardPart = { id: "a", label: "a", x: 0, y: 0, w: 200, h: 100, ids: [] };
     it("is false for a board that reads whole, or one part", () => {
         expect(needsParts([a, { ...a, id: "b", x: 400 }], 1000, 800)).toBe(false);
         expect(needsParts([a], 1000, 800)).toBe(false);
