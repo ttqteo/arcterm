@@ -200,6 +200,25 @@ func finalHoldLifted(ctx context.Context, run *waveobj.Run) bool {
 	return err == nil && finalHold(g) == ""
 }
 
+// awaitsFinalRerun reports a done run whose land g's failed final stage holds, or will hold once the land gets its
+// turn: g stays open for `wsh runs rerun-final`, whose pass lifts the hold (finalHoldLifted). Settled cancelled, it
+// would refuse the rerun (portal run 8e459efd). A run that landed, lands in the checkout, or whose hold the human
+// dismissed waits on nothing. The lead's tab need not wait with it: a done run's lead reads no wake (PostWake).
+func awaitsFinalRerun(g *waveobj.TaskGroup, run *waveobj.Run) bool {
+	if run.Status != jarvis.RunStatus_Done || run.LandPath == "" || finalHold(g) != finalFailedHold {
+		return false
+	}
+	switch l := run.Land; {
+	case l == nil:
+		return true // complete marks the run done, then lands it
+	case l.State == LandState_Landed:
+		return false
+	case l.State == LandState_Held:
+		return !l.Dismissed
+	}
+	return true // pending, queued or resolving: the land meets the final's hold when it runs
+}
+
 func saveLand(ctx context.Context, channelID, runID string, land *waveobj.RunLand) error {
 	if err := wstore.UpdateRun(ctx, channelID, runID, func(r *waveobj.Run) error {
 		r.Land = land

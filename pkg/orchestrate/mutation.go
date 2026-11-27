@@ -764,9 +764,10 @@ func Cancel(ctx context.Context, dagID string) error {
 // its lead is gone, and a landed run deleted the branch every tick reads. Cancelled, not done, for a done run too:
 // done is the final stage's verdict, which a failed or unfinished final never gave; the run records that it was
 // completed anyway, and g.Final keeps what the stage found. A done run's finalizing dag is left to finish until the
-// run lands, since the held land waits on its verdict, and a running one keeps its children (ShouldCloseOrchestratorLead).
+// run lands, since the held land waits on its verdict; so is a blocked one whose failed final holds the land, for the
+// human's rerun (awaitsFinalRerun). A running one keeps its children (ShouldCloseOrchestratorLead).
 func endedRunSettles(g *waveobj.TaskGroup, owner *waveobj.Run) bool {
-	if g.Status == DagStatus_Done || g.Status == DagStatus_Cancelled {
+	if g.Status == DagStatus_Done || g.Status == DagStatus_Cancelled || awaitsFinalRerun(g, owner) {
 		return false
 	}
 	switch owner.Status {

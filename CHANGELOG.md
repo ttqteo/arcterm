@@ -63,6 +63,9 @@ and a picture given to a line that is not big.
 
 - The context ring under Chat's input drops right after a compaction: it shows what the compaction left (14k), not
   the reading from before it, until the next reply brings a fresh one.
+- `wsh runs rerun-final` works on a finished run whose merge a failed final stage held, as its help says: once the
+  rerun passes, the run merges by itself. Before, it answered "run … is cancelled" and the run could only be merged
+  with `wsh runs land --force`.
 - Long chunk and initiative titles show in full. In the agent panel's Initiative tab, the title and the chunk the
   agent is on take up to three lines, and the chunk under the cursor or with its menu open shows its whole title.
   Plan to review, in Chat and in the panel, shows each proposed chunk whole.
