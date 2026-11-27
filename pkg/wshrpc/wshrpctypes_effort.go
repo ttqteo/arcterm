@@ -122,7 +122,7 @@ type CommandEffortDeleteData struct {
 // EffortOp is one typed mutation. Op selects the behavior; the remaining fields are the op's
 // arguments (validation picks which are required per op).
 type EffortOp struct {
-	Op        string `json:"op"`                  // rename | setProject | setTicket | setStatus | unarchive | link | addChunk | removeChunk | renameChunk | recheckChunk | moveChunk | setChunkStatus | setChunkStage | setChunkDue | setChunkLater | appendNote | editNote | removeNote | setOwner | advance | reopen
+	Op        string `json:"op"`                  // rename | setProject | setTicket | setStatus | unarchive | link | addChunk | removeChunk | renameChunk | recheckChunk | moveChunk | setChunkStatus | setChunkStage | setChunkDue | setChunkLater | setChunkPriority | appendNote | editNote | removeNote | setOwner | advance | reopen
 	Title     string `json:"title,omitempty"`     // rename
 	Project   string `json:"project,omitempty"`   // setProject ("" clears)
 	Ticket    string `json:"ticket,omitempty"`    // setTicket ("" clears)
@@ -134,6 +134,7 @@ type EffortOp struct {
 	Owner     string `json:"owner,omitempty"`     // addChunk / setOwner ("" clears)
 	Stage     string `json:"stage,omitempty"`     // addChunk / setChunkStage ("" clears)
 	Due       string `json:"due,omitempty"`       // addChunk / setChunkDue: a local date, YYYY-MM-DD ("" clears)
+	Priority  string `json:"priority,omitempty"`  // addChunk / setChunkPriority: critical | high | medium | low | information ("" clears)
 	Note      string `json:"note,omitempty"`      // appendNote text; also honored by setChunkStatus/advance/reopen as extra text, and by addChunk as the chunk's first note; editNote new text
 	NoteTs    int64  `json:"notets,omitempty"`    // editNote/removeNote: the note's ts, a stale guard beside At
 	Kind      string `json:"kind,omitempty"`      // attachWork: "run" | "agent"
@@ -236,7 +237,7 @@ type EffortSummary struct {
 	Chunks      []EffortChunkSummary `json:"chunks,omitempty"`
 	Done        int                  `json:"done"`
 	Total       int                  `json:"total"`
-	ActiveChunk string               `json:"activechunk,omitempty"` // first chunk with status active, else first non-done label
+	ActiveChunk string               `json:"activechunk,omitempty"` // the chunk next in the order of work (waveobj.NextChunkIndex): the active chunk, else the highest-ranked pending one
 	UpdatedTs   int64                `json:"updatedts"`
 	PinnedTs    int64                `json:"pinnedts,omitempty"` // when it was pinned to the Brief's cards; 0 = not pinned
 	LastNote    *EffortLastNote      `json:"lastnote,omitempty"` // the newest note on the effort or any chunk
@@ -276,6 +277,7 @@ type EffortChunkSummary struct {
 	Status   string                 `json:"status"`
 	Stage    string                 `json:"stage,omitempty"`
 	Owner    string                 `json:"owner,omitempty"`
+	Priority string                 `json:"priority,omitempty"` // critical | high | medium | low | information; "" when unset (ranks as medium)
 	WorkRefs []waveobj.ChunkWorkRef `json:"workrefs,omitempty"`
 	Blocked  *EffortChunkBlocked    `json:"blocked,omitempty"` // set only on a blocked chunk
 }

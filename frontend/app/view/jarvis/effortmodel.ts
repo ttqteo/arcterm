@@ -1,3 +1,4 @@
+import { orderOfWork } from "./chunkorder";
 import { planChunks } from "./laterchunk";
 
 export type ChunkTone = "done" | "active" | "blocked" | "deferred" | "skipped" | "pending";
@@ -171,14 +172,15 @@ export function stageOptions(rows: { stage: string }[]): string[] {
     return seen;
 }
 
-// the chunk an initiative picks up next: the active one, else the first not yet settled, a proposed one not
-// being settled or open. It is the rule the backend's summary leg applies, so every surface that names "next"
-// names the same chunk. The caller passes the plan (planChunks): a chunk saved for later is never next.
-export function nextChunk<T extends { status: string }>(chunks: T[]): T | undefined {
-    return (
-        chunks.find((c) => c.status === "active") ??
-        chunks.find((c) => c.status !== "done" && c.status !== "skipped" && c.status !== "proposed")
-    );
+// The chunk an initiative picks up next: the first of its order of work (chunkorder.ts), which is the active chunk, else
+// the highest-ranked pending chunk, else, with nothing pending, the highest-ranked blocked or deferred one, equal ranks
+// in plan order. A chunk with no priority ranks as medium; a proposed, done or skipped chunk is never next, and neither is
+// a chunk saved for later, whatever its level (the later ones are filtered out before the rank). It is the rule `advance`
+// and the backend's summary apply (pkg/waveobj/chunkorder.go), so every surface that names "next" names the same chunk.
+export function nextChunk<T extends { status: string; priority?: string; later?: boolean }>(
+    chunks: T[]
+): T | undefined {
+    return orderOfWork(planChunks(chunks))[0];
 }
 
 // the bar's order: settled work first, then what is moving, then what is waiting

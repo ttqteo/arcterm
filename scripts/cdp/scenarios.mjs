@@ -123,6 +123,7 @@ import jarvisCardsScenarios from "./scenarios-jarvis-cards.mjs";
 import jarvisLaterScenarios from "./scenarios-jarvis-later.mjs";
 import libraryScenarios, { openLibraryTab } from "./scenarios-library.mjs";
 import jarvisSheetScenarios from "./scenarios-jarvis-sheet.mjs";
+import chunkPriorityScenarios from "./scenarios-chunk-priority.mjs";
 import { sessionIdeasBriefScenarios } from "./sessionideas-brief-scenarios.mjs";
 import { sessionIdeasPetScenarios } from "./sessionideas-pet-scenarios.mjs";
 import kaelAskKeysScenarios from "./scenarios-kael-ask-keys.mjs";
@@ -68805,6 +68806,17 @@ async function initPress(h, key, mods = 0) {
     await polishNap(300);
 }
 
+// The Alt twin of a bare agent key, as a person holds Alt (Option on a Mac) and types the letter: keyDown and keyUp with
+// the Alt bit and no text. With the agent in Chat the bare letters are text (`i` from the surface types into the message
+// box: chatTakesLetters in bindings.ts), and the key that acts there is the twin (Alt+I is agent:initiative-alt).
+async function initPressAlt(h, key) {
+    const code = `Key${key.toUpperCase()}`;
+    const windowsVirtualKeyCode = key.toUpperCase().charCodeAt(0);
+    await h.cdp("Input.dispatchKeyEvent", { type: "keyDown", key, code, windowsVirtualKeyCode, modifiers: 1 });
+    await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", key, code, windowsVirtualKeyCode, modifiers: 1 });
+    await polishNap(300);
+}
+
 async function initType(h, text) {
     await h.cdp("Input.insertText", { text });
     await polishNap(200);
@@ -69747,35 +69759,45 @@ const initiativeLink = {
                 async () => ((await initChunk(h, ctx.oid, LINK_C1))?.workrefs ?? []).some((w) => w.oref === `agent:${ctx.agentA.tabId}`),
                 5000
             );
-            // the chip reads "<title> · done/total", and the rail has the Initiative tab now (it is not the one on show)
+            // the chip reads "<title> · done/total", and the rail has the Initiative tab now and shows it: an agent whose rail
+            // tab the person has not set opens on its initiative (contextPanel, 22600bbcf), and this agent's was never set
             const chip3 = await h.ev(`(() => {
                 const el = document.querySelector("[data-agent-header] [data-initiative-link-open]");
                 const tab = document.querySelector('aside[aria-label="Agent details"] [data-rail-tab="initiative"]');
                 return { chip: (el?.textContent ?? "").replace(/\\s+/g, " ").trim(), tab: !!tab, selected: tab?.getAttribute("aria-selected") ?? null };
             })()`);
             rec(
-                "3. picking the initiative sets the tab's session:effort, the header's ◇ chip (its title and done/total) takes the link chip's place, the rail gets an Initiative tab, and the agent is attached to its first pending chunk",
+                "3. picking the initiative sets the tab's session:effort, the header's ◇ chip (its title and done/total) takes the link chip's place, the rail gets an Initiative tab and opens on it (the person had set no tab), and the agent is attached to its first pending chunk",
                 // the title and the count are two spans a flex gap apart: no space between them in the text
-                set === true && linked === true && gone === true && attached === true && chip3.chip.replace(/\s*·\s*/, " · ") === `${LINK_TITLE} · 0/2` && chip3.tab === true && chip3.selected === "false",
+                set === true && linked === true && gone === true && attached === true && chip3.chip.replace(/\s*·\s*/, " · ") === `${LINK_TITLE} · 0/2` && chip3.tab === true && chip3.selected === "true",
                 { set, linked, gone, attached, chip3 }
             );
 
             // --- 3b. the peek gesture on the chip peeks the initiative and leaves the rail's tab alone -----------------------------------
+            // The link opened the Initiative tab by itself (step 3), so there is nothing a peek could fail to select: a click on
+            // Overview is the person's own pick (it ends the automatic one), and the peek must leave the rail on it.
+            await initClick(h, `document.querySelector('aside[aria-label="Agent details"] [data-rail-tab="overview"]')`);
+            const onOverview = await polishWaitFor(
+                h,
+                `document.querySelector('aside[aria-label="Agent details"] [data-rail-tab="initiative"]')?.getAttribute("aria-selected") === "false"`,
+                3000
+            );
             await initClick(h, LINK_CHIP, { mods: PEEK_BIT });
             const peeked = await polishWaitFor(h, `!!document.querySelector('[data-pet-peek-item="effort"]')`, INIT_WAIT_MS);
             const peekText = await h.ev(`document.querySelector('[data-pet-peek-item="effort"]')?.innerText.includes(${JSON.stringify(LINK_TITLE)}) ?? false`);
             const tabAfterPeek = await h.ev(`document.querySelector('aside[aria-label="Agent details"] [data-rail-tab="initiative"]')?.getAttribute("aria-selected") ?? null`);
             rec(
-                `3b. ${PEEK_GLYPH.split(" · ")[1]} on the header's ◇ chip peeks the initiative in Sprout's popup and does not select the Initiative tab`,
-                peeked === true && peekText === true && tabAfterPeek === "false",
-                { peeked, peekText, tabAfterPeek }
+                `3b. ${PEEK_GLYPH.split(" · ")[1]} on the header's ◇ chip peeks the initiative in Sprout's popup and does not select the Initiative tab (the rail having been put on Overview first)`,
+                onOverview === true && peeked === true && peekText === true && tabAfterPeek === "false",
+                { onOverview, peeked, peekText, tabAfterPeek }
             );
             await h.ev(`document.querySelector('[data-pet-peek] button[aria-label="Close Jarvis panel"]')?.click()`);
             await polishWaitFor(h, `!document.querySelector("[data-pet-peek]")`, 3000);
 
-            // --- 3c. `i` opens the Initiative tab, with the initiative and the chunk the agent is on --------------------------------------
-            await h.ev(`document.querySelector("[data-cockpit-surface-wrap]")?.focus()`);
-            await initPress(h, "i");
+            // --- 3c. Alt+I opens the Initiative tab, with the initiative and the chunk the agent is on -----------------------------------
+            // (the agent is in Chat, where the bare `i` types into the message box; the rail is on Overview from step 3b)
+            await h.ev(`document.activeElement?.blur?.(); document.querySelector("[data-cockpit-surface-wrap]")?.focus()`);
+            await initPressAlt(h, "i");
             const tabUp = await polishWaitFor(h, `!!${LINK_PANE(ctx.agentA.tabId)}`, 4000);
             await polishNap(500);
             const pane3 = await h.ev(`(() => {
@@ -69787,7 +69809,7 @@ const initiativeLink = {
             })()`);
             await h.shot("cdp-shots/initiative-link-3-tab.png");
             rec(
-                `3c. \`i\` opens the Initiative tab of the rail: the initiative's title, 0/2, and the agent on "${LINK_C1}", the keyboard in the tab`,
+                `3c. Alt+I (the twin of \`i\`) opens the Initiative tab of the rail: the initiative's title, 0/2, and the agent on "${LINK_C1}", the keyboard in the tab`,
                 tabUp === true && pane3.selected === "initiative" && pane3.title === LINK_TITLE && pane3.progress === "0/2" && pane3.on.includes(LINK_C1) && pane3.focusIn === true,
                 { tabUp, pane3 }
             );
@@ -69809,12 +69831,12 @@ const initiativeLink = {
                 { onJarvis, surface }
             );
 
-            // --- 4. the second agent: `i` opens the picker, and a new initiative is made from the session -------------------------------
+            // --- 4. the second agent: Alt+I opens the picker, and a new initiative is made from the session ---------------------------
             await initFocusAgent(h, ctx.agentB);
             const offeredB = await polishWaitFor(h, `!!${LINK_BTN}`, INIT_WAIT_MS);
             const nameB = await h.ev(`document.querySelector("[data-agent-header] .font-semibold")?.textContent.trim() ?? ""`);
-            await h.ev(`document.querySelector("[data-cockpit-surface-wrap]")?.focus()`);
-            await initPress(h, "i");
+            await h.ev(`document.activeElement?.blur?.(); document.querySelector("[data-cockpit-surface-wrap]")?.focus()`);
+            await initPressAlt(h, "i");
             const pickerB = await polishWaitFor(h, `!!document.querySelector("[data-initiative-picker] [data-picker-new]")`, 4000);
             await initClick(h, `document.querySelector("[data-initiative-picker] [data-picker-new]")`);
             const newOref = await (async () => {
@@ -69835,12 +69857,16 @@ const initiativeLink = {
                 const el = ${LINK_CHIP};
                 return { chip: (el?.textContent ?? "").replace(/\\s+/g, " ").trim(), progress: !!el?.querySelector("[data-initiative-link-progress]") };
             })()`);
-            // `i` on it opens the tab, which shows the idea with no chunk to pick
-            await h.ev(`document.querySelector("[data-cockpit-surface-wrap]")?.focus()`);
-            await initPress(h, "i");
+            // Alt+I on it opens the tab, which shows the idea with no chunk to pick. The link opened the tab by itself (the person
+            // had set none on this agent: contextPanel, 22600bbcf), and from a shown Initiative tab the key steps back, so the
+            // rail is put on Overview first, as the person's own pick.
+            await initClick(h, `document.querySelector('aside[aria-label="Agent details"] [data-rail-tab="overview"]')`);
+            await polishWaitFor(h, `!${LINK_PANE(ctx.agentB.tabId)}`, 3000);
+            await h.ev(`document.activeElement?.blur?.(); document.querySelector("[data-cockpit-surface-wrap]")?.focus()`);
+            await initPressAlt(h, "i");
             const tabB = await polishWaitFor(h, `!!${LINK_PANE(ctx.agentB.tabId)}`, 4000);
             rec(
-                '4. on the second agent `i` opens the picker; "+ New initiative from this session" makes an idea titled with the agent\'s name, sets session:effort to it, the header\'s ◇ chip reads "initiative" (no count: it has no chunk), and `i` then opens its Initiative tab',
+                '4. on the second agent Alt+I opens the picker; "+ New initiative from this session" makes an idea titled with the agent\'s name, sets session:effort to it, the header\'s ◇ chip reads "initiative" (no count: it has no chunk), and Alt+I (from Overview) then opens its Initiative tab',
                 offeredB === true && pickerB === true && nameB !== "" && idea?.title === nameB && (idea.chunks ?? []).length === 0 && linkedB === true &&
                     chipB.chip === "initiative" && chipB.progress === false && tabB === true,
                 { offeredB, pickerB, nameB, newOref, title: idea?.title, chunks: (idea?.chunks ?? []).length, linkedB, chipB, tabB }
@@ -76793,6 +76819,9 @@ export const SCENARIOS = [
     ...jarvisCardsScenarios(JARVIS_KIT),
     ...jarvisActivityScenarios(JARVIS_KIT),
     ...jarvisSheetScenarios(JARVIS_KIT),
+    // chunk-priority (the sheet) and chunk-priority-rail (the Agent rail's Initiative tab): the Jarvis kit and the Chat
+    // redesign's, which the rail scenario's tabs, reload and saved-grid keys come from
+    ...chunkPriorityScenarios({ ...CR_KIT, ...JARVIS_KIT }),
     ...jarvisLaterScenarios(JARVIS_KIT),
     ...laterSheetScenarios(JARVIS_KIT),
     ...laterSectionScenarios(JARVIS_KIT),

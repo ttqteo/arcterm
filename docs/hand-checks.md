@@ -63,6 +63,11 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
   ring unclipped at the row's edge. Not exercised even by the scenario: Dismiss, a failed Add ("Try again"), an exited
   agent's static card, and a new initiative as the target. (`chatinitiativecard.tsx`; `later-card` checks the end
   state.)
+- [ ] (arcterm) **The Priority menu on a chunk low in a long plan** (`inlinetrackerview.tsx`, run af2b7967 t-4). The
+  Priority section adds about 230px to the status menu, and Final measured its bottom at 960px in an 864px window. On a
+  Jarvis initiative card with a long plan, open the status word of the last chunk: the whole menu, Priority to Rename,
+  can be reached (it scrolls into view inside the plan, or opens upward) and nothing is cut off under the window edge.
+
 - [ ] (arcterm) **A background command's RAM** (`pkg/resmon/shelltaskmem.go`, `agentram.ts bgTaskRamBytes`,
   `agenttree.tsx BgTaskRam`, `agentdetailsrail.tsx`). Go and vitest only, no dev app run. With the sidebar's RAM field
   on, have an agent run a build in the background (`task tauri:build FAST=1`): its task row reads `running · 8m · 1.2

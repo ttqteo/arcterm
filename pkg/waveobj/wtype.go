@@ -962,6 +962,10 @@ type EffortChunk struct {
 	// status is pending, active or blocked. The mark is not a status: ticking the chunk done ends it, and "Not later"
 	// drops it without finishing the chunk.
 	Later bool `json:"later,omitempty"`
+	// Priority is how soon the chunk should open: critical | high | medium | low | information ("" when no one has
+	// set it, which ranks as medium). It decides which open chunk is next (see ChunkOrderOfWork) and changes
+	// nothing about the chunk's position or number. The server refuses any other value.
+	Priority string `json:"priority,omitempty"`
 	// BaseCommit is the project's HEAD when the chunk's text was last written against the code: when it was
 	// added, renamed, or marked checked. A chunk not yet done can go stale while the code moves under it; the
 	// commits since this one are what the chunk card and `wsh effort show` count. "" when the initiative had no

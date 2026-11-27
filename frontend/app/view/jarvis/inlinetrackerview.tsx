@@ -35,6 +35,7 @@ import {
 import { AnimatePresence } from "motion/react";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { staleChip } from "./chunkdrift";
+import { CHUNK_PRIORITIES, priorityBadge } from "./chunkorder";
 import { chunkTone, type ChunkTone } from "./effortmodel";
 import { chunkDueChip, localDay, type DetailRow } from "./inlinetracker";
 import { trackerMenuAtom } from "./jarvisstore";
@@ -97,6 +98,8 @@ export type TrackerEdits = {
     onSetStatus: (label: string, status: string) => void;
     // a chunk saved for later joins the plan ("Not later", on false) where it stands in the chunk order, or goes back
     onSetLater: (label: string, on: boolean) => void;
+    // a level of chunkorder.ts's CHUNK_PRIORITIES, or "" to clear it
+    onSetPriority: (label: string, priority: string) => void;
     onRenameChunk: (label: string, next: string) => void;
     // the proposed group's decisions: Accept makes the chunks pending, Drop removes them
     onAcceptProposed: (labels: string[]) => void;
@@ -413,6 +416,16 @@ export function InitiativeDetail({
         const selected = cursor === row.id;
         const label = row.row.label;
         const due = chunkDueChip(row.row.due, row.row.status, localDay(new Date()));
+        // the level's word, in the due chip's size and after it; a chunk with no level shows none
+        const badge = priorityBadge(row.row.priority);
+        const level = badge != null ? badge.text : "";
+        // the menu closes on any pick, as Status does; the level it already holds changes nothing
+        const pickPriority = (next: string) => {
+            setMenu(null);
+            if (next !== level) {
+                edits.onSetPriority(label, next);
+            }
+        };
         const chip = staleChip(row.row.status, stale?.get(label));
         const menuId = row.id + "#menu";
         const otherStages = [...edits.stages, ""].filter((s) => s !== row.row.stage);
@@ -478,6 +491,15 @@ export function InitiativeDetail({
                             {due.text}
                         </span>
                     ) : null}
+                    {badge != null ? (
+                        <span
+                            data-jarvis-chunk-priority-badge={badge.text}
+                            title={`Priority: ${badge.text}`}
+                            className={cn("flex-none text-[10.5px] leading-[17px]", badge.className)}
+                        >
+                            {badge.text}
+                        </span>
+                    ) : null}
                     {chip != null ? (
                         <span
                             data-jarvis-chunk-stale={chip.gone ? "gone" : "changed"}
@@ -491,7 +513,10 @@ export function InitiativeDetail({
                         </span>
                     ) : null}
                     {/* a column of its own, so the status words line up down the plan */}
-                    <span className="w-11 flex-none text-right text-[10.5px] leading-[17px] tabular-nums text-muted">
+                    <span
+                        data-jarvis-chunk-notes={row.notes}
+                        className="w-11 flex-none text-right text-[10.5px] leading-[17px] tabular-nums text-muted"
+                    >
                         {row.notes > 0 ? `${row.notes} ${row.notes === 1 ? "note" : "notes"}` : ""}
                     </span>
                     <button
@@ -517,6 +542,14 @@ export function InitiativeDetail({
                     </button>
                 </div>
                 <Menu open={menu === menuId} className="right-1 top-[calc(100%+2px)] w-[184px]">
+                    {/* the level decides which chunk opens next; a section at the top, as Status below it is */}
+                    <MenuHead>Priority</MenuHead>
+                    {CHUNK_PRIORITIES.map((p) => (
+                        <PriorityItem key={p} value={p} current={level} onPick={pickPriority} />
+                    ))}
+                    <MenuRule />
+                    <PriorityItem value="" current={level} onPick={pickPriority} />
+                    <MenuRule />
                     <MenuHead>Status</MenuHead>
                     {STATUSES.map((s) => (
                         <MenuItem
@@ -891,33 +924,77 @@ function MenuHead({ children }: { children: React.ReactNode }) {
 
 const MenuRule = () => <div className="mx-0.5 my-[5px] h-px bg-border" />;
 
+// One line of the Priority section: a level of the scale, or "" for No priority. The level now held is ticked (a Check
+// in the glyph column, a heavier word). critical keeps the badge's red and "No
+// priority" the dim of an unset chunk, as the board draws them; the tick is grey, not the board's accent (DESIGN.md
+// marks a selection in grey).
+function PriorityItem({
+    value,
+    current,
+    onPick,
+}: {
+    value: string;
+    current: string;
+    onPick: (priority: string) => void;
+}) {
+    const held = value === current;
+    return (
+        <MenuItem
+            checked={held}
+            active={held}
+            dataPriority={value === "" ? "none" : value}
+            toneClass={cn(
+                value === "critical" && "text-error",
+                value === "" && "text-ink-mid",
+                held && "font-semibold"
+            )}
+            glyph={held ? <Check size={12} strokeWidth={2.4} aria-hidden className="text-ink-hi" /> : undefined}
+            onClick={() => onPick(value)}
+        >
+            {value === "" ? "No priority" : value}
+        </MenuItem>
+    );
+}
+
 function MenuItem({
     children,
     onClick,
     glyph,
     hint,
     active,
+    checked,
     danger,
     disabled,
+    toneClass,
+    dataPriority,
 }: {
     children: React.ReactNode;
     onClick: () => void;
     glyph?: React.ReactNode;
     hint?: string;
     active?: boolean;
+    // a choice of a group of one-of-many (the Priority section): the item says whether it is the one held
+    checked?: boolean;
     danger?: boolean;
     disabled?: boolean;
+    // the item's own colour and weight, over the menu's default
+    toneClass?: string;
+    dataPriority?: string;
 }) {
     return (
         <button
             type="button"
             disabled={disabled}
             onClick={onClick}
+            data-jarvis-chunk-priority={dataPriority}
+            role={checked !== undefined ? "menuitemradio" : undefined}
+            aria-checked={checked}
             className={cn(
                 "flex w-full items-center gap-2 rounded-[5px] px-[7px] py-[5px] text-left text-[12px]",
                 danger ? "text-error hover:bg-error/10" : "text-secondary hover:bg-surface-hover",
                 active && "bg-surface-hover",
                 disabled ? "cursor-default opacity-40" : "cursor-pointer",
+                toneClass,
                 FOCUS
             )}
         >

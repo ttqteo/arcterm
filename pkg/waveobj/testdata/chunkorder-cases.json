@@ -1,0 +1,154 @@
+{
+    "priorities": ["information", "low", "medium", "high", "critical"],
+    "cases": [
+        {
+            "name": "no chunks give an empty order",
+            "chunks": [],
+            "order": []
+        },
+        {
+            "name": "done, skipped and proposed chunks are left out, whatever their level",
+            "chunks": [
+                { "status": "done", "priority": "critical" },
+                { "status": "pending", "priority": "low" },
+                { "status": "skipped", "priority": "critical" },
+                { "status": "proposed", "priority": "critical" },
+                { "status": "pending", "priority": "information" }
+            ],
+            "order": [1, 4]
+        },
+        {
+            "name": "no open chunk gives an empty order",
+            "chunks": [
+                { "status": "done", "priority": "high" },
+                { "status": "skipped" },
+                { "status": "proposed", "priority": "critical" }
+            ],
+            "order": []
+        },
+        {
+            "name": "pending chunks come by level: critical, high, medium, low, information",
+            "chunks": [
+                { "status": "pending", "priority": "information" },
+                { "status": "pending", "priority": "low" },
+                { "status": "pending", "priority": "medium" },
+                { "status": "pending", "priority": "high" },
+                { "status": "pending", "priority": "critical" }
+            ],
+            "order": [4, 3, 2, 1, 0]
+        },
+        {
+            "name": "an unset chunk ranks as medium: above low, below high",
+            "chunks": [
+                { "status": "pending", "priority": "low" },
+                { "status": "pending" },
+                { "status": "pending", "priority": "high" }
+            ],
+            "order": [2, 1, 0]
+        },
+        {
+            "name": "unset, empty and medium tie, so position decides",
+            "chunks": [
+                { "status": "pending", "priority": "medium" },
+                { "status": "pending", "priority": "" },
+                { "status": "pending" },
+                { "status": "pending", "priority": "medium" }
+            ],
+            "order": [0, 1, 2, 3]
+        },
+        {
+            "name": "an unset chunk later in the plan still opens before a low one earlier in it",
+            "chunks": [
+                { "status": "pending", "priority": "low" },
+                { "status": "pending", "priority": "low" },
+                { "status": "pending" }
+            ],
+            "order": [2, 0, 1]
+        },
+        {
+            "name": "information is the lowest level: it comes after every other open chunk",
+            "chunks": [
+                { "status": "pending", "priority": "information" },
+                { "status": "pending", "priority": "low" },
+                { "status": "pending" }
+            ],
+            "order": [2, 1, 0]
+        },
+        {
+            "name": "chunks of one level come in plan order",
+            "chunks": [
+                { "status": "pending", "priority": "high" },
+                { "status": "pending", "priority": "critical" },
+                { "status": "pending", "priority": "high" },
+                { "status": "pending", "priority": "critical" }
+            ],
+            "order": [1, 3, 0, 2]
+        },
+        {
+            "name": "the active chunk is first, whatever the level of a pending one",
+            "chunks": [
+                { "status": "pending", "priority": "critical" },
+                { "status": "active", "priority": "low" },
+                { "status": "pending", "priority": "high" }
+            ],
+            "order": [1, 0, 2]
+        },
+        {
+            "name": "an active chunk with no level still comes before a critical pending one",
+            "chunks": [{ "status": "pending", "priority": "critical" }, { "status": "active" }],
+            "order": [1, 0]
+        },
+        {
+            "name": "a second active chunk follows the first by position, ahead of every pending chunk",
+            "chunks": [
+                { "status": "pending", "priority": "critical" },
+                { "status": "active" },
+                { "status": "active", "priority": "critical" },
+                { "status": "pending", "priority": "high" }
+            ],
+            "order": [1, 2, 0, 3]
+        },
+        {
+            "name": "a pending chunk comes before any blocked or deferred chunk, whatever their levels",
+            "chunks": [
+                { "status": "blocked", "priority": "critical" },
+                { "status": "deferred", "priority": "critical" },
+                { "status": "pending", "priority": "information" }
+            ],
+            "order": [2, 0, 1]
+        },
+        {
+            "name": "blocked and deferred chunks follow the pending ones, by level and then position",
+            "chunks": [
+                { "status": "deferred", "priority": "low" },
+                { "status": "blocked", "priority": "high" },
+                { "status": "pending", "priority": "low" },
+                { "status": "deferred", "priority": "high" },
+                { "status": "blocked" }
+            ],
+            "order": [2, 1, 3, 4, 0]
+        },
+        {
+            "name": "with only parked chunks the highest level is first",
+            "chunks": [
+                { "status": "deferred", "priority": "low" },
+                { "status": "blocked", "priority": "critical" }
+            ],
+            "order": [1, 0]
+        },
+        {
+            "name": "a mixed plan: active, then pending by level, then parked, settled ones out",
+            "chunks": [
+                { "status": "done", "priority": "critical" },
+                { "status": "blocked", "priority": "critical" },
+                { "status": "pending" },
+                { "status": "active", "priority": "information" },
+                { "status": "pending", "priority": "high" },
+                { "status": "skipped", "priority": "high" },
+                { "status": "deferred" },
+                { "status": "pending", "priority": "high" }
+            ],
+            "order": [3, 4, 7, 2, 1, 6]
+        }
+    ]
+}

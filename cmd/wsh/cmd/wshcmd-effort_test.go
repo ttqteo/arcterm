@@ -89,8 +89,9 @@ func TestFormatEffortShowLeavesProposedOutOfProgress(t *testing.T) {
 	}}
 	got := formatEffortShow(e)
 	want := "# T (active) — 1/2\n" + // a proposed chunk is a suggestion: not in the total
+		"Order of work: 2\n" + // and not in the order of work either
 		"  1. [done] A\n" +
-		"  2. [pending] B\n" +
+		"  2. [pending] B ← next\n" +
 		"  3. [proposed] P\n" // but it still prints, so the plan can be read
 	if got != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
@@ -106,10 +107,11 @@ func TestFormatEffortShowLeavesSkippedOutOfProgress(t *testing.T) {
 	}}
 	got := formatEffortShow(e)
 	want := "# T (active) — 1/3\n" + // skipped has left the plan, as the band counts; deferred is still in it
+		"Order of work: 4, 3\n" + // pending D opens before deferred C, though C comes first
 		"  1. [done] A\n" +
 		"  2. [skipped] B\n" +
 		"  3. [deferred] C\n" +
-		"  4. [pending] D\n"
+		"  4. [pending] D ← next\n"
 	if got != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
 	}
@@ -141,9 +143,10 @@ func TestFormatEffortShowGroupsConsecutiveStages(t *testing.T) {
 	}}
 	got := formatEffortShow(e)
 	want := "# T (active) — 1/5\n" +
+		"Order of work: 2, 3, 4, 5\n" + // under the title, before any stage header
 		"  -- Evidence --\n" +
 		"  1. [done] a\n" +
-		"  2. [active] b\n" +
+		"  2. [active] b ← next\n" +
 		"  -- Rollout --\n" +
 		"  3. [pending] c\n" +
 		"  4. [pending] d\n" + // unstaged: no header, and it does not inherit Rollout
@@ -177,8 +180,9 @@ func TestFormatEffortShowPrintsOpenChunksBase(t *testing.T) {
 	drift := func(label string) *wshrpc.CommandEffortChunkDriftRtnData { return drifts[label] }
 	got := formatEffortShowWith(e, drift)
 	want := "# T (active) — 1/6\n" +
+		"Order of work: 2, 3, 5, 6, 4\n" +
 		"  1. [done] A\n" +
-		"  2. [pending] B (written at 012345678, 23 commits ago; IMAGE.md deleted, old.ts renamed to src/new.ts, store.ts changed 4 times, a.go changed once)\n" +
+		"  2. [pending] B (written at 012345678, 23 commits ago; IMAGE.md deleted, old.ts renamed to src/new.ts, store.ts changed 4 times, a.go changed once) ← next\n" +
 		"  3. [pending] C (written at 012345678, the code has not moved since)\n" +
 		"  4. [blocked] D (written at 012345678)\n" + // drift unknown: the base alone
 		"  5. [pending] E\n" +
@@ -284,7 +288,7 @@ func TestEffortChunkLaterAddFlagSetsTheMark(t *testing.T) {
 			fl.Changed = false
 		}
 	})
-	op, err := chunkAddOp(effortChunkAddCmd, "Push DEV", now)
+	op, err := chunkAddOp(effortChunkAddCmd, []string{"e", "Push DEV"}, now)
 	if err != nil || op.Op != "addChunk" || op.Later || op.Label != "Push DEV" {
 		t.Fatalf("add with no flags: %+v, %v; want a plain addChunk", op, err)
 	}
@@ -294,26 +298,54 @@ func TestEffortChunkLaterAddFlagSetsTheMark(t *testing.T) {
 	if err := f.Set("due", "+7d"); err != nil {
 		t.Fatal(err)
 	}
-	op, err = chunkAddOp(effortChunkAddCmd, "Push DEV", now)
+	op, err = chunkAddOp(effortChunkAddCmd, []string{"e", "Push DEV"}, now)
 	if err != nil || op.Op != "addChunk" || !op.Later || op.Due != "2026-12-04" {
 		t.Fatalf("add --later --due +7d: %+v, %v; want a later addChunk due 2026-12-04", op, err)
 	}
 }
 
-// a later chunk prints with its mark, keeps its number (the ref `effort chunk` takes) and is no part of done/total
+// a later chunk prints with its mark, keeps its number (the ref `effort chunk` takes), is no part of done/total and is
+// never in the order of work or marked next, whatever its level
 func TestEffortShowLater(t *testing.T) {
 	e := &waveobj.Effort{Title: "T", Status: "active", Chunks: []waveobj.EffortChunk{
 		{Label: "A", Status: "done"},
-		{Label: "Push DEV", Status: "pending", Later: true, Due: "2026-12-01", Owner: "me"},
+		{Label: "Push DEV", Status: "pending", Later: true, Due: "2026-12-01", Owner: "me", Priority: "critical"}, // the top level, and still not next
 		{Label: "B", Status: "pending"},
 		{Label: "Delete the backup branch", Status: "done", Later: true}, // ticked: still not the initiative's work
 	}}
 	got := formatEffortShow(e)
 	want := "# T (active) — 1/2\n" +
+		"Order of work: 3\n" +
 		"  1. [done] A\n" +
-		"  2. [pending] Push DEV · later (owner: me) (due 2026-12-01)\n" +
-		"  3. [pending] B\n" +
+		"  2. [pending] Push DEV · later (owner: me) (due 2026-12-01) (priority critical)\n" +
+		"  3. [pending] B ← next\n" +
 		"  4. [done] Delete the backup branch · later\n"
+	if got != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+// show keeps position order and its stage runs; the Order of work line says which open chunk opens when, in numbers,
+// and the next chunk carries the mark. The level prints after owner and due, and before the base.
+func TestFormatEffortShowPrintsOrderOfWorkNextMarkAndLevel(t *testing.T) {
+	const sha = "0123456789abcdef0123456789abcdef01234567"
+	e := &waveobj.Effort{Title: "T", Status: "active", Chunks: []waveobj.EffortChunk{
+		{Label: "A", Status: "done"},
+		{Label: "B", Status: "pending", Priority: "low"},
+		{Label: "C", Status: "pending", Priority: "critical", Owner: "x", Due: "2026-12-01", BaseCommit: sha},
+		{Label: "D", Status: "blocked", Priority: "high"}, // parked work opens after every pending chunk
+		{Label: "E", Status: "pending"},                   // unset ranks as medium
+		{Label: "P", Status: "proposed", Priority: "critical"},
+	}}
+	got := formatEffortShow(e)
+	want := "# T (active) — 1/5\n" +
+		"Order of work: 3, 5, 2, 4\n" +
+		"  1. [done] A\n" +
+		"  2. [pending] B (priority low)\n" +
+		"  3. [pending] C (owner: x) (due 2026-12-01) (priority critical) (written at 012345678) ← next\n" +
+		"  4. [blocked] D (priority high)\n" +
+		"  5. [pending] E\n" +
+		"  6. [proposed] P (priority critical)\n"
 	if got != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
 	}
@@ -326,6 +358,96 @@ func TestEffortShowLaterOnlyInitiative(t *testing.T) {
 	got := formatEffortShow(e)
 	if !strings.HasPrefix(got, "# Ideas (active) — 0/0\n") || !strings.Contains(got, "  1. [pending] Decide which parser takes audit: logs · later\n") {
 		t.Fatalf("got:\n%s", got)
+	}
+}
+
+// the active chunk is first in the order of work whatever the others' levels, and it carries the next mark
+func TestFormatEffortShowNextIsTheActiveChunk(t *testing.T) {
+	e := &waveobj.Effort{Title: "T", Status: "active", Chunks: []waveobj.EffortChunk{
+		{Label: "A", Status: "active", Priority: "information"},
+		{Label: "B", Status: "pending", Priority: "critical"},
+	}}
+	got := formatEffortShow(e)
+	want := "# T (active) — 0/2\n" +
+		"Order of work: 1, 2\n" +
+		"  1. [active] A (priority information) ← next\n" +
+		"  2. [pending] B (priority critical)\n"
+	if got != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+// with no open chunk there is nothing to order and nothing to mark
+func TestFormatEffortShowWithNoOpenChunkHasNoOrderOfWork(t *testing.T) {
+	e := &waveobj.Effort{Title: "T", Status: "done", Chunks: []waveobj.EffortChunk{
+		{Label: "A", Status: "done", Priority: "high"},
+		{Label: "B", Status: "skipped"},
+		{Label: "P", Status: "proposed", Priority: "critical"},
+	}}
+	got := formatEffortShow(e)
+	want := "# T (done) — 1/1\n" + // the skipped and the proposed chunk are both out of the total
+		"  1. [done] A (priority high)\n" +
+		"  2. [skipped] B\n" +
+		"  3. [proposed] P (priority critical)\n"
+	if got != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
+	}
+	if strings.Contains(got, "Order of work") || strings.Contains(got, "← next") {
+		t.Fatalf("no chunk is open, yet show prints an order or a next mark:\n%s", got)
+	}
+}
+
+func TestEffortChunkPriorityRegistered(t *testing.T) {
+	if !hasSub(effortChunkCmd, "priority") {
+		t.Fatal("`effort chunk priority` subcommand is not registered")
+	}
+}
+
+// the command takes the effort, the chunk and the level (or "" to clear it): three arguments, so a forgotten level
+// is an error rather than a silent clear
+func TestEffortChunkPriorityTakesThreeArgs(t *testing.T) {
+	if err := effortChunkPriorityCmd.Args(effortChunkPriorityCmd, []string{"e", "1"}); err == nil {
+		t.Fatal("`effort chunk priority <effort> <chunk>` with no level should be refused")
+	}
+	if err := effortChunkPriorityCmd.Args(effortChunkPriorityCmd, []string{"e", "1", "high"}); err != nil {
+		t.Fatalf("a full call was refused: %v", err)
+	}
+	if err := effortChunkPriorityCmd.Args(effortChunkPriorityCmd, []string{"e", "1", ""}); err != nil {
+		t.Fatalf("an empty level clears the priority, and was refused: %v", err)
+	}
+}
+
+// the usage line names every level the server accepts, so an agent reading --help knows the scale
+func TestEffortChunkPriorityUseNamesEveryLevel(t *testing.T) {
+	for _, use := range []string{effortChunkPriorityCmd.Use, effortChunkAddCmd.Use} {
+		for _, level := range waveobj.ChunkPriorities {
+			if !strings.Contains(use, level) {
+				t.Fatalf("usage %q does not name the level %q", use, level)
+			}
+		}
+	}
+}
+
+func TestEffortChunkPriorityFlagOnAdd(t *testing.T) {
+	if effortChunkAddCmd.Flags().Lookup("priority") == nil {
+		t.Fatal("`effort chunk add --priority` is not registered")
+	}
+}
+
+// `chunk add --priority high` reaches the op; no flag leaves it unset
+func TestEffortChunkPriorityReachesTheAddOp(t *testing.T) {
+	now := time.Date(2026, 11, 27, 12, 0, 0, 0, time.Local)
+	t.Cleanup(func() { _ = effortChunkAddCmd.Flags().Set("priority", "") })
+	op, err := chunkAddOp(effortChunkAddCmd, []string{"e", "Re-measure"}, now)
+	if err != nil || op.Op != "addChunk" || op.Label != "Re-measure" || op.Priority != "" {
+		t.Fatalf("without the flag: %+v, %v", op, err)
+	}
+	if err := effortChunkAddCmd.Flags().Set("priority", "high"); err != nil {
+		t.Fatal(err)
+	}
+	op, err = chunkAddOp(effortChunkAddCmd, []string{"e", "Re-measure"}, now)
+	if err != nil || op.Priority != "high" {
+		t.Fatalf("with --priority high: %+v, %v", op, err)
 	}
 }
 

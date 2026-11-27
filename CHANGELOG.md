@@ -41,6 +41,12 @@ and a picture given to a line that is not big.
   Jarvis right under Waiting on you, grouped by initiative with its age and due day, ticked off when done, and Ask agent
   on an item takes you to the agent that said it (or reopens its conversation) with the passage quoted in the chat box.
   Saved items stay out of the initiative's plan, its count and its next step. <!-- big --> <!-- shot: none -->
+- Give a chunk a priority (critical, high, medium, low or information) from the menu on its status word, or with
+  `wsh effort chunk priority`. The level shows as a word on the chunk's row, and the chunk that opens next, the one
+  the "next" arrow points at, is the open chunk with the highest level, equal levels keeping their plan order. Advancing
+  an initiative, `wsh effort show` and the agent's Initiative tab follow the same order, so a chunk no longer has to move
+  up the plan, and change its number, to come first. <!-- big -->
+  <!-- shot: 1.12.0-chunk-priority.webp -->
 - A running background command shows how much RAM it holds, beside how long it has run, in the sidebar and in the
   agent's Background tasks. On Windows an agent's RAM now counts what its commands run too, such as a build's compilers,
   which it used to leave out.

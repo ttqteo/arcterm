@@ -697,6 +697,274 @@ func TestApplyOpsAddChunkWithDue(t *testing.T) {
 	expectErrCode(t, err, "EC-INVALID-DUE")
 }
 
+// ---- chunk priority: setChunkPriority, addChunk's Priority, and advance's order of work ----
+
+// mkPriorityEffort is an effort whose chunks are the given ones, labelled and in the order written.
+func mkPriorityEffort(chunks ...waveobj.EffortChunk) *waveobj.Effort {
+	return &waveobj.Effort{Title: "t", Status: "active", Chunks: chunks}
+}
+
+// advanceTo applies one advance and returns the labels of the chunks that are active afterwards, joined by ", ".
+func advanceTo(t *testing.T, e *waveobj.Effort) string {
+	t.Helper()
+	if err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "advance"}}, "", effortNow); err != nil {
+		t.Fatal(err)
+	}
+	var active []string
+	for _, c := range e.Chunks {
+		if c.Status == "active" {
+			active = append(active, c.Label)
+		}
+	}
+	return strings.Join(active, ", ")
+}
+
+func TestAdvanceOpensByPriorityThenPosition(t *testing.T) {
+	e := mkPriorityEffort(
+		waveobj.EffortChunk{Label: "A", Status: "active"},
+		waveobj.EffortChunk{Label: "B", Status: "pending", Priority: "low"},
+		waveobj.EffortChunk{Label: "C", Status: "pending", Priority: "high"},
+		waveobj.EffortChunk{Label: "D", Status: "pending", Priority: "critical"},
+		waveobj.EffortChunk{Label: "E", Status: "pending", Priority: "critical"},
+	)
+	// the highest rank wins over position, and of two criticals the one that comes first
+	if got := advanceTo(t, e); got != "D" {
+		t.Fatalf("after 1st advance active = %q, want D", got)
+	}
+	if e.Chunks[0].Status != "done" {
+		t.Fatalf("the active chunk is marked done: %+v", e.Chunks[0])
+	}
+	if got := advanceTo(t, e); got != "E" {
+		t.Fatalf("after 2nd advance active = %q, want E", got)
+	}
+	if got := advanceTo(t, e); got != "C" {
+		t.Fatalf("after 3rd advance active = %q, want C", got)
+	}
+	if got := advanceTo(t, e); got != "B" {
+		t.Fatalf("after 4th advance active = %q, want B", got)
+	}
+}
+
+func TestAdvanceUnsetRanksAsMedium(t *testing.T) {
+	e := mkPriorityEffort(
+		waveobj.EffortChunk{Label: "A", Status: "active"},
+		waveobj.EffortChunk{Label: "B", Status: "pending", Priority: "low"},
+		waveobj.EffortChunk{Label: "C", Status: "pending"},
+		waveobj.EffortChunk{Label: "D", Status: "pending", Priority: "medium"},
+	)
+	// unset and medium tie, so C (first by position) opens; low sinks below both
+	if got := advanceTo(t, e); got != "C" {
+		t.Fatalf("1st: active = %q, want C", got)
+	}
+	if got := advanceTo(t, e); got != "D" {
+		t.Fatalf("2nd: active = %q, want D", got)
+	}
+	if got := advanceTo(t, e); got != "B" {
+		t.Fatalf("3rd: active = %q, want B", got)
+	}
+	// and a high chunk after unset ones jumps them
+	e = mkPriorityEffort(
+		waveobj.EffortChunk{Label: "A", Status: "active"},
+		waveobj.EffortChunk{Label: "B", Status: "pending"},
+		waveobj.EffortChunk{Label: "C", Status: "pending", Priority: "high"},
+	)
+	if got := advanceTo(t, e); got != "C" {
+		t.Fatalf("high over unset: active = %q, want C", got)
+	}
+}
+
+func TestAdvanceInformationOpensLast(t *testing.T) {
+	e := mkPriorityEffort(
+		waveobj.EffortChunk{Label: "A", Status: "active"},
+		waveobj.EffortChunk{Label: "B", Status: "pending", Priority: "information"},
+		waveobj.EffortChunk{Label: "C", Status: "pending", Priority: "low"},
+		waveobj.EffortChunk{Label: "D", Status: "pending"},
+	)
+	for i, want := range []string{"D", "C", "B"} {
+		if got := advanceTo(t, e); got != want {
+			t.Fatalf("advance %d: active = %q, want %q", i+1, got, want)
+		}
+	}
+	// information is the lowest level, not an exception: it still opens when nothing else is pending
+	if e.Chunks[1].Status != "active" {
+		t.Fatalf("the information chunk should be open: %+v", e.Chunks[1])
+	}
+}
+
+func TestAdvanceOpensPendingBeforeBlockedOrDeferred(t *testing.T) {
+	e := mkPriorityEffort(
+		waveobj.EffortChunk{Label: "A", Status: "active"},
+		waveobj.EffortChunk{Label: "B", Status: "blocked", Priority: "critical"},
+		waveobj.EffortChunk{Label: "C", Status: "deferred", Priority: "high"},
+		waveobj.EffortChunk{Label: "D", Status: "pending", Priority: "information"},
+	)
+	// ready work opens before parked work, whatever the parked work's level
+	if got := advanceTo(t, e); got != "D" {
+		t.Fatalf("active = %q, want D (pending before blocked/deferred)", got)
+	}
+	if e.Chunks[1].Status != "blocked" || e.Chunks[2].Status != "deferred" {
+		t.Fatalf("parked chunks stay parked: %+v", e.Chunks)
+	}
+	// with nothing pending, the parked chunks open by rank
+	if got := advanceTo(t, e); got != "B" {
+		t.Fatalf("with no pending chunk active = %q, want B (the critical blocked one)", got)
+	}
+	if got := advanceTo(t, e); got != "C" {
+		t.Fatalf("then C, active = %q", got)
+	}
+}
+
+func TestAdvanceWithNoActiveChunkOpensTheHighestRanked(t *testing.T) {
+	e := mkPriorityEffort(
+		waveobj.EffortChunk{Label: "A", Status: "done"},
+		waveobj.EffortChunk{Label: "B", Status: "pending", Priority: "low"},
+		waveobj.EffortChunk{Label: "C", Status: "pending", Priority: "high"},
+	)
+	if got := advanceTo(t, e); got != "C" {
+		t.Fatalf("active = %q, want C", got)
+	}
+	if e.Chunks[0].Status != "done" || e.Chunks[1].Status != "pending" {
+		t.Fatalf("nothing else changes status: %+v", e.Chunks)
+	}
+}
+
+// the server does not forbid a second active chunk: advance marks the first one done and must open a pending chunk,
+// not re-pick the other active one (the order of work lists every active chunk first)
+func TestAdvanceWithSecondActiveChunkOpensAPendingOne(t *testing.T) {
+	e := mkPriorityEffort(
+		waveobj.EffortChunk{Label: "A", Status: "active"},
+		waveobj.EffortChunk{Label: "B", Status: "active"},
+		waveobj.EffortChunk{Label: "C", Status: "pending", Priority: "low"},
+		waveobj.EffortChunk{Label: "D", Status: "pending", Priority: "high"},
+	)
+	if got := advanceTo(t, e); got != "B, D" {
+		t.Fatalf("active = %q, want %q (A done, B untouched, the pending D opened)", got, "B, D")
+	}
+	if e.Chunks[0].Status != "done" {
+		t.Fatalf("the first active chunk is marked done: %+v", e.Chunks[0])
+	}
+	// with nothing left to open, the other active chunk stays as it was
+	e = mkPriorityEffort(
+		waveobj.EffortChunk{Label: "A", Status: "active"},
+		waveobj.EffortChunk{Label: "B", Status: "active"},
+		waveobj.EffortChunk{Label: "C", Status: "done"},
+	)
+	if got := advanceTo(t, e); got != "B" {
+		t.Fatalf("no pending chunk: active = %q, want B only", got)
+	}
+}
+
+func TestAdvanceWritesActivatedNoteOnTheChosenChunk(t *testing.T) {
+	e := mkPriorityEffort(
+		waveobj.EffortChunk{Label: "A", Status: "active"},
+		waveobj.EffortChunk{Label: "B", Status: "pending"},
+		waveobj.EffortChunk{Label: "C", Status: "pending", Priority: "high"},
+	)
+	advanceTo(t, e)
+	if n := e.Chunks[2].Notes; len(n) != 1 || n[0].Text != "activated" {
+		t.Fatalf("C's trail: %+v", n)
+	}
+	if len(e.Chunks[1].Notes) != 0 {
+		t.Fatalf("B was not opened, so it has no trail: %+v", e.Chunks[1].Notes)
+	}
+}
+
+func TestSetChunkPriority(t *testing.T) {
+	e := mkEffort()
+	if err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "setChunkPriority", Chunk: "Phase 3", Priority: "high"}}, "", effortNow); err != nil {
+		t.Fatal(err)
+	}
+	if e.Chunks[2].Priority != "high" {
+		t.Fatalf("priority: %q", e.Chunks[2].Priority)
+	}
+	notes := e.Chunks[2].Notes
+	if len(notes) != 1 || notes[0].Text != "priority: high" {
+		t.Fatalf("trail: %+v", notes)
+	}
+	// a level completes nothing, so it stays out of the delta
+	if len(e.Events) != 0 {
+		t.Fatalf("expected no delta events, got %+v", e.Events)
+	}
+	if e.Chunks[2].UpdatedTs != effortNow {
+		t.Fatalf("UpdatedTs: %d", e.Chunks[2].UpdatedTs)
+	}
+	// "" clears, by number as well as by label
+	if err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "setChunkPriority", Chunk: "3", Priority: ""}}, "", effortNow); err != nil {
+		t.Fatal(err)
+	}
+	if e.Chunks[2].Priority != "" {
+		t.Fatalf("priority not cleared: %q", e.Chunks[2].Priority)
+	}
+	notes = e.Chunks[2].Notes
+	if len(notes) != 2 || notes[1].Text != "priority cleared" {
+		t.Fatalf("trail after clearing: %+v", notes)
+	}
+	for _, level := range waveobj.ChunkPriorities {
+		if err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "setChunkPriority", Chunk: "Phase 3", Priority: level}}, "", effortNow); err != nil {
+			t.Fatalf("%s: %v", level, err)
+		}
+		if e.Chunks[2].Priority != level {
+			t.Fatalf("priority = %q, want %q", e.Chunks[2].Priority, level)
+		}
+	}
+}
+
+func TestSetChunkPriorityRefusesInvalidLevel(t *testing.T) {
+	for _, level := range []string{"urgent", "High", " high", "highest", "0"} {
+		e := mkEffort()
+		err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "setChunkPriority", Chunk: "Phase 3", Priority: level}}, "", effortNow)
+		expectErrCode(t, err, "EC-INVALID-PRIORITY")
+		if e.Chunks[2].Priority != "" || len(e.Chunks[2].Notes) != 0 {
+			t.Fatalf("%q: a rejected batch changed the chunk: %+v", level, e.Chunks[2])
+		}
+	}
+	// the chunk is checked too
+	expectErrCode(t, ApplyEffortOps(mkEffort(), []wshrpc.EffortOp{{Op: "setChunkPriority", Chunk: "nope", Priority: "high"}}, "", effortNow), "EC-UNKNOWN-CHUNK")
+}
+
+// priority decides which chunk opens next, never which chunk is active: only advance moves on
+func TestSetChunkPriorityNeverChangesTheActiveChunk(t *testing.T) {
+	e := mkEffort() // Phase 1 done, Phase 2 active, Phase 3 pending
+	if err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "setChunkPriority", Chunk: "Phase 3", Priority: "critical"}}, "", effortNow); err != nil {
+		t.Fatal(err)
+	}
+	if e.Chunks[1].Status != "active" || e.Chunks[2].Status != "pending" {
+		t.Fatalf("setting a level moved the active slot: %+v", e.Chunks)
+	}
+	if err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "setChunkPriority", Chunk: "Phase 2", Priority: "information"}}, "", effortNow); err != nil {
+		t.Fatal(err)
+	}
+	if e.Chunks[1].Status != "active" {
+		t.Fatalf("lowering the active chunk's level deactivated it: %+v", e.Chunks[1])
+	}
+}
+
+func TestAddChunkPriority(t *testing.T) {
+	e := mkEffort()
+	if err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "addChunk", Label: "Re-measure", Priority: "high"}}, "", effortNow); err != nil {
+		t.Fatal(err)
+	}
+	if e.Chunks[3].Priority != "high" {
+		t.Fatalf("priority: %q", e.Chunks[3].Priority)
+	}
+	// like Due on add, it writes no separate chunk note
+	if len(e.Chunks[3].Notes) != 0 {
+		t.Fatalf("a new chunk's level has no note of its own: %+v", e.Chunks[3].Notes)
+	}
+	err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "addChunk", Label: "Bad", Priority: "urgent"}}, "", effortNow)
+	expectErrCode(t, err, "EC-INVALID-PRIORITY")
+	if len(e.Chunks) != 4 {
+		t.Fatalf("a rejected add changed the effort: %d chunks", len(e.Chunks))
+	}
+	// a proposed chunk can carry a level too
+	if err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "addChunk", Label: "Idea", Status: "proposed", Priority: "low"}}, "", effortNow); err != nil {
+		t.Fatal(err)
+	}
+	if e.Chunks[4].Priority != "low" || e.Chunks[4].Status != "proposed" {
+		t.Fatalf("proposed chunk: %+v", e.Chunks[4])
+	}
+}
+
 func TestApplyOpsAddChunkWithStage(t *testing.T) {
 	e := mkEffort()
 	err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "addChunk", Label: "Phase 4", Stage: " Rollout "}}, "", effortNow)

@@ -320,7 +320,7 @@ var effortDeleteCmd = &cobra.Command{
 
 var effortAdvanceCmd = &cobra.Command{
 	Use:     "advance <effort> [--note \"...\"]",
-	Short:   "mark the active chunk done and activate the next non-done chunk",
+	Short:   "mark the active chunk done and activate the next chunk in the order of work (highest priority first)",
 	Args:    cobra.ExactArgs(1),
 	PreRunE: preRunSetupRpcClient,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -341,15 +341,15 @@ var effortReopenCmd = &cobra.Command{
 }
 
 var effortChunkAddCmd = &cobra.Command{
-	Use:   "add <effort> \"<label>\" [--at N] [--owner X] [--stage S] [--due YYYY-MM-DD|+Nd] [--proposed] [--later]",
+	Use:   "add <effort> \"<label>\" [--at N] [--owner X] [--stage S] [--due YYYY-MM-DD|+Nd] [--priority critical|high|medium|low|information] [--proposed] [--later]",
 	Short: "add a chunk (phase)",
 	Long: `Add a chunk to an initiative. --later saves it for later instead: a task or question kept on the Brief's Later
 section until someone resolves it. A later chunk is not part of the initiative's work: it is left out of done/total, and
-advance, Work on and runs never pick it up.`,
+advance, Work on and runs never pick it up, whatever its priority.`,
 	Args:    cobra.ExactArgs(2),
 	PreRunE: preRunSetupRpcClient,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		op, err := chunkAddOp(cmd, args[1], time.Now())
+		op, err := chunkAddOp(cmd, args, time.Now())
 		if err != nil {
 			return err
 		}
@@ -357,13 +357,16 @@ advance, Work on and runs never pick it up.`,
 	},
 }
 
-// chunkAddOp is the addChunk op `effort chunk add` sends for label and the command's flags; now is the day "+Nd" counts from.
-func chunkAddOp(cmd *cobra.Command, label string, now time.Time) (wshrpc.EffortOp, error) {
+// chunkAddOp is the addChunk op `chunk add` sends, built from its arguments and flags; now is the day "+Nd" counts from.
+func chunkAddOp(cmd *cobra.Command, args []string, now time.Time) (wshrpc.EffortOp, error) {
 	due, err := resolveDue(mustFlagString(cmd, "due"), now)
 	if err != nil {
 		return wshrpc.EffortOp{}, err
 	}
-	op := wshrpc.EffortOp{Op: "addChunk", Label: label, Owner: mustFlagString(cmd, "owner"), Stage: mustFlagString(cmd, "stage"), Due: due}
+	op := wshrpc.EffortOp{
+		Op: "addChunk", Label: args[1], Owner: mustFlagString(cmd, "owner"), Stage: mustFlagString(cmd, "stage"),
+		Due: due, Priority: mustFlagString(cmd, "priority"),
+	}
 	if at, err := cmd.Flags().GetInt("at"); err == nil && at > 0 {
 		op.At = &at
 	}
@@ -509,6 +512,24 @@ func chunkLaterOp(chunk string, off bool) wshrpc.EffortOp {
 	return op
 }
 
+var effortChunkPriorityCmd = &cobra.Command{
+	Use:   "priority <effort> <chunk> <critical|high|medium|low|information|\"\">",
+	Short: "set or clear a chunk's priority (it decides which open chunk `advance` opens next)",
+	Long: `Set or clear a chunk's priority: critical, high, medium, low or information ("" clears it). It decides which
+open chunk is next: ` + "`wsh effort advance`" + ` opens the pending chunk with the highest priority, and of two with the same
+priority the one that comes first. A chunk with no priority ranks as medium, and information opens last. Only
+pending chunks compete: blocked and deferred ones open when nothing is pending, and a priority never takes the
+active slot from the chunk that holds it. A chunk's position and number do not change, so notes that cite
+"chunk 11" keep pointing at it.`,
+	Args:    cobra.ExactArgs(3),
+	PreRunE: preRunSetupRpcClient,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		op := wshrpc.EffortOp{Op: "setChunkPriority", Priority: args[2]}
+		chunkRef(&op, args[1])
+		return mutateOne(args[0], op, isJSON(cmd))
+	},
+}
+
 // resolveDue turns a due argument into the YYYY-MM-DD the server stores: "" clears, a date passes through
 // (the server validates it), and "+Nd" counts N days from now's local date.
 func resolveDue(s string, now time.Time) (string, error) {
@@ -651,6 +672,18 @@ func rpcChunkDrift(effortOID string) chunkDrift {
 func formatEffortShowWith(e *waveobj.Effort, drift chunkDrift) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# %s (%s) — %d/%d\n", e.Title, e.Status, countDone(e), countProgress(e))
+	// The lines below keep position order and their stage runs; this one says which open chunk opens when, as
+	// numbers, and the first of them carries the next mark (the chunk `advance` opens, or the one already active).
+	order := waveobj.ChunkOrderOfWorkOf(e.Chunks)
+	next := -1
+	if len(order) > 0 {
+		next = order[0]
+		nums := make([]string, len(order))
+		for k, i := range order {
+			nums[k] = strconv.Itoa(i + 1)
+		}
+		fmt.Fprintf(&b, "Order of work: %s\n", strings.Join(nums, ", "))
+	}
 	stage := ""
 	for i, c := range e.Chunks {
 		if c.Stage != stage {
@@ -660,7 +693,11 @@ func formatEffortShowWith(e *waveobj.Effort, drift chunkDrift) string {
 			}
 		}
 		// the number is the chunk's place in the whole list, later chunks included: it is the ref `effort chunk` takes
-		fmt.Fprintf(&b, "  %d. [%s] %s%s%s%s%s\n", i+1, c.Status, c.Label, laterSuffix(c), ownerSuffix(c.Owner), dueSuffix(c.Due), baseSuffix(c, drift))
+		mark := ""
+		if i == next {
+			mark = " ← next"
+		}
+		fmt.Fprintf(&b, "  %d. [%s] %s%s%s%s%s%s%s\n", i+1, c.Status, c.Label, laterSuffix(c), ownerSuffix(c.Owner), dueSuffix(c.Due), prioritySuffix(c.Priority), baseSuffix(c, drift), mark)
 		for _, n := range c.Notes {
 			fmt.Fprintf(&b, "      · %s: %s\n", timeStr(n.Ts), n.Text)
 		}
@@ -732,6 +769,14 @@ func dueSuffix(due string) string {
 		return ""
 	}
 	return " (due " + due + ")"
+}
+
+// prioritySuffix names a chunk's level; a chunk with none prints nothing (it ranks as medium).
+func prioritySuffix(priority string) string {
+	if priority == "" {
+		return ""
+	}
+	return " (priority " + priority + ")"
 }
 
 // baseSuffix names the commit an open chunk was written at, how far the code moved since and the files it names that
@@ -894,6 +939,7 @@ func init() {
 	effortChunkAddCmd.Flags().String("owner", "", "chunk owner")
 	effortChunkAddCmd.Flags().String("stage", "", "grouping label")
 	effortChunkAddCmd.Flags().String("due", "", "the day it comes due: YYYY-MM-DD or +Nd")
+	effortChunkAddCmd.Flags().String("priority", "", "critical, high, medium, low or information: which open chunk opens first")
 	effortChunkAddCmd.Flags().Bool("proposed", false, "propose the chunk; it counts once accepted")
 	effortChunkAddCmd.Flags().Bool("later", false, "save it for later: kept on the Brief's Later section, not part of the plan")
 	effortChunkLaterCmd.Flags().Bool("off", false, "drop the later mark: the chunk is plan work again")
@@ -914,6 +960,6 @@ func init() {
 		effortDeleteCmd, effortAdvanceCmd, effortReopenCmd, effortStaleCmd, effortChunkCmd)
 	effortChunkCmd.AddCommand(effortChunkAddCmd, effortChunkRenameCmd, effortChunkRecheckCmd, effortChunkMoveCmd,
 		effortChunkRemoveCmd, effortChunkStatusCmd, effortChunkNoteCmd, effortChunkOwnerCmd,
-		effortChunkStageCmd, effortChunkDueCmd, effortChunkLaterCmd, effortChunkAttachCmd, effortChunkDetachCmd, effortChunkBackfillBaseCmd)
+		effortChunkStageCmd, effortChunkDueCmd, effortChunkLaterCmd, effortChunkPriorityCmd, effortChunkAttachCmd, effortChunkDetachCmd, effortChunkBackfillBaseCmd)
 	rootCmd.AddCommand(effortCmd)
 }

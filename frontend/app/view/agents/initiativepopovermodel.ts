@@ -4,6 +4,7 @@
 // What the initiative popover on the agent header reads off an initiative: the chunk this agent is on, the next ones, the
 // latest note, the status word, and the rows its keys move over. Pure: no jotai, no RPC.
 
+import { orderOfWork } from "@/app/view/jarvis/chunkorder";
 import { chunkTone, type ChunkTone } from "@/app/view/jarvis/effortmodel";
 import { planChunks } from "@/app/view/jarvis/laterchunk";
 
@@ -12,6 +13,7 @@ type PopoverChunk = {
     status: string;
     // saved for later (EffortChunk.later): kept on Jarvis, never the plan's work, so every read below leaves it out
     later?: boolean;
+    priority?: string;
     workrefs?: { kind: string; oref: string }[];
     notes?: { ts: number; text: string }[];
 };
@@ -31,14 +33,14 @@ export function agentChunk<T extends PopoverChunk>(effort: { chunks?: T[] }, tab
     return live.find((c) => c.status === "active") ?? live[0] ?? null;
 }
 
-// The next pending chunks after `label` in plan order (from the top with none), by label. A chunk that is deferred,
-// blocked, proposed or saved for later is not "next".
+// The first `limit` pending chunks of the plan in the order of work (chunkorder.ts: highest rank first, equal ranks in
+// plan order), by label, leaving out `label` (the chunk this agent is on, which may itself be pending). Where the chunk
+// sits in the plan does not matter, so a pending chunk before the agent's own is listed when it ranks first. A chunk
+// that is active, deferred, blocked, proposed or saved for later is not "next": the later ones are filtered out before
+// the rank, so a later chunk of any level is never listed.
 export function nextChunks(effort: { chunks?: PopoverChunk[] }, label: string | null, limit = 2): string[] {
-    const chunks = planChunks(effort.chunks ?? []);
-    const from = label == null ? 0 : chunks.findIndex((c) => c.label === label) + 1;
-    return chunks
-        .slice(from)
-        .filter((c) => c.status === "pending")
+    return orderOfWork(planChunks(effort.chunks ?? []))
+        .filter((c) => c.status === "pending" && c.label !== label)
         .slice(0, limit)
         .map((c) => c.label);
 }
@@ -106,11 +108,13 @@ export function popoverStatus(effort: PopoverEffort, agentState: string): { text
     return agentState === "working" ? { text: "at work", tone: "working" } : { text: "agent open", tone: "success" };
 }
 
-// The chunk linking an agent to an initiative attaches it to: the plan's active chunk, else its first pending one (a later
-// chunk, kept rather than worked, is never picked, wherever it stands in the list). Undefined when the plan has neither.
-export function linkChunk<T extends { status: string; later?: boolean }>(chunks: T[]): T | undefined {
-    const plan = planChunks(chunks);
-    return plan.find((c) => c.status === "active") ?? plan.find((c) => c.status === "pending");
+// The chunk linking an agent to an initiative attaches it to: the plan's active chunk, else its highest-ranked pending one
+// (chunkorder.ts, equal ranks in plan order). A later chunk, kept rather than worked, is never picked, whatever its level
+// and wherever it stands in the list. Undefined when the plan has neither.
+export function linkChunk<T extends { status: string; priority?: string; later?: boolean }>(
+    chunks: T[]
+): T | undefined {
+    return orderOfWork(planChunks(chunks)).find((c) => c.status === "active" || c.status === "pending");
 }
 
 // The rows the cursor moves over: the chunk this agent is on, then the next ones.

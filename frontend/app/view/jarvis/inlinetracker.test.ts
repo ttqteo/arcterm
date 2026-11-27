@@ -371,3 +371,91 @@ describe("initiativeRows", () => {
         expect(rows.find((r) => r.kind === "chunk")?.id).toBe(chunkRowId(OREF, "Build chunk 1"));
     });
 });
+
+// the next chunk is the first of the order of work, which a priority can move past the plan's first ten chunks
+describe("initiativeRows with a priority", () => {
+    const many = (n: number, status: string, stage: string) =>
+        Array.from({ length: n }, (_, i) => chunk(`${stage || "flat"} chunk ${i + 1}`, status, stage));
+    const withPriority = (rows: ChunkRowModel[], at: number, priority: string) =>
+        rows.map((r, i) => (i === at ? { ...r, priority } : r));
+    const sheet = (chunks: ChunkRowModel[], stageOverrides: Record<string, boolean> = {}) =>
+        initiativeRows({ oref: OREF, chunks, noteCounts: new Map(), stageOverrides });
+    const kinds = (rows: DetailRow[]) =>
+        rows.map((r) => (r.kind === "chunk" ? `chunk:${r.row.label}${r.next ? "*" : ""}` : r.kind));
+
+    it("marks the highest-ranked pending chunk as next, not the first by position", () => {
+        const chunks = withPriority(withPriority(many(4, "pending", ""), 1, "low"), 2, "high");
+        const next = sheet(chunks).filter((r) => r.kind === "chunk" && r.next);
+        expect(next.map((r) => (r.kind === "chunk" ? r.row.label : ""))).toEqual(["flat chunk 3"]);
+    });
+
+    it("keeps the rows in position order whatever the levels are", () => {
+        const chunks = withPriority(many(4, "pending", ""), 3, "critical");
+        expect(kinds(sheet(chunks))).toEqual([
+            "facts",
+            "chunk:flat chunk 1",
+            "chunk:flat chunk 2",
+            "chunk:flat chunk 3",
+            "chunk:flat chunk 4*",
+        ]);
+    });
+
+    it("shows a folded flat plan's next chunk before the more row when it is past the first ten", () => {
+        // 12 pending chunks, the 12th critical: it is next, but the fold hides it
+        const chunks = withPriority(many(12, "pending", ""), 11, "critical");
+        const rows = sheet(chunks);
+        expect(kinds(rows)).toEqual([
+            "facts",
+            ...Array.from({ length: STAGE_PREVIEW_CAP }, (_, i) => `chunk:flat chunk ${i + 1}`),
+            "chunk:flat chunk 12*",
+            "more",
+        ]);
+        expect(rows[rows.length - 1]).toMatchObject({ kind: "more", n: 1, stageId: flatPlanId(OREF) });
+    });
+
+    it("counts the next chunk out of the more row, which still counts the rest", () => {
+        const chunks = withPriority(many(15, "pending", ""), 12, "high");
+        const rows = sheet(chunks);
+        expect(rows.filter((r) => r.kind === "chunk")).toHaveLength(STAGE_PREVIEW_CAP + 1);
+        expect(rows[rows.length - 1]).toMatchObject({ kind: "more", n: 4 });
+        expect(rows[rows.length - 2]).toMatchObject({ kind: "chunk", next: true });
+    });
+
+    it("draws no extra row when the next chunk is already in the first ten", () => {
+        const chunks = withPriority(many(12, "pending", ""), 4, "critical");
+        const rows = sheet(chunks);
+        expect(rows.filter((r) => r.kind === "chunk")).toHaveLength(STAGE_PREVIEW_CAP);
+        expect(rows[rows.length - 1]).toMatchObject({ kind: "more", n: 2 });
+    });
+
+    it("shows the whole plan, with no more row, when the next chunk was the only one hidden", () => {
+        const chunks = withPriority(many(11, "pending", ""), 10, "critical");
+        const rows = sheet(chunks);
+        expect(rows.filter((r) => r.kind === "chunk")).toHaveLength(11);
+        expect(rows.some((r) => r.kind === "more")).toBe(false);
+    });
+
+    it("shows a folded stage's next chunk before its own more row", () => {
+        const build = stageRowId(OREF, "Build", 0);
+        const ship = stageRowId(OREF, "Ship", 1);
+        const chunks = [...withPriority(many(12, "pending", "Build"), 11, "critical"), ...many(2, "pending", "Ship")];
+        const rows = sheet(chunks, { [build]: false });
+        const labels = kinds(rows);
+        // the Build stage: ten chunks, then the critical one, then its more row, then the next stage's header
+        expect(labels.slice(labels.indexOf("more") - 1, labels.indexOf("more") + 1)).toEqual([
+            "chunk:Build chunk 12*",
+            "more",
+        ]);
+        expect(rows.find((r) => r.kind === "more")).toMatchObject({ n: 1, stageId: build });
+        expect(rows.findIndex((r) => r.kind === "more")).toBeLessThan(rows.findIndex((r) => r.id === ship));
+    });
+
+    it("leaves a folded stage that does not hold the next chunk with its plain preview", () => {
+        const build = stageRowId(OREF, "Build", 0);
+        const chunks = [...many(12, "pending", "Build"), ...withPriority(many(2, "pending", "Ship"), 1, "critical")];
+        const rows = sheet(chunks, { [build]: false });
+        const more = rows.find((r) => r.kind === "more");
+        expect(more).toMatchObject({ n: 2, stageId: build });
+        expect(rows.filter((r) => r.kind === "chunk" && r.id.includes("Build"))).toHaveLength(STAGE_PREVIEW_CAP);
+    });
+});

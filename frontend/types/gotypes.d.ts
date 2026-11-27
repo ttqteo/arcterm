@@ -4191,6 +4191,7 @@ declare global {
         owner?: string;
         due?: string;
         later?: boolean;
+        priority?: string;
         basecommit?: string;
         workrefs?: ChunkWorkRef[];
         notes?: EffortNote[];
@@ -4220,6 +4221,7 @@ declare global {
         status: string;
         stage?: string;
         owner?: string;
+        priority?: string;
         workrefs?: ChunkWorkRef[];
         blocked?: EffortChunkBlocked;
     };
@@ -4277,6 +4279,7 @@ declare global {
         owner?: string;
         stage?: string;
         due?: string;
+        priority?: string;
         note?: string;
         notets?: number;
         kind?: string;

@@ -290,6 +290,7 @@ describe("initiativeChips", () => {
             label: string;
             status: string;
             later?: boolean;
+            priority?: string;
             workrefs?: { kind: string; oref: string; ts?: number }[];
         }[]
     ) => ({
@@ -363,6 +364,81 @@ describe("initiativeChips", () => {
         expect(initiativeChips(effort, "t1", false, true)).toEqual([
             { text: "làm tiếp: Scenario", kind: "next", source: "rule", chunk: "Scenario" },
         ]);
+    });
+
+    describe("go on with: follows the order of work", () => {
+        const goOn = (effort: ReturnType<typeof plan>) =>
+            initiativeChips(effort, "t1", false, false).map((c) => c.chunk);
+
+        it("names the highest-ranked pending chunk, not the first after the agent's last", () => {
+            const effort = plan(
+                { label: "Build", status: "done", workrefs: [me] },
+                { label: "Scenario", status: "pending" },
+                { label: "Polish", status: "pending", priority: "low" },
+                { label: "Docs", status: "pending", priority: "critical" }
+            );
+            expect(goOn(effort)).toEqual(["Docs"]);
+        });
+
+        it("names a chunk before the agent's last one when it ranks first", () => {
+            const effort = plan(
+                { label: "Intro", status: "pending", priority: "high" },
+                { label: "Build", status: "done", workrefs: [me] },
+                { label: "Scenario", status: "pending" }
+            );
+            expect(goOn(effort)).toEqual(["Intro"]);
+        });
+
+        it("breaks a tie by position, and ranks an unset chunk as medium", () => {
+            const tie = plan(
+                { label: "Build", status: "done", workrefs: [me] },
+                { label: "A", status: "pending", priority: "medium" },
+                { label: "B", status: "pending" }
+            );
+            expect(goOn(tie)).toEqual(["A"]);
+            const unsetAboveLow = plan(
+                { label: "Build", status: "done", workrefs: [me] },
+                { label: "A", status: "pending", priority: "low" },
+                { label: "B", status: "pending" }
+            );
+            expect(goOn(unsetAboveLow)).toEqual(["B"]);
+        });
+
+        it("goes past a chunk someone else holds to the next-ranked one", () => {
+            const effort = plan(
+                { label: "Build", status: "done", workrefs: [me] },
+                { label: "Hot", status: "pending", priority: "critical", workrefs: [other] },
+                { label: "Warm", status: "pending", priority: "high" },
+                { label: "Plain", status: "pending" }
+            );
+            expect(goOn(effort)).toEqual(["Warm"]);
+        });
+
+        it("offers an active chunk nobody holds before any pending one, whatever the levels", () => {
+            const effort = plan(
+                { label: "Build", status: "done", workrefs: [me] },
+                { label: "Hot", status: "pending", priority: "critical" },
+                { label: "Open", status: "active", priority: "information" }
+            );
+            expect(goOn(effort)).toEqual(["Open"]);
+        });
+
+        it("never offers a blocked or deferred chunk, whatever its level", () => {
+            const effort = plan(
+                { label: "Build", status: "done", workrefs: [me] },
+                { label: "Stuck", status: "blocked", priority: "critical" },
+                { label: "Later", status: "deferred", priority: "high" }
+            );
+            expect(goOn(effort)).toEqual([]);
+        });
+
+        it("offers nothing when the only pending chunks are held by others", () => {
+            const effort = plan(
+                { label: "Build", status: "done", workrefs: [me] },
+                { label: "Hot", status: "pending", priority: "critical", workrefs: [other] }
+            );
+            expect(goOn(effort)).toEqual([]);
+        });
     });
 
     it("offers nothing after the last chunk, with no initiative, or on a proposed chunk", () => {

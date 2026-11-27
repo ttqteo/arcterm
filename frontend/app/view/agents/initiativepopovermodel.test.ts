@@ -21,6 +21,7 @@ type Extra = {
     workrefs?: { kind: string; oref: string; ts: number }[];
     notes?: { ts: number; text: string }[];
     later?: boolean;
+    priority?: string;
 };
 const chunk = (label: string, status: string, extra: Extra = {}) => ({ label, status, ...extra });
 
@@ -98,7 +99,7 @@ describe("agentChunk", () => {
 });
 
 describe("nextChunks", () => {
-    it("lists the two pending chunks after the given one, never a proposed one", () => {
+    it("lists the first two pending chunks in the order of work, never a proposed one", () => {
         expect(nextChunks(effort, "B")).toEqual(["C", "D"]);
     });
 
@@ -111,6 +112,53 @@ describe("nextChunks", () => {
 
     it("starts from the top of the plan with no chunk to follow", () => {
         expect(nextChunks(effort, null)).toEqual(["C", "D"]);
+    });
+
+    it("lists a pending chunk that comes before the given one: the order of work is not the plan's", () => {
+        const e = { chunks: [chunk("A", "pending"), chunk("B", "active"), chunk("C", "pending")] };
+        expect(nextChunks(e, "B")).toEqual(["A", "C"]);
+    });
+
+    it("leaves out the given chunk even when it is itself pending", () => {
+        const e = { chunks: [chunk("A", "pending"), chunk("B", "pending"), chunk("C", "pending")] };
+        expect(nextChunks(e, "A")).toEqual(["B", "C"]);
+    });
+
+    it("lists the highest-ranked pending chunks first, ties in plan order", () => {
+        const e = {
+            chunks: [
+                chunk("A", "active"),
+                chunk("B", "pending", { priority: "low" }),
+                chunk("C", "pending"),
+                chunk("D", "pending", { priority: "critical" }),
+                chunk("E", "pending", { priority: "critical" }),
+            ],
+        };
+        expect(nextChunks(e, "A")).toEqual(["D", "E"]);
+        expect(nextChunks(e, "A", 5)).toEqual(["D", "E", "C", "B"]);
+    });
+
+    it("ranks an unset chunk as medium: above low, below high", () => {
+        const e = {
+            chunks: [
+                chunk("A", "pending", { priority: "low" }),
+                chunk("B", "pending"),
+                chunk("C", "pending", { priority: "high" }),
+            ],
+        };
+        expect(nextChunks(e, null, 3)).toEqual(["C", "B", "A"]);
+    });
+
+    it("lists an information chunk last, and never a blocked or deferred one whatever its level", () => {
+        const e = {
+            chunks: [
+                chunk("A", "pending", { priority: "information" }),
+                chunk("B", "blocked", { priority: "critical" }),
+                chunk("C", "deferred", { priority: "critical" }),
+                chunk("D", "pending", { priority: "low" }),
+            ],
+        };
+        expect(nextChunks(e, null, 5)).toEqual(["D", "A"]);
     });
 });
 
@@ -267,6 +315,16 @@ describe("linkChunk", () => {
         expect(linkChunk([later("L1", "pending"), chunk("B", "pending")])?.label).toBe("B");
         expect(linkChunk([later("L1", "active"), chunk("B", "pending"), chunk("C", "active")])?.label).toBe("C");
         expect(linkChunk([later("L1", "active"), chunk("B", "pending")])?.label).toBe("B");
+    });
+
+    it("is the highest-ranked pending chunk of the plan, never a later one of a higher level", () => {
+        const low = chunk("B", "pending", { priority: "low" });
+        const high = chunk("C", "pending", { priority: "high" });
+        expect(linkChunk([chunk("A", "done"), low, high])?.label).toBe("C");
+        const lateCritical = chunk("L1", "pending", { later: true, priority: "critical" });
+        expect(linkChunk([lateCritical, low, high])?.label).toBe("C");
+        // an active chunk keeps the slot whatever the pending ones rank
+        expect(linkChunk([low, chunk("D", "active", { priority: "information" }), high])?.label).toBe("D");
     });
 
     it("is nothing when the plan has no chunk to pick, a later one left or not", () => {
