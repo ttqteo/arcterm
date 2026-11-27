@@ -9,6 +9,7 @@ import { convertToExcalidrawElements, exportToSvg, restoreElements } from "@exca
 import type { ExcalidrawElementSkeleton } from "@excalidraw/excalidraw/data/transform";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { AppState, BinaryFiles } from "@excalidraw/excalidraw/types";
+import { fitContainers } from "./boardfit";
 import {
     applyAnswer,
     nunitoTextIds,
@@ -39,7 +40,8 @@ function centered(text: ExcalidrawElement, container: ExcalidrawElement | undefi
 }
 
 // re-wraps and re-measures the answer's changed text against its container, through Excalidraw's own restore;
-// only the text's words and box are taken from it, so versions and everything else stay as applyAnswer set them.
+// only the text's words and box are taken from it, so versions and everything else stay as applyAnswer set them. A box
+// its label wrapped past grows to hold it (fitContainers).
 function measure(elements: readonly ExcalidrawElement[], textIds: readonly string[]): ExcalidrawElement[] {
     if (textIds.length === 0) {
         return [...elements];
@@ -49,14 +51,15 @@ function measure(elements: readonly ExcalidrawElement[], textIds: readonly strin
     );
     const byId = new Map(elements.map((el) => [el.id, el]));
     const wanted = new Set(textIds);
-    return elements.map((el) => {
+    const sized = elements.map((el) => {
         const r = restored.get(el.id);
         if (!wanted.has(el.id) || r == null || r.type !== "text") {
             return el;
         }
-        const sized = { ...el, text: r.text, x: r.x, y: r.y, width: r.width, height: r.height } as ExcalidrawElement;
-        return { ...sized, ...centered(sized, byId.get(r.containerId ?? "")) } as ExcalidrawElement;
+        const text = { ...el, text: r.text, x: r.x, y: r.y, width: r.width, height: r.height } as ExcalidrawElement;
+        return { ...text, ...centered(text, byId.get(r.containerId ?? "")) } as ExcalidrawElement;
     });
+    return fitContainers(sized, textIds);
 }
 
 // A board's drawing as an SVG data URL, for the thumbnail in Library → Boards' list: light strokes on nothing (the row is

@@ -80,6 +80,8 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- A box on a board grows to hold its label: a label that wrapped to more lines than the box had room for used to run
+  out of it. Boards drawn before this are fixed the next time they open.
 - A long chunk title in the rail's Initiative tab reads across the whole row when you select it: Work on this sits on
   its own line under the title, no longer beside it squeezing the title into a narrow column of short lines.
 - The context ring under Chat's input drops right after a compaction: it shows what the compaction left (14k), not
