@@ -30,6 +30,18 @@ in the dev app: `node scripts/whatsnew-shot.mjs <topic> [--selector <css>]` writ
 `whatsnew.test.ts` fails a big line with neither (in Unreleased and from 1.9.0 on), a missing file, one over 120 KB,
 and a picture given to a line that is not big.
 
+## Unreleased
+
+### Added
+
+- The chat box's `/` menu and `@` list show the rest of the highlighted name faintly after what you typed (`/co` shows
+  `ntext`); Tab or → takes it.
+
+### Changed
+
+- One letter after `@` picks a kind: `@a` lists agents, `@r` runs, `@c` councils, `@s` conversations, `@e` initiatives
+  and `@b` boards, ahead of the files.
+
 ## 1.12.0 — 2026-11-27
 
 ### Added
