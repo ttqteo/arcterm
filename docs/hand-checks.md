@@ -28,6 +28,12 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
   from a focused agent terminal: each time Search opens on the Notes scope with the caret in an empty title; type a
   title, `Enter`, a body, `Ctrl`+`Enter` saves it and the Notes list selects it; `Esc` from an empty draft lands on the
   Notes list, twice with text typed. On a narrow window the rail shows the icon alone, its tooltip naming the chord.
+- [ ] (arcterm) **Save as idea / Add note on selected Chat text.** In an agent's Chat select a sentence of a reply,
+  right-click it: the menu reads Reply, Copy, a rule, Save as idea, Add note. Save as idea toasts "Saved as idea" with
+  the passage's first sentence; Open lands on the new idea in Jarvis's Ideas, whose peek shows `From agent "<name>"
+  (agent:…)` and the passage quoted. Add note toasts "Added to Notes" and the note is in the palette's Notes (no Open). A
+  long Vietnamese passage gets a title cut with "…", not a save error. Not run live: the `chat-quote` scenario's steps
+  10–11 cover it (the commit adding Save as idea).
 - [ ] (arcterm) **Account name always beside the model.** With every open Claude agent on one account: the chat box's
   footer reads the account (its label, or the /login email for Default) left of the model, and each Claude row in the
   sidebar names it before the model; a long name truncates, the row does not wrap. `d13f49b5e`

@@ -3,21 +3,29 @@
 //
 // Reply to text selected in Chat's conversation (chatquote.ts): the passage goes into the agent's chat box as a quote,
 // the caret under it. Two ways in: a small ↩ button diagonally off the selection's top-right corner (its bottom-right
-// when the pane has no room above), so it never covers the words it would quote or the ones after them, and a right-click on the selection, which opens a menu of Reply and Copy. It takes any text
+// when the pane has no room above), so it never covers the words it would quote or the ones after them, and a right-click on the selection, which opens a menu of Reply and Copy, and in Chat Save as
+// idea (a new idea on Jarvis's Ideas) and Add note (a note in the palette's Notes), each named by the passage's first
+// sentence and holding the passage under the agent it came from (chatsaveselection.ts). It takes any text
 // in the conversation, Claude's reply, your message or a tool's output alike, and only while the agent has a chat box to
 // take it. A right-click off the selection, or with nothing selected, leaves the row's own menu (Copy text, Fork from
 // here…) as it was. The button is drawn fixed in a portal, so no row's layout or transform moves it, and follows the
 // selection as the conversation scrolls. QuoteMenu is the same over any box (a council's chat, councilchat.tsx): the
 // box is named by `target`, given the selection.
 
+import { pushToast } from "@/app/cockpit/notificationstore";
+import { saveNoteDraft } from "@/app/cockpit/palette-notesstore";
 import { contextMenuAtom } from "@/app/store/contextmenu";
 import { globalStore } from "@/app/store/jotaiStore";
-import { cn } from "@/util/util";
-import { Copy, Reply } from "lucide-react";
+import { createIdea } from "@/app/view/jarvis/effortstore";
+import { openAddress } from "@/app/view/jarvis/openref";
+import { cn, fireAndForget } from "@/util/util";
+import { Copy, Lightbulb, Reply, StickyNote } from "lucide-react";
 import { useEffect, useMemo, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
+import type { AgentsViewModel } from "./agents";
 import { chatBoxText, hasChatBox, replaceChatBox } from "./chatinsert";
 import { withChatQuote, withQuote } from "./chatquote";
+import { savedBody, selectionTitle, type SavedFrom } from "./chatsaveselection";
 
 const BTN = 22;
 // how far the button sits off the selection's corner, across and up
@@ -40,7 +48,19 @@ function scrollParent(el: HTMLElement): HTMLElement | null {
     return null;
 }
 
-export function ChatQuoteMenu({ agentId, rootRef }: { agentId: string; rootRef: RefObject<HTMLElement> }) {
+export function ChatQuoteMenu({
+    agentId,
+    name,
+    project,
+    model,
+    rootRef,
+}: {
+    agentId: string;
+    name: string;
+    project?: string;
+    model?: AgentsViewModel;
+    rootRef: RefObject<HTMLElement>;
+}) {
     const target = useMemo<QuoteTarget>(
         () => ({
             ready: () => hasChatBox(agentId),
@@ -51,7 +71,59 @@ export function ChatQuoteMenu({ agentId, rootRef }: { agentId: string; rootRef: 
         }),
         [agentId]
     );
-    return <QuoteMenu rootRef={rootRef} target={target} />;
+    const save = useMemo<SaveTarget>(
+        () => ({ from: { agentId, name }, project, model }),
+        [agentId, name, project, model]
+    );
+    return <QuoteMenu rootRef={rootRef} target={target} save={save} />;
+}
+
+/** Where Save as idea and Add note say the passage came from; `model` opens what they made from their toast. */
+export interface SaveTarget {
+    from: SavedFrom;
+    project?: string;
+    model?: AgentsViewModel;
+}
+
+function failed(what: string, e: unknown) {
+    pushToast({ title: `Couldn't ${what}`, message: e instanceof Error ? e.message : String(e), level: "error" });
+}
+
+// an idea on Jarvis's Ideas column, named by the passage's first sentence, the passage and its agent as its objective
+async function saveIdea(text: string, save: SaveTarget) {
+    const title = selectionTitle(text);
+    try {
+        const oref = await createIdea(title, {
+            project: save.project,
+            note: savedBody(text, save.from, new Date()),
+            agentId: save.from.agentId,
+        });
+        const model = save.model;
+        pushToast({
+            title: "Saved as idea",
+            message: title,
+            level: "info",
+            check: true,
+            ...(model != null
+                ? { action: { label: "Open", run: () => fireAndForget(() => openAddress(model, oref)) } }
+                : {}),
+        });
+    } catch (e) {
+        failed("save the idea", e);
+    }
+}
+
+// a note in the palette's Notes, the same title and body. Its toast has no Open: the router's "note" is a vault
+// memory note (openref.ts loadNote), and the palette opens on its surface's scope with no way to land on one note
+async function saveNote(text: string, save: SaveTarget) {
+    const title = selectionTitle(text);
+    try {
+        const body = savedBody(text, save.from, new Date());
+        await saveNoteDraft({ id: null, title, body, saved: { title: "", body: "" } });
+        pushToast({ title: "Added to Notes", message: title, level: "info", check: true });
+    } catch (e) {
+        failed("add the note", e);
+    }
 }
 
 /** The box a quote goes into, given the selected range (a council has two boxes: the thread's and the channel's).
@@ -104,7 +176,15 @@ function reply(target: QuoteTarget, p: Picked) {
     }
 }
 
-export function QuoteMenu({ rootRef, target }: { rootRef: RefObject<HTMLElement>; target: QuoteTarget }) {
+export function QuoteMenu({
+    rootRef,
+    target,
+    save,
+}: {
+    rootRef: RefObject<HTMLElement>;
+    target: QuoteTarget;
+    save?: SaveTarget;
+}) {
     const [at, setAt] = useState<{ top: number; left: number } | null>(null);
 
     // the button: diagonally off the selection's top-right corner (its widest line's end), the bottom-right corner when
@@ -199,6 +279,25 @@ export function QuoteMenu({ rootRef, target }: { rootRef: RefObject<HTMLElement>
                         icon: <Copy size={15} />,
                         click: () => void navigator.clipboard.writeText(p.text),
                     },
+                    // a passage of no words gets no title, and `picked` already refuses one
+                    ...(save != null && selectionTitle(p.text) !== ""
+                        ? [
+                              { type: "separator" as const },
+                              {
+                                  label: "Save as idea",
+                                  sublabel: "to Jarvis's Ideas",
+                                  icon: <Lightbulb size={15} />,
+                                  click: () => void saveIdea(p.text, save),
+                                  attrs: { "data-chat-save-idea": "" },
+                              },
+                              {
+                                  label: "Add note",
+                                  icon: <StickyNote size={15} />,
+                                  click: () => void saveNote(p.text, save),
+                                  attrs: { "data-chat-add-note": "" },
+                              },
+                          ]
+                        : []),
                 ],
                 x: e.clientX,
                 y: e.clientY,
@@ -210,7 +309,7 @@ export function QuoteMenu({ rootRef, target }: { rootRef: RefObject<HTMLElement>
             document.removeEventListener("mousedown", onDown, true);
             document.removeEventListener("contextmenu", onMenu, true);
         };
-    }, [rootRef, target]);
+    }, [rootRef, target, save]);
 
     if (at == null) {
         return null;

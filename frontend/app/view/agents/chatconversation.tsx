@@ -2269,8 +2269,17 @@ export function ChatConversation({
             ) : null}
             {/* one wrapper per item, keyed by its first entry: the place kept and restored is found by it */}
             {rows}
-            {/* Reply on the right-click menu of selected text: only a live agent has a box to quote it into */}
-            {agent != null ? <ChatQuoteMenu agentId={agent.id} rootRef={rootRef} /> : null}
+            {/* Reply, Save as idea and Add note on the right-click menu of selected text: only a live agent has a box
+                to quote it into */}
+            {agent != null ? (
+                <ChatQuoteMenu
+                    agentId={agent.id}
+                    name={agent.name}
+                    project={agent.project}
+                    model={model ?? undefined}
+                    rootRef={rootRef}
+                />
+            ) : null}
             {hasQueuedStart ? <RunQueueFeed /> : null}
             {agent != null
                 ? endAnchors.map((anchor) => (

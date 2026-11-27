@@ -50053,7 +50053,8 @@ const chatFork = {
 // --- chat-quote: Reply to a passage (chatquote.ts, chatquotemenu.tsx). Text selected in Chat's conversation shows a
 // small ↩ button at the end of its last line, and a right-click on it opens a menu of Reply and Copy; Reply puts the passage in the message box as a `> ` quote with a blank
 // line under it, keeps what was typed, and stacks a second quote under the first. A right-click on a row with nothing
-// selected keeps the row's own menu (Copy text…), with no Reply.
+// selected keeps the row's own menu (Copy text…), with no Reply. Save as idea and Add note on the same menu
+// (chatsaveselection.ts) make an idea and a note named by the passage and holding it under the agent it came from.
 
 const CQ_NAME = "quote source";
 const CQ_QUESTIONS = ["is the oracle checked by hand?", "how do I check it by hand?"];
@@ -50217,7 +50218,16 @@ const chatQuote = {
             await h.shot("cdp-shots/chat-quote-1-menu.png");
             rec(
                 "1. a selected passage shows a small ↩ button diagonally off its top-right corner (over none of its words), and a right-click on it opens Reply and Copy (the box starts empty)",
-                loaded && before === "" && sel1 && small1 && place1?.w <= 24 && place1?.h <= 24 && place1?.above === true && place1?.atCorner === true && up1 && JSON.stringify(menu1) === JSON.stringify(["Reply", "Copy"]),
+                loaded &&
+                    before === "" &&
+                    sel1 &&
+                    small1 &&
+                    place1?.w <= 24 &&
+                    place1?.h <= 24 &&
+                    place1?.above === true &&
+                    place1?.atCorner === true &&
+                    up1 &&
+                    JSON.stringify(menu1.slice(0, 2)) === JSON.stringify(["Reply", "Copy"]),
                 { loaded, before, sel1, small1, place1, up1, menu1 }
             );
 
@@ -50411,6 +50421,84 @@ const chatQuote = {
                     after9 === before9,
                 { sel9, marked9, before9, during9, cleared9, after9 }
             );
+
+            // 10. Save as idea on the menu makes an idea named by the passage, its first note your quote of it under the
+            // agent it came from (that agent's session kept on the note), in the agent's project, and toasts it with Open
+            const toastHas = (text) =>
+                `[...document.querySelectorAll("[data-notification-toast]")].some((t) => (t.textContent || "").includes(${JSON.stringify(text)}))`;
+            const sel10 = await select(prose(0), CQ_PASSAGE);
+            const up10 = await openReply();
+            const menu10 = await h.ev(
+                `[...document.querySelectorAll("[data-context-menu] [data-menu-item]")].map((el) => el.getAttribute("data-menu-item"))`
+            );
+            await polishNap(300);
+            await h.shot("cdp-shots/chat-quote-10-save-menu.png");
+            const pressed10 = up10 && (await pressButton(`document.querySelector("[data-context-menu] [data-chat-save-idea]")`));
+            const toast10 = await polishWaitFor(h, toastHas("Saved as idea"), 5000);
+            const open10 = await h.ev(
+                `[...document.querySelectorAll("[data-notification-toast]")].some((t) => (t.textContent || "").includes("Saved as idea") && [...t.querySelectorAll("button")].some((b) => b.textContent.trim() === "Open"))`
+            );
+            await polishNap(300);
+            await h.shot("cdp-shots/chat-quote-10-idea-toast.png");
+            const idea10 = await AC.agentPage(
+                h,
+                `const { RpcApi } = await mod("app/store/wshclientapi.ts");
+                const { TabRpcClient } = await mod("app/store/wshrpcutil.ts");
+                let got = null;
+                await until(async () => {
+                    const r = await RpcApi.EffortListCommand(TabRpcClient, {});
+                    for (const s of (r?.efforts ?? []).filter((e) => e.title === ${JSON.stringify(CQ_PASSAGE)})) {
+                        const g = await RpcApi.EffortGetCommand(TabRpcClient, { effortoid: s.oref.replace(/^effort:/, "") });
+                        const n = g?.effort?.notes?.[0];
+                        if (n?.session === ${JSON.stringify("agent:" + A)}) {
+                            got = { project: g.effort.project ?? "", chunks: g.effort.chunks?.length ?? 0, notes: g.effort.notes.length, text: n.text, author: n.author };
+                            return true;
+                        }
+                    }
+                    return false;
+                });
+                return got;`
+            );
+            const wantBody = (text) =>
+                new RegExp(`^From agent "${CQ_NAME}" \\(agent:${A}\\), \\d{4}-\\d{2}-\\d{2}\\n\\n> ${text}$`);
+            rec(
+                "10. Save as idea (after Reply and Copy) makes an idea named by the passage, in the agent's project, no chunks, whose one note is yours: where it was said, then the passage quoted; a toast says so with Open",
+                sel10 &&
+                    up10 &&
+                    JSON.stringify(menu10) === JSON.stringify(["Reply", "Copy", "Save as idea", "Add note"]) &&
+                    pressed10 &&
+                    toast10 &&
+                    open10 &&
+                    idea10?.project === "arcterm" &&
+                    idea10?.chunks === 0 &&
+                    idea10?.notes === 1 &&
+                    idea10?.author === "you" &&
+                    wantBody(CQ_PASSAGE).test(idea10?.text ?? ""),
+                { sel10, up10, menu10, pressed10, toast10, open10, idea10 }
+            );
+
+            // 11. Add note makes a note with the same title and body, and toasts it
+            const sel11 = await select(prose(0), CQ_PASSAGE);
+            const up11 = await openReply();
+            const pressed11 = up11 && (await pressButton(`document.querySelector("[data-context-menu] [data-chat-add-note]")`));
+            const toast11 = await polishWaitFor(h, toastHas("Added to Notes"), 5000);
+            const note11 = await AC.agentPage(
+                h,
+                `const { RpcApi } = await mod("app/store/wshclientapi.ts");
+                const { TabRpcClient } = await mod("app/store/wshrpcutil.ts");
+                let got = null;
+                await until(async () => {
+                    const notes = (await RpcApi.NoteListCommand(TabRpcClient)) ?? [];
+                    got = notes.find((n) => (n.body ?? "").includes(${JSON.stringify(`(agent:${A})`)})) ?? null;
+                    return got != null;
+                });
+                return got && { title: got.title, body: got.body };`
+            );
+            rec(
+                "11. Add note makes a note named by the passage whose body is where it was said, then the passage quoted, and a toast says so",
+                sel11 && up11 && pressed11 && toast11 && note11?.title === CQ_PASSAGE && wantBody(CQ_PASSAGE).test(note11?.body ?? ""),
+                { sel11, up11, pressed11, toast11, note11 }
+            );
         } catch (e) {
             rec("the scenario threw", false, String(e?.stack ?? e));
         }
@@ -50424,6 +50512,31 @@ const chatQuote = {
                 console.error(`chat-quote teardown: ${what} failed: ${e?.message ?? e}`);
             }
         };
+        // steps 10 and 11's idea and note, found by the fixture agent they name
+        const A = ctx.tabs?.main?.tabId;
+        if (A != null) {
+            await step("delete the saved idea and note", () =>
+                AC.agentPage(
+                    h,
+                    `const { RpcApi } = await mod("app/store/wshclientapi.ts");
+                    const { TabRpcClient } = await mod("app/store/wshrpcutil.ts");
+                    const r = await RpcApi.EffortListCommand(TabRpcClient, {});
+                    for (const s of (r?.efforts ?? []).filter((e) => e.title === ${JSON.stringify(CQ_PASSAGE)})) {
+                        const oid = s.oref.replace(/^effort:/, "");
+                        const g = await RpcApi.EffortGetCommand(TabRpcClient, { effortoid: oid });
+                        if (g?.effort?.notes?.[0]?.session === ${JSON.stringify("agent:" + A)}) {
+                            await RpcApi.EffortDeleteCommand(TabRpcClient, { effortoid: oid });
+                        }
+                    }
+                    for (const n of (await RpcApi.NoteListCommand(TabRpcClient)) ?? []) {
+                        if ((n.body ?? "").includes(${JSON.stringify(`(agent:${A})`)})) {
+                            await RpcApi.NoteDeleteCommand(TabRpcClient, { id: n.id });
+                        }
+                    }
+                    return true;`
+                )
+            );
+        }
         await step("clear the selection and the draft", () =>
             AC.agentPage(
                 h,

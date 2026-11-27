@@ -63,6 +63,11 @@ type CommandEffortCreateData struct {
 	// author, session and run, as on CommandEffortMutateData.
 	Proposed    bool   `json:"proposed,omitempty"`
 	SourceBlock string `json:"sourceblock,omitempty"`
+	// Note, when set, is the initiative's first note in place of "effort created", written by you: Chat's Save as
+	// idea puts the passage it was saved from there, and where it was said. NoteSession is that agent
+	// ("agent:<tabid>"), kept on the note as an agent's note keeps its session.
+	Note        string `json:"note,omitempty"`
+	NoteSession string `json:"notesession,omitempty"`
 }
 
 type CommandEffortChunkSeed struct {

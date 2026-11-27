@@ -80,8 +80,13 @@ func (ws *WshServer) EffortCreateCommand(ctx context.Context, data wshrpc.Comman
 	if err := effortstore.Create(ctx, e); err != nil {
 		return nil, err
 	}
-	// the created event is the delta source; the trail note documents it for humans
-	e.Notes = append(e.Notes, waveobj.EffortNote{Ts: e.CreatedTs, Text: "effort created"})
+	// the created event is the delta source; the trail note documents it for humans, or says what the idea was saved
+	// from when the caller wrote that
+	first := waveobj.EffortNote{Ts: e.CreatedTs, Text: "effort created"}
+	if note := strings.TrimSpace(data.Note); note != "" {
+		first = waveobj.EffortNote{Ts: e.CreatedTs, Text: note, Author: "you", Session: strings.TrimSpace(data.NoteSession)}
+	}
+	e.Notes = append(e.Notes, first)
 	if len(e.Chunks) > 0 {
 		e.Events = append(e.Events, waveobj.EffortEvent{Ts: e.CreatedTs, Kind: "effort-created", Text: fmt.Sprintf("%d chunks", len(e.Chunks))})
 	} else {

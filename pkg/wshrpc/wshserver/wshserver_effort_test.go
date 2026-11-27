@@ -51,6 +51,39 @@ func TestEffortCreateAndMutateRoundTrip(t *testing.T) {
 	}
 }
 
+// an idea saved from a passage in Chat starts with that passage as your note, holding the agent it came from; one
+// created with no note keeps the "effort created" trail note
+func TestEffortCreateWithANoteWritesItAsTheFirstNote(t *testing.T) {
+	ctx := context.Background()
+	ws := &WshServer{}
+	for name, tc := range map[string]struct {
+		note, session string
+		want          waveobj.EffortNote
+	}{
+		"with a note":  {note: "  From agent \"loom\"\n\n> retry the push  ", session: "agent:t1", want: waveobj.EffortNote{Text: "From agent \"loom\"\n\n> retry the push", Author: "you", Session: "agent:t1"}},
+		"with no note": {want: waveobj.EffortNote{Text: "effort created"}},
+		"a blank note": {note: " \n ", session: "agent:t1", want: waveobj.EffortNote{Text: "effort created"}},
+	} {
+		rtn, err := ws.EffortCreateCommand(ctx, wshrpc.CommandEffortCreateData{Title: "Retry the push", Note: tc.note, NoteSession: tc.session})
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		cleanupEffort(t, rtn.EffortOID)
+		e, err := effortstore.Get(ctx, rtn.EffortOID)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if len(e.Notes) != 1 {
+			t.Fatalf("%s: notes = %+v, want one", name, e.Notes)
+		}
+		got := e.Notes[0]
+		got.Ts = 0
+		if got != tc.want {
+			t.Errorf("%s: first note = %+v, want %+v", name, got, tc.want)
+		}
+	}
+}
+
 // agentBlock makes a block in a tab of its own, the terminal an agent runs `wsh effort` from, and returns the block's
 // oref and its tab's id.
 func agentBlock(t *testing.T) (blockORef, tabID string) {

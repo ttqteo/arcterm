@@ -43,6 +43,8 @@ and a picture given to a line that is not big.
   <!-- shot: 1.12.0-chat-plan-review.webp -->
 - Each Claude agent names the Claude account it runs on: left of the model under the chat box, and before the model
   under its row in the sidebar.
+- Right-click text you selected in Chat to keep it: Save as idea puts it on Jarvis's Ideas to plan later, Add note
+  saves it as a note. Each is named by the passage's first sentence and keeps the passage with the agent it came from.
 
 ### Changed
 

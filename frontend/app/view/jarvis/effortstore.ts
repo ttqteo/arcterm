@@ -369,10 +369,22 @@ export async function togglePin(oref: string): Promise<void> {
     await requestPin(oref, !pinned, title, false);
 }
 
-// an idea is a title written down to come back to: no project, no chunks, no form. It returns the new
-// initiative's oref, for a caller that goes on to link or attach something to it.
-export async function createIdea(title: string): Promise<string> {
-    const rtn = await RpcApi.EffortCreateCommand(TabRpcClient, { title, chunks: [] }, { timeout: stateRpcTimeoutMs });
+// an idea is a title written down to come back to: no chunks, no form. It returns the new initiative's oref, for a
+// caller that goes on to link or attach something to it. `from` is what Chat's Save as idea knows: the agent's project,
+// and the passage with where it was said as the idea's first note (its objective), holding that agent's session.
+export async function createIdea(
+    title: string,
+    from?: { project?: string; note: string; agentId: string }
+): Promise<string> {
+    const data: CommandEffortCreateData = { title, chunks: [] };
+    if (from != null) {
+        data.note = from.note;
+        data.notesession = "agent:" + from.agentId;
+        if (from.project) {
+            data.project = from.project;
+        }
+    }
+    const rtn = await RpcApi.EffortCreateCommand(TabRpcClient, data, { timeout: stateRpcTimeoutMs });
     void loadBriefingAsync();
     return "effort:" + rtn.effortoid;
 }

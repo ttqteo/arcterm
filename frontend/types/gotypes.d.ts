@@ -1710,6 +1710,8 @@ declare global {
         chunks?: CommandEffortChunkSeed[];
         proposed?: boolean;
         sourceblock?: string;
+        note?: string;
+        notesession?: string;
     };
 
     // wshrpc.CommandEffortCreateRtnData
