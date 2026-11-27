@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
     briefJudges,
+    liveBriefJudges,
+    liveSenderName,
     pairEnvelopeText,
     parsePairRelay,
     relayPartKey,
@@ -165,5 +167,22 @@ describe("relayWorkerTexts", () => {
         expect(relayWorkerTexts("sent:4", worker).map((t) => t.key)).toEqual([relayPartKey("sent:4", 0)]);
         expect(relayWorkerTexts("sent:0", read("pair-judge-brief")!)).toHaveLength(1);
         expect(relayWorkerTexts("sent:2", read("pair-relay-first")!)).toEqual([]);
+    });
+});
+
+describe("live sender names", () => {
+    const pair = { worker: { name: "Plan", tab: "w" }, judges: [{ name: "thesis", tab: "j1" }] };
+    const roster = [{ id: "j1", name: "Judge: Plan" }];
+
+    it("shows the judge's tab under its name now, the relayed name when the tab is gone or unnamed", () => {
+        expect(liveSenderName("thesis", "j1", roster)).toBe("Judge: Plan");
+        expect(liveSenderName("thesis", "j2", roster)).toBe("thesis");
+        expect(liveSenderName("thesis", null, roster)).toBe("thesis");
+        expect(liveSenderName("thesis", "j1", [{ id: "j1", name: " " }])).toBe("thesis");
+    });
+
+    it("renames a brief's judges through the pair, keeping a name the pair does not hold", () => {
+        expect(liveBriefJudges(["thesis", "other"], pair, roster)).toEqual(["Judge: Plan", "other"]);
+        expect(liveBriefJudges(["thesis"], null, roster)).toEqual(["thesis"]);
     });
 });

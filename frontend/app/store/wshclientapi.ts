@@ -1458,6 +1458,12 @@ export class RpcApiType {
         return client.wshRpcCall("jarvisstatus", data, opts);
     }
 
+    // command "jobpeaksforget" [call]
+    JobPeaksForgetCommand(client: WshClient, data: CommandJobPeaksForgetData, opts?: RpcOpts): Promise<JobPeaksForgetResult> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "jobpeaksforget", data, opts);
+        return client.wshRpcCall("jobpeaksforget", data, opts);
+    }
+
     // command "jobqueuerunnow" [call]
     JobQueueRunNowCommand(client: WshClient, data: CommandJobQueueActData, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "jobqueuerunnow", data, opts);

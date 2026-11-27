@@ -361,6 +361,42 @@ export default function (kit) {
                     beforeJump === false && landed === true && flashed === true,
                     { beforeJump, landed, flashed }
                 );
+
+                // pinned-list: a judge's message that scrolled away pins to the top as a band tagged Judge, and its counter
+                // lists the judges' and your messages (never the worker's); a pick scrolls to it. At the end the band hides.
+                await h.ev(`(() => {
+                    const t = ${TIMELINE};
+                    t.scrollTop += ${MSG("pm-checked")}.getBoundingClientRect().top - t.getBoundingClientRect().top;
+                })()`);
+                const BAND = `${PANE}?.querySelector("[data-pinned-prompt]")`;
+                const banded = await polishWaitFor(h, `!!${BAND}?.querySelector("[data-prompt-counter]")`, WAIT_MS);
+                const band = await h.ev(`(() => {
+                    const b = ${BAND};
+                    return b ? { tag: b.querySelector("[data-prompt-tag]")?.textContent ?? null, text: b.querySelector("button .truncate:not([data-prompt-tag])")?.textContent ?? null, count: b.querySelector("[data-prompt-counter]")?.textContent ?? null } : null;
+                })()`);
+                await click(h, `${BAND}.querySelector("[data-prompt-counter]")`);
+                const listed = await polishWaitFor(h, `document.querySelectorAll('[data-prompt-list] [data-prompt-item]').length === 2`, WAIT_MS);
+                const list = await h.ev(`(() => {
+                    const menu = document.querySelector('[role="menu"][aria-label="Judge & you"]');
+                    return menu ? [...menu.querySelectorAll("[data-prompt-item]")].map((r) => r.querySelector("[data-prompt-tag]")?.textContent ?? null) : null;
+                })()`);
+                await shot(h, "3b-pinned-list");
+                await click(h, `document.querySelector('[data-prompt-list] [data-prompt-item="1"]')`);
+                const picked = await polishWaitFor(h, `!document.querySelector("[data-prompt-list]") && ${inView("pm-pilot-first")}`, WAIT_MS);
+                await h.ev(`(() => { const t = ${TIMELINE}; t.scrollTop = t.scrollHeight; })()`);
+                const hidAtEnd = await polishWaitFor(h, `!${BAND}`, WAIT_MS);
+                rec(
+                    "pinned-list: with the timeline cut to 230px and pm-checked at its top, the band pins pm-three-points tagged Judge with counter 1/2; the counter opens \"Judge & you\" listing the two judge messages (not the worker's three); picking the second closes it and scrolls pm-pilot-first into view; at the end the band hides",
+                    banded === true &&
+                        band?.tag === "Judge" &&
+                        (band?.text ?? "").startsWith("Prompt symmetry holds") &&
+                        band?.count === "1/2" &&
+                        listed === true &&
+                        JSON.stringify(list) === JSON.stringify(["Judge", "Judge"]) &&
+                        picked === true &&
+                        hidAtEnd === true,
+                    { banded, band, list, picked, hidAtEnd }
+                );
                 await squeeze(h, null);
 
                 // reply-hover: Reply shows on hover only, and puts the quote of that message in the composer

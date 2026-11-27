@@ -15,6 +15,7 @@ import {
     OPENED_OUTLINE,
     openOrPeekClick,
     PinButton,
+    PriorityBadges,
     STATUS_TEXT,
     type InitiativeActions,
 } from "./initiativecards";
@@ -70,7 +71,8 @@ function InitiativeListRow({
                 />
             ) : null}
             <span title={face.title} className="flex min-w-0 items-baseline gap-1.5">
-                <span className="truncate text-[12.5px] font-semibold text-ink-hi">{face.title}</span>
+                {/* the title keeps a few words when the level badges crowd a narrow row: the badges clip instead */}
+                <span className="min-w-[72px] truncate text-[12.5px] font-semibold text-ink-hi">{face.title}</span>
                 {face.moved ? (
                     <span
                         aria-label="Changed since you opened Jarvis"
@@ -87,6 +89,7 @@ function InitiativeListRow({
                         +{face.subCount} sub
                     </span>
                 ) : null}
+                <PriorityBadges counts={face.priorities} className="min-w-0 flex-shrink self-center overflow-hidden" />
             </span>
             {face.hasProgress ? (
                 <span className="flex items-center gap-2">

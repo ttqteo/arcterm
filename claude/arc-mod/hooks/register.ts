@@ -24,7 +24,7 @@ import { liveFile, LiveGather, serialWriter } from "./live-core";
 import { lintContext, lintMemory, parseMemory, referencedPaths, shouldReport, taskNames } from "./memlint-core";
 import type { Ran } from "./mention-core";
 import { keptHereNotice, leadingMention, mentionRefusal, notAnAgent, sendArgs, sendOutcome } from "./mention-core";
-import { refsContext } from "./refs-core";
+import { boardShapesContext, promptBoardIds, refsContext } from "./refs-core";
 import { idleArgs, TurnStatus } from "./status-core";
 import {
     beginArgs,
@@ -728,6 +728,29 @@ async function waitInFlight($: EngineInterface, until: Promise<unknown>): Promis
     await until;
 }
 
+// each board's shapes as a context line (refs-core.ts boardShapesContext); a board wsh cannot list (gone, wavesrv
+// down) is left out, so the prompt goes on without it
+async function boardShapes($: EngineInterface, ids: string[]): Promise<string[]> {
+    const out: string[] = [];
+    for (const id of ids) {
+        let ran: Ran;
+        try {
+            ran = await $.process.run([WSH, "board", "shapes", `board:${id}`]);
+        } catch (err) {
+            ran = { exitCode: -1, stdout: "", stderr: String(err) };
+        }
+        if (ran.exitCode !== 0) {
+            $.ui.log(`arc: the shapes of board:${id} were not listed: ${ran.stderr.trim()}`, { to: "debug" });
+            continue;
+        }
+        const line = boardShapesContext(id, ran.stdout);
+        if (line !== null) {
+            out.push(line);
+        }
+    }
+    return out;
+}
+
 // the session's live reply file (live-core.ts), null when there is no home to put it under
 async function liveFileOf($: EngineInterface): Promise<string | null> {
     try {
@@ -893,7 +916,9 @@ export const register: Register = (on) => {
             // an id the person names ("đọc agent 5065bd8c", council:<id>) is read with wsh read; not the ids in a
             // subagent's hand-back, a peer's message or a background task's report
             const refs = active && !e.command && endsTurnSay(e.origin.kind) ? refsContext(e.text) : null;
-            const added = [math, refs].filter((c): c is string => c !== null);
+            // a board it names brings its shapes, so the reply can link the ones it talks about (Chat shows them)
+            const shapes = refs !== null ? await boardShapes($, promptBoardIds(e.text)) : [];
+            const added = [math, refs, ...shapes].filter((c): c is string => c !== null);
             if (added.length > 0) {
                 return next({ ...e, context: [...(e.context ?? []), ...added] });
             }

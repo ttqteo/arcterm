@@ -397,6 +397,14 @@ Once there are two cells, each has a bar you can drag to rearrange it; the `×` 
 the grid and leaves it running. The header and the details rail follow the focused cell (a terminal's header is its slim
 one, with **Move to the panel** and **Close**); click a cell to focus it.
 
+The header's layout button (on a board split it is Focus board, whose press stays its own) opens the snap layouts when
+the pointer rests on it, as Windows does on its maximize button: 1 | 1, 7 | 3 and 3 | 7 for two cells, one beside two
+stacked for three, 2 × 2 for four; the others are dimmed. A click on a zone puts the cell in focus there, the other
+cells filling the rest in their order, and each zone names the cell it would hold. `Esc` closes it. The palette has
+the same rows by name, with no chord: **Layout: 1 | 1**, **Layout: 7 | 3**, **Layout: 3 | 7**, **Layout: 1 | 2
+stacked** and **Layout: 2 × 2** (the cell in focus keeps its place, only the shares change), and **Swap cells** for a
+split of two.
+
 Moving between agents and terminals with the keyboard follows one rule: if it already has a cell, that cell takes focus;
 otherwise it shows on its own and the split stays as it was. So picking terminal T on agent A of a split [A, B] shows T
 alone; a quick `Ctrl`+`Tab` back to A brings [A, B] back. With one pane (no split), the pane simply follows what you pick.

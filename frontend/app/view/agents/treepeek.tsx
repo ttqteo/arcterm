@@ -10,23 +10,29 @@ import { MOTION, springPop } from "@/app/element/motiontokens";
 import { usePartMotion } from "@/app/element/springbatch";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
+import { PenTool } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
+import { openBoardsAtom } from "../boards/boardentries";
+import { hiddenBoardsAtom } from "../boards/boardsplitstore";
+import { useBoardList } from "../boards/boardstore";
 import { activeNavRows } from "./activenav";
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
 import { selectAgentRow } from "./agenttree";
+import { projectGridsAtom } from "./gridstore";
 import { collapsedProjectsAtom } from "./projectfoldstore";
 import { toolTerminalName } from "./toolsmodel";
 import { toolsStatusAtom } from "./toolsstore";
 import {
     PEEK_CLOSE_GRACE_MS,
     PEEK_OPEN_DELAY_MS,
-    peekDots,
     peekGroups,
     peekShown,
+    peekStripItems,
     type PeekDot,
     type PeekGroup,
+    type PeekRow,
 } from "./treepeekmodel";
 import { unreadLabel } from "./unreadagents";
 import { unreadAgentsAtom } from "./unreadagentsstore";
@@ -55,6 +61,12 @@ function usePeekGroups(model: AgentsViewModel): PeekGroup[] {
     useAtomValue(model.focusIdAtom);
     useAtomValue(model.projectFilterAtom);
     useAtomValue(collapsedProjectsAtom);
+    // the splits and their boards (activeNavRows reads them through globalStore); the list loads here too, since the
+    // tree that loads it is not mounted while folded
+    useAtomValue(projectGridsAtom);
+    useAtomValue(openBoardsAtom);
+    useAtomValue(hiddenBoardsAtom);
+    useBoardList("");
     const tools = useAtomValue(toolsStatusAtom) ?? [];
     const unread = useAtomValue(unreadAgentsAtom);
     const byId = new Map<string, AgentVM>([...agents, ...terminals].map((v) => [v.id, v]));
@@ -110,29 +122,52 @@ export function PeekStripDots({ model }: { model: AgentsViewModel }) {
             data-tree-peek-dots
             className="flex min-h-0 w-full flex-col items-center gap-[6px] overflow-hidden pb-[8px] pt-[6px]"
         >
-            {peekDots(groups).map((d) => (
-                <span
-                    key={d.id}
-                    className={cn("relative flex w-full shrink-0 justify-center", d.gapBefore && "mt-[8px]")}
-                >
-                    {d.id === focusId ? (
-                        <motion.span
-                            layoutId="tree-strip-selected"
-                            data-tree-peek-selected
-                            transition={{ duration: MOTION.durMacro, ease: MOTION.easeFluid }}
-                            // centred by top and left, not a translate: motion owns transform while it glides
-                            className="absolute left-[calc(50%-8px)] top-[calc(50%-7px)] h-[14px] w-[16px] rounded-[5px] bg-surface-selected"
+            {peekStripItems(groups).map((item) => {
+                const dots = item.dots.map((d) => (
+                    <span key={d.id} className="relative flex w-full shrink-0 justify-center">
+                        {d.id === focusId ? (
+                            <motion.span
+                                layoutId="tree-strip-selected"
+                                data-tree-peek-selected
+                                transition={{ duration: MOTION.durMacro, ease: MOTION.easeFluid }}
+                                // centred by top and left, not a translate: motion owns transform while it glides
+                                className="absolute left-[calc(50%-8px)] top-[calc(50%-7px)] h-[14px] w-[16px] rounded-[5px] bg-surface-selected"
+                            />
+                        ) : null}
+                        <span
+                            data-tree-peek-dot={d.board ? "board" : d.dot}
+                            className={cn(
+                                "relative shrink-0 transition-[height,width,background-color] duration-150",
+                                // a board's cell: a small square, outlined, beside its split's agents
+                                d.board
+                                    ? "h-[6px] w-[6px] rounded-[1.5px] border border-secondary"
+                                    : stripDotClass(d.dot, d.id === focusId)
+                            )}
                         />
-                    ) : null}
+                    </span>
+                ));
+                if (item.split == null) {
+                    return (
+                        <span key={item.key} className={cn("flex w-full shrink-0", item.gapBefore && "mt-[8px]")}>
+                            {dots}
+                        </span>
+                    );
+                }
+                // a split's dots on one pill, the accent the tree's split row wears (fainter when it is off screen)
+                return (
                     <span
-                        data-tree-peek-dot={d.dot}
+                        key={item.key}
+                        data-tree-peek-split={item.split.key}
                         className={cn(
-                            "relative shrink-0 transition-[height,width,background-color] duration-150",
-                            stripDotClass(d.dot, d.id === focusId)
+                            "flex w-[16px] shrink-0 flex-col items-center gap-[6px] rounded-[7px] border py-[4px]",
+                            item.split.shown ? "border-accent/60 bg-accent/20" : "border-border bg-surface-raised",
+                            item.gapBefore && "mt-[8px]"
                         )}
-                    />
-                </span>
-            ))}
+                    >
+                        {dots}
+                    </span>
+                );
+            })}
         </span>
     );
 }
@@ -174,45 +209,142 @@ function PeekCard({ model, altHeld, onPicked }: { model: AgentsViewModel; altHel
                 groups.map((g) => (
                     <div key={g.project} className="flex flex-col gap-px">
                         <div className="truncate px-2 pb-0.5 pt-1.5 text-[11px] text-muted">{g.label}</div>
-                        {g.rows.map((r) => (
-                            <button
-                                key={r.id}
-                                type="button"
-                                data-tree-peek-row={r.id}
-                                aria-current={r.id === focusId ? "true" : undefined}
-                                onClick={() => {
-                                    selectAgentRow(model, r.id);
-                                    onPicked();
-                                }}
-                                className={cn(
-                                    "flex h-[28px] min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded-md px-2 text-left text-[13px]",
-                                    r.id === focusId ? "bg-surface-selected text-primary" : "hover:bg-surface-hover",
-                                    r.id !== focusId && (r.dot === "idle" ? "text-secondary" : "text-primary"),
-                                    r.dot === "unread" && "font-semibold"
-                                )}
-                            >
-                                <span className={cn("h-[6px] w-[6px] shrink-0 rounded-full", DOT_CLASS[r.dot])} />
-                                <span className="min-w-0 flex-1 truncate">{r.name}</span>
-                                {r.dot === "asking" ? (
-                                    <span className="shrink-0 text-[11px] text-asking">asking</span>
-                                ) : r.unread != null ? (
-                                    <span
-                                        data-tree-peek-unread={r.unread}
-                                        className="flex h-[15px] min-w-[15px] shrink-0 items-center justify-center rounded-full bg-unread px-1 text-[9.5px] font-bold tabular-nums text-background"
-                                    >
-                                        {unreadLabel(r.unread)}
-                                    </span>
-                                ) : null}
-                                {altHeld && r.digit != null ? (
-                                    <kbd className="min-w-[16px] shrink-0 rounded-[4px] border border-edge-strong bg-surface-selected px-[3px] text-center font-mono text-[10px] leading-[14px] text-primary">
-                                        {r.digit}
-                                    </kbd>
-                                ) : null}
-                            </button>
-                        ))}
+                        {splitRuns(g.rows).map((run) =>
+                            run.split == null ? (
+                                <Fragment key={run.rows[0].id}>
+                                    {run.rows.map((r) => (
+                                        <PeekRowButton
+                                            key={r.id}
+                                            model={model}
+                                            row={r}
+                                            focusId={focusId}
+                                            altHeld={altHeld}
+                                            onPicked={onPicked}
+                                        />
+                                    ))}
+                                </Fragment>
+                            ) : (
+                                // a split's rows in one frame, the accent the tree's split row wears (fainter off screen)
+                                <SplitFrame
+                                    key={`split:${run.split.key}`}
+                                    splitKey={run.split.key}
+                                    shown={run.split.shown}
+                                >
+                                    {run.rows.map((r) => (
+                                        <PeekRowButton
+                                            key={r.id}
+                                            model={model}
+                                            row={r}
+                                            focusId={focusId}
+                                            altHeld={altHeld}
+                                            onPicked={onPicked}
+                                        />
+                                    ))}
+                                </SplitFrame>
+                            )
+                        )}
                     </div>
                 ))
             )}
         </motion.nav>
+    );
+}
+
+// a group's rows cut into runs: a split's rows (consecutive, peekGroups) as one run, every other row a run of its own
+function splitRuns(rows: readonly PeekRow[]): { split?: PeekRow["split"]; rows: PeekRow[] }[] {
+    const out: { split?: PeekRow["split"]; rows: PeekRow[] }[] = [];
+    for (const r of rows) {
+        const last = out[out.length - 1];
+        if (r.split != null && last?.split?.key === r.split.key) {
+            last.rows.push(r);
+        } else {
+            out.push({ ...(r.split != null ? { split: r.split } : {}), rows: [r] });
+        }
+    }
+    return out;
+}
+
+function SplitFrame({ splitKey, shown, children }: { splitKey: string; shown: boolean; children: ReactNode }) {
+    return (
+        <div
+            data-tree-peek-split={splitKey}
+            data-tree-peek-split-shown={shown ? "true" : undefined}
+            className={cn(
+                "my-px flex flex-col gap-px rounded-[8px] border p-px",
+                shown ? "border-accent/60 bg-accent/10" : "border-border"
+            )}
+        >
+            {children}
+        </div>
+    );
+}
+
+function PeekRowButton({
+    model,
+    row: r,
+    focusId,
+    altHeld,
+    onPicked,
+}: {
+    model: AgentsViewModel;
+    row: PeekRow;
+    focusId: string | undefined;
+    altHeld: boolean;
+    onPicked: () => void;
+}) {
+    if (r.board != null) {
+        const pick = r.board.pick;
+        return (
+            <button
+                type="button"
+                data-tree-peek-board={r.id}
+                title={r.name}
+                onClick={() => {
+                    // the split's first agent, which brings the split up with the board in it
+                    selectAgentRow(model, pick);
+                    onPicked();
+                }}
+                className="flex h-[26px] min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded-md px-2 text-left text-[13px] text-secondary hover:bg-surface-hover"
+            >
+                <PenTool size={11} aria-hidden className="shrink-0 text-muted" />
+                <span className="min-w-0 flex-1 truncate">{r.name}</span>
+            </button>
+        );
+    }
+    return (
+        <button
+            type="button"
+            data-tree-peek-row={r.id}
+            aria-current={r.id === focusId ? "true" : undefined}
+            onClick={() => {
+                selectAgentRow(model, r.id);
+                onPicked();
+            }}
+            className={cn(
+                "flex min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded-md px-2 text-left text-[13px]",
+                r.split != null ? "h-[26px]" : "h-[28px]",
+                r.id === focusId ? "bg-surface-selected text-primary" : "hover:bg-surface-hover",
+                r.id !== focusId && (r.dot === "idle" ? "text-secondary" : "text-primary"),
+                r.dot === "unread" && "font-semibold"
+            )}
+        >
+            <span className={cn("h-[6px] w-[6px] shrink-0 rounded-full", DOT_CLASS[r.dot])} />
+            <span className="min-w-0 flex-1 truncate">{r.name}</span>
+            {r.dot === "asking" ? (
+                <span className="shrink-0 text-[11px] text-asking">asking</span>
+            ) : r.unread != null ? (
+                <span
+                    data-tree-peek-unread={r.unread}
+                    className="flex h-[15px] min-w-[15px] shrink-0 items-center justify-center rounded-full bg-unread px-1 text-[9.5px] font-bold tabular-nums text-background"
+                >
+                    {unreadLabel(r.unread)}
+                </span>
+            ) : null}
+            {altHeld && r.digit != null ? (
+                <kbd className="min-w-[16px] shrink-0 rounded-[4px] border border-edge-strong bg-surface-selected px-[3px] text-center font-mono text-[10px] leading-[14px] text-primary">
+                    {r.digit}
+                </kbd>
+            ) : null}
+        </button>
     );
 }

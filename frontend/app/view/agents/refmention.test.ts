@@ -294,10 +294,26 @@ describe("refMatches", () => {
 
     it("lists one kind when the query names it", () => {
         expect(queryKind("cou")).toBe("council");
-        expect(queryKind("r")).toBeNull();
         expect(refMatches("council", items).map((r) => r.id)).toEqual(["0c28170c368b5ab0"]);
         expect(refMatches("run", items).map((r) => r.id)).toEqual(["fed0d00e-a6df"]);
         expect(refMatches("agent", items).map((r) => r.id)).toEqual(["5065bd8c-1", "8e33269b-1"]);
+    });
+
+    it("takes one letter as a kind: a agent, r run, c council, s conversation, e initiative, b board", () => {
+        expect(queryKind("a")).toBe("agent");
+        expect(queryKind("r")).toBe("run");
+        expect(queryKind("c")).toBe("council");
+        expect(queryKind("s")).toBe("session");
+        expect(queryKind("e")).toBe("effort");
+        expect(queryKind("b")).toBe("board");
+        expect(queryKind("A")).toBe("agent");
+        // any other letter is a search
+        expect(queryKind("x")).toBeNull();
+        expect(refMatches("a", items).map((r) => r.id)).toEqual(["5065bd8c-1", "8e33269b-1"]);
+        expect(refMatches("c", items).map((r) => r.id)).toEqual(["0c28170c368b5ab0"]);
+        expect(refMatches("r", items).map((r) => r.id)).toEqual(["fed0d00e-a6df"]);
+        // two letters read the kind words again: "ch" is chat, the agents
+        expect(queryKind("ch")).toBe("agent");
     });
 
     it("matches an id prefix, or every word in the label and detail, agents first", () => {

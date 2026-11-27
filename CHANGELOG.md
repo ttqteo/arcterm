@@ -36,11 +36,51 @@ and a picture given to a line that is not big.
 
 - Sleep now works on an agent that is asking you a question or waiting for a permission: its question waits for you, an
   answer you give while it sleeps reaches it when it wakes.
+### Added
+
+- `wsh jobslot forget <command>` drops the largest RAM peak measured for a command in the current project, so one
+  bad measurement no longer makes the heavy-job queue hold that command back for its next five runs. `--all` drops
+  every measured peak.
+- Jarvis initiative cards and rows show how many open chunks carry each priority ("1 critical", "4 high"), so you see
+  the urgent work without opening the initiative.
+- When All initiatives has many projects, the three you used last sit as buttons left of the project menu: one press
+  shows that project, a second press shows every project again.
 
 ### Fixed
 
 - A question an agent in a paused run had open no longer disappears when the run pauses: you can answer it while the
   run is paused, and the agent gets your answer when the run resumes.
+- The chat box's `/` menu and `@` list show the rest of the highlighted name faintly after what you typed (`/co` shows
+  `ntext`); Tab or → takes it.
+- Snap layouts for a split, as Windows has: rest the pointer on the layout button in the agent header (Focus board's,
+  on a board split) and pick a zone of 1 | 1, 7 | 3, 3 | 7, one beside two, or 2 × 2; the agent in focus goes there
+  and the other cells fill the rest. The palette has the same as Layout rows, and Swap cells for a split of two.
+- With a board in the split beside a Chat, a dashed chip with its name shows under the chat box: a click attaches the
+  board to your next message (it goes as `board:<id>`, so the agent draws or answers on that board), and it lets go
+  once that message is sent.
+- Words in Chat that name a shape of the board beside it light that shape on the board while the pointer is on them,
+  and a click shows it there (again for the next drawing that holds it; Back returns). A message sent with the board
+  attached gives the agent the board's shapes, so it links the ones it talks about; quotes, dates and short bold
+  phrases or table cells that match a shape's text point too, underlined dotted. `wsh board shapes board:<id>` lists
+  a board's shapes.
+- A pair's conversation pins the judge's or your last message to the top once it scrolls away, as Chat does with your
+  prompts, and the counter on it lists only the judges' messages and yours, each tagged Judge or You, to jump to.
+
+### Changed
+
+- One letter after `@` picks a kind: `@a` lists agents, `@r` runs, `@c` councils, `@s` conversations, `@e` initiatives
+  and `@b` boards, ahead of the files.
+- The folded Agent tree shows splits: the peek card frames a split's agents and its board together, and the strip runs
+  their dots on one pill.
+
+### Fixed
+
+- A split keeps its agents across a restart of arcterm: an agent coming back used to drop out of its split until it
+  spoke, and a board beside it lost its split with it.
+- A judge arcterm starts for a pair is named "Judge: <agent>" on its replies in Chat, not the project's name, in
+  the replies it already sent too while its tab is open.
+- A pair's new-message count on the ⚖ line drops as you scroll the working agent's Chat past each judge reply, and no
+  longer counts the working agent's own messages.
 
 ## 1.12.0 — 2026-11-27
 

@@ -26,6 +26,7 @@ import {
     projectName,
     queueLine,
     quietCount,
+    recentProjectChips,
     RECORDS_SUMMARY_ID,
     runKindCounts,
     runKindLegs,
@@ -1255,6 +1256,31 @@ describe("filter counts", () => {
             orchestrator: 1,
             quick: 3,
         });
+    });
+});
+
+describe("recentProjectChips", () => {
+    const options = ["alpha", "beta", "gamma", "delta", "omega", ""];
+    it("takes the recently launched projects the filter offers, sorted by name", () => {
+        expect(recentProjectChips(options, ["omega", "gone", "beta", "alpha", "delta"], [])).toEqual([
+            "alpha",
+            "beta",
+            "omega",
+        ]);
+    });
+
+    it("fills from the initiatives that moved last, never no project", () => {
+        const cards = [
+            { project: "gamma", updatedts: 10 },
+            { project: "", updatedts: 50 },
+            { project: "delta", updatedts: 40 },
+            { project: "beta", updatedts: 30 },
+        ];
+        expect(recentProjectChips(options, ["beta"], cards)).toEqual(["beta", "delta", "gamma"]);
+    });
+
+    it("returns fewer when the filter offers fewer", () => {
+        expect(recentProjectChips(["solo", ""], [], [{ project: "solo", updatedts: 1 }])).toEqual(["solo"]);
     });
 });
 

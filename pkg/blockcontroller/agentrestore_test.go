@@ -5,6 +5,7 @@ package blockcontroller
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"sort"
 	"sync"
@@ -340,6 +341,69 @@ func TestRestoreLiveAgentsRunsOneBlockPerSession(t *testing.T) {
 		if agentAsleep(block.Meta) {
 			t.Errorf("restored block %s marked asleep", id)
 		}
+	}
+}
+
+func restoringMark(t *testing.T, blockId string) bool {
+	t.Helper()
+	block, err := wstore.DBMustGet[*waveobj.Block](context.Background(), blockId)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return block.Meta.HasKey(MetaKey_AgentRestoring)
+}
+
+// The cockpit lists an agent by its status, which a server that just started has none of: every agent the boot brings
+// back is marked restoring before the cockpit's first load, until it reports, so a split it was a cell of keeps it. A
+// start that fails, and a mark the last server left, are cleared.
+func TestRestoreLiveAgentsMarksRestoring(t *testing.T) {
+	done := make(chan string, 8)
+	var failId string
+	oldRestart, oldStagger := restartAgentBlock, restoreAgentStagger
+	restartAgentBlock = func(_ context.Context, _, blockId string) error {
+		defer func() { done <- blockId }()
+		if blockId == failId {
+			return errors.New("no pty")
+		}
+		return nil
+	}
+	restoreAgentStagger = time.Millisecond
+	t.Cleanup(func() { restartAgentBlock, restoreAgentStagger = oldRestart, oldStagger })
+
+	live := func(m waveobj.MetaMapType) waveobj.MetaMapType { return withMeta(m, MetaKey_AgentLive, "1") }
+	back, _ := insertAgentBlock(t, live(agentMeta("claude", "--resume", "back")))
+	fails, _ := insertAgentBlock(t, live(agentMeta("claude", "--resume", "fails")))
+	failId = fails
+	stale, _ := insertAgentBlock(t, withMeta(agentMeta("claude", "--resume", "stale"), MetaKey_AgentRestoring, 1))
+	plain, _ := insertAgentBlock(t, agentMeta("claude", "--resume", "plain"))
+
+	RestoreLiveAgents(context.Background())
+	// marked before any start runs: the starts go in a goroutine, the cockpit connects meanwhile
+	if !restoringMark(t, back) {
+		t.Fatalf("block %s coming back is not marked restoring", back)
+	}
+	for range 2 {
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Fatal("restored agents did not start")
+		}
+	}
+	// the failed start's mark is cleared after its stub returns
+	for deadline := time.Now().Add(5 * time.Second); restoringMark(t, fails) && time.Now().Before(deadline); {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !restoringMark(t, back) {
+		t.Errorf("block %s lost its restoring mark before it reported", back)
+	}
+	for _, id := range []string{fails, stale, plain} {
+		if restoringMark(t, id) {
+			t.Errorf("block %s marked restoring, want no mark", id)
+		}
+	}
+	NoteAgentReported(back)
+	if restoringMark(t, back) {
+		t.Errorf("block %s still marked restoring after it reported", back)
 	}
 }
 

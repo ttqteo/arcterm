@@ -39,6 +39,8 @@ import {
 } from "motion/react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { goalFromLines } from "../../../../claude/arc-mod/hooks/goal-core";
+import { BoardPointerContext } from "../boards/boardphrase";
+import { boardPointerShapesAtom } from "../boards/boardpointerstore";
 import { confirmCloseSession } from "./agentactions";
 import { canStop } from "./agentcomposer";
 import { getProcExitAtom } from "./agentcontrollerstore";
@@ -52,6 +54,7 @@ import { builderCheckView, procExited, type BuilderCheckView } from "./brainstor
 import { brainstormAtom, brainstormSeenAtom, shownBrainstormFile } from "./brainstormstore";
 import { canvasStateAtom } from "./canvasstore";
 import { AskRow } from "./channelsprimitives";
+import { useChatBoard } from "./chatboardchip";
 import { boxPlaceholder, type BoxState } from "./chatboxstate";
 import { answersTopic, brainstormCard, holdCard, type ChatCard } from "./chatbrainstorm";
 import { brainstormAnswersAtom, recordBrainstormAnswer } from "./chatbrainstormstore";
@@ -755,9 +758,20 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
     const projects = useAtomValue(projectsAtom);
     const project = projects[agent.project ?? ""]?.path ?? "";
     const refLinks = useMemo(() => ({ model, project, selfId: agent.id }), [model, project, agent.id]);
+    // the board in the agent's split: the words of the conversation that point at its shapes light and show them
+    const chatBoard = useChatBoard(agent.id);
+    const boardId = chatBoard?.board.boardId ?? "";
+    const shapes = useAtomValue(boardPointerShapesAtom(boardId));
+    const boardName = chatBoard?.name ?? "";
+    const pointers = useMemo(
+        () => (boardId === "" || shapes == null || shapes.length === 0 ? null : { boardId, name: boardName, shapes }),
+        [boardId, boardName, shapes]
+    );
     return (
         <ChatRefLinks value={refLinks}>
-            <ChatPaneBody model={model} agent={agent} barred={barred} />
+            <BoardPointerContext.Provider value={pointers}>
+                <ChatPaneBody model={model} agent={agent} barred={barred} />
+            </BoardPointerContext.Provider>
         </ChatRefLinks>
     );
 }

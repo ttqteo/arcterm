@@ -267,11 +267,21 @@ export function refHitMask(query: string, label: string): boolean[] {
 
 const kindOrder: Record<RefKind, number> = { agent: 0, run: 1, council: 2, session: 3, effort: 4, board: 5 };
 
-/** The kind a query asks for by name: "@run", "@coun", "@agent" (two letters at least), else null. */
+// one letter names a kind outright: `@a` the agents, `@c` the councils… (a one-letter search would match nearly every row)
+const KIND_LETTERS: Record<string, RefKind> = {
+    a: "agent",
+    r: "run",
+    c: "council",
+    s: "session",
+    e: "effort",
+    b: "board",
+};
+
+/** The kind a query asks for by name: "@run", "@coun", "@agent", or one letter of KIND_LETTERS ("@a"), else null. */
 export function queryKind(query: string): RefKind | null {
     const q = query.trim().toLowerCase();
     if (q.length < 2) {
-        return null;
+        return KIND_LETTERS[q] ?? null;
     }
     for (const kind of Object.keys(KIND_WORDS) as RefKind[]) {
         if (KIND_WORDS[kind].some((w) => w.startsWith(q))) {

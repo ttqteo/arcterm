@@ -6,8 +6,11 @@
 // (fullscreen) too.
 
 import { globalStore } from "@/app/store/jotaiStore";
+import { openBoardsAtom } from "../boards/boardentries";
+import { hiddenBoardsAtom } from "../boards/boardsplitstore";
+import { boardListAtom } from "../boards/boardstore";
 import type { AgentsViewModel } from "./agents";
-import { projectTree, treeNavIds, type ProjectTreeRow } from "./agentsidebarmodel";
+import { projectTree, treeBoards, treeNavIds, type ProjectTreeRow } from "./agentsidebarmodel";
 import { buildAgentTree } from "./agenttreemodel";
 import { waitMap } from "./agentwaits";
 import { projectGridsAtom, treeSplits } from "./gridstore";
@@ -59,6 +62,13 @@ export function activeNavRows(model: AgentsViewModel): ProjectTreeRow[] {
             dockedId: globalStore.get(dockedTerminalAtom),
             seeded: globalStore.get(rosterSeededAtom),
         }),
+        // the boards, so a board's cell stays in its split: the peek card lists it there (a board row is no nav id)
+        boards: treeBoards(
+            globalStore.get(boardListAtom("")),
+            new Set(globalStore.get(openBoardsAtom).keys()),
+            agents,
+            globalStore.get(hiddenBoardsAtom)
+        ),
         roster: [...agents, ...terminals],
         ...treeServiceInput(globalStore.get(servicesAtom) ?? [], focusId, globalStore.get(hiddenServicesAtom)),
     });

@@ -187,6 +187,17 @@ function commit(model: GridModel, grid: GridState): void {
     globalStore.set(projectGridsAtom, withShownGrid(grids, next, HOME_PROJECT));
 }
 
+// The split on screen laid out again (gridlayouts.ts): the same cells in new places, focus where it was. A grid of one
+// cell is no split and is left alone.
+export function relayoutGrid(model: GridModel, next: (grid: GridState) => GridState): boolean {
+    const s = currentGrid(model);
+    if (s.ids.length < 2) {
+        return false;
+    }
+    commit(model, next(s));
+    return true;
+}
+
 // A drop on the cell at `targetIndex` of the current grid (drop overlay): an index into the grid as currentGrid
 // sees it, which is the grid the surface draws. The dropped agent is focused. Another project's tab is not dropped:
 // a split holds one project's tabs.

@@ -11,6 +11,7 @@ import {
     pairOf,
     parseSeen,
     pausedStateText,
+    relaySeenThrough,
     restsUnder,
     resumableJudgeOf,
     timelineRows,
@@ -226,8 +227,8 @@ describe("composerTarget", () => {
 describe("newCount", () => {
     const v = conversation();
 
-    it("counts the messages past the ones the person saw, not their own", () => {
-        expect(newCount(v, 0)).toBe(3);
+    it("counts the messages past the ones the person saw, not their own nor the working agent's", () => {
+        expect(newCount(v, 0)).toBe(2);
         expect(newCount(v, 1)).toBe(2);
         expect(newCount(v, 2)).toBe(1);
         expect(newCount(v, 3)).toBe(1);
@@ -244,7 +245,7 @@ describe("pairButtonLabel", () => {
 
     it("names the judge and the new messages on the working agent's button", () => {
         expect(pairButtonLabel(v, "worker", 2)).toBe("Paired with judge 4c6ba858 · 1 new");
-        expect(pairButtonLabel(v, "worker", 0)).toBe("Paired with judge 4c6ba858 · 3 new");
+        expect(pairButtonLabel(v, "worker", 0)).toBe("Paired with judge 4c6ba858 · 2 new");
     });
 
     it("leaves the count off when nothing is new", () => {
@@ -466,5 +467,33 @@ describe("resumableJudgeOf", () => {
         expect(resumableJudgeOf([resting(JUDGE, { session: undefined })], [worker], WORKER)).toBeNull();
         expect(resumableJudgeOf([resting(JUDGE, { workersession: "other" })], [worker], WORKER)).toBeNull();
         expect(resumableJudgeOf([resting(JUDGE)], [{ id: WORKER, transcriptPath: undefined }], WORKER)).toBeNull();
+    });
+});
+
+describe("relaySeenThrough", () => {
+    const at = (h: number, m: number) => new Date(2026, 10, 27, h, m, 20).getTime();
+    const v = view({
+        messages: [
+            msg({ id: "w1", from: "worker", tab: WORKER, ts: at(23, 0), text: "Plan v1" }),
+            msg({ id: "j1", from: "judge", tab: JUDGE, ts: at(23, 0), text: "First point\nmore" }),
+            msg({ id: "j2", from: "judge", tab: JUDGE, ts: at(23, 0), text: "Second point" }),
+            msg({ id: "w2", from: "worker", tab: WORKER, ts: at(23, 2), text: "Plan v2" }),
+            msg({ id: "j3", from: "judge", tab: JUDGE, ts: at(23, 3), text: "Third point" }),
+        ],
+    });
+
+    it("counts through the judge message the relayed card is, matched by its time and first line", () => {
+        expect(relaySeenThrough(v, JUDGE, "23:00", 'From the judge "x", 23:00:\n> Plan v1\nSecond point')).toBe(3);
+        expect(relaySeenThrough(v, JUDGE, "23:03", 'From the judge "x", 23:03:\nThird point')).toBe(5);
+    });
+
+    it("takes the earliest of that judge's messages at that time when no first line matches", () => {
+        expect(relaySeenThrough(v, JUDGE, "23:00", "reworded")).toBe(2);
+    });
+
+    it("is null for another judge, a time with no message of it, or an empty pair", () => {
+        expect(relaySeenThrough(v, JUDGE2, "23:00", "First point")).toBeNull();
+        expect(relaySeenThrough(v, JUDGE, "22:59", "First point")).toBeNull();
+        expect(relaySeenThrough(view({ messages: [] }), JUDGE, null, "x")).toBeNull();
     });
 });

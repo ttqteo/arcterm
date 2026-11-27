@@ -24,6 +24,8 @@ import ReactMarkdown, { defaultUrlTransform, type Components } from "react-markd
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import type { PluggableList } from "unified";
+import { BoardPhrase, BoardShapeLink } from "../boards/boardphrase";
+import { SHAPE_LINK } from "../boards/boardpointers";
 import { fenceBangLines } from "./bashlines";
 import { FilePill } from "./chatfilepill";
 import { codePicturePath, imageSrcKind, keepLocalImageUrl, localImagePath } from "./chatimagesrc";
@@ -47,6 +49,7 @@ import { inlinePathOf } from "./pathlinks";
 import { MathToken } from "./prosetokens";
 import { codeRef } from "./refbadge";
 import type { RefKind } from "./refmention";
+import remarkBoardPhrase from "./remarkboardphrase";
 import remarkFileMention from "./remarkfilemention";
 import remarkRefMention from "./remarkrefmention";
 import { paintSelectionIn } from "./selectionpaint";
@@ -86,6 +89,10 @@ function DisplayMath({ tex }: { tex: string }) {
 // surface). The anchor sits in the link's hover group and the button's foot overlaps the link's top, so moving onto it
 // keeps it shown. Not selectable: a selection over the line neither paints nor copies it.
 function MdLink({ href, children }: { href?: string; children?: ReactNode }) {
+    // a reply's link to shapes of the board beside the Chat (boards/boardphrase.tsx), never a page to open
+    if (href?.startsWith(SHAPE_LINK)) {
+        return <BoardShapeLink href={href}>{children}</BoardShapeLink>;
+    }
     const url = copyableHref(href);
     const link = (
         <a
@@ -293,6 +300,9 @@ const MENTION_COMPONENT = {
 } as unknown as Components;
 
 const REF_COMPONENT = {
+    boardphrase: ({ phrase, children }: { phrase?: string; children?: ReactNode }) => (
+        <BoardPhrase phrase={phrase}>{children}</BoardPhrase>
+    ),
     refmention: ({ kind, id, raw, children }: { kind?: RefKind; id?: string; raw?: string; children?: ReactNode }) =>
         kind != null && id != null && raw != null ? (
             <RefBadge kind={kind} id={id} raw={raw}>
@@ -337,6 +347,8 @@ function pluginsFor(extras: MarkdownExtras): PluggableList {
             // after the marks, so a mention inside a ==mark== is found too
             ...(extras.mentions ? [remarkFileMention] : []),
             ...(refsOn(extras) ? [remarkRefMention] : []),
+            // after the references, so a quote or a date inside one stays its badge; drawn plain where no board is beside
+            ...(refsOn(extras) ? [remarkBoardPhrase] : []),
         ];
         PLUGINS_BY_EXTRAS.set(key, out);
     }

@@ -160,6 +160,30 @@ describe("rosterStatus", () => {
         expect(rosterStatus(working, { "tool:id": "lazygit" }, OREF)).toBe(working);
         expect(rosterStatus(null, { cmd: "claude", "agent:sleeping": SINCE }, OREF)?.state).toBe("idle");
     });
+
+    // a server that just started has no status for the agents it brings back: until one reports, its restoring mark
+    // lists it as idle, so the first load keeps it in the split it was a cell of
+    it("reads an agent the boot is restoring as idle until it reports", () => {
+        const restoring = {
+            cmd: "claude",
+            "agent:restoring": SINCE,
+            "agent:transcriptpath": "/t/s.jsonl",
+            "cmd:cwd": "/w",
+        };
+        expect(rosterStatus(null, restoring, OREF)).toEqual({
+            oref: OREF,
+            state: "idle",
+            agent: "claude",
+            ts: SINCE,
+            transcriptpath: "/t/s.jsonl",
+            cwd: "/w",
+        });
+        // its own report wins once it comes
+        expect(rosterStatus(working, restoring, OREF)).toBe(working);
+        // a plain shell has no command to be an agent of
+        expect(rosterStatus(null, { "agent:restoring": SINCE }, OREF)).toBeNull();
+        expect(rosterStatus(null, { cmd: "claude", "agent:restoring": 0 }, OREF)).toBeNull();
+    });
 });
 
 describe("sleepingAge", () => {

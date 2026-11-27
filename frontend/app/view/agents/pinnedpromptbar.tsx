@@ -9,6 +9,8 @@
 // Given every prompt's text (prompts), the bar also lists them: a counter at its right ("10/12"), or a right-click
 // anywhere on it, opens the list under the bar, and picking one scrolls to it the same way. The list is portalled, so
 // the scroller's overflow does not clip it and its frost blurs the reply rather than the band.
+// A pair's conversation (pairpane.tsx) uses it too, for the judges' and your messages: `tags` names who wrote each one,
+// and `menuTitle` / `itemWord` say "Judge & you" and "message" where Chat says "Your prompts" and "prompt".
 // A sticky row sticks below the scroller's top padding, which would leave a gap above the band that content scrolling
 // past shows in. So the bar covers the padding itself: it reads its scroller's padding-top, lifts the row by that much
 // and adds it to the band's top padding, and a scroller that holds it may have any top padding.
@@ -53,6 +55,22 @@ const PROMPT_SELECTOR = "[data-user-prompt]";
 
 // the list's height cap: about nine rows, then it scrolls inside
 const PROMPT_MENU_MAX_H = 380;
+
+// what the list and the band call their entries, unless told otherwise
+const MENU_TITLE = "Your prompts";
+const ITEM_WORD = "prompt";
+
+// who wrote an entry, before its text in the band and the list (a pair's "Judge", "You")
+function Tag({ tag }: { tag: string | undefined }) {
+    return tag ? (
+        <span
+            data-prompt-tag
+            className="flex-none rounded-[4px] border border-edge-mid px-[5px] text-[10.5px] leading-[16px] text-muted"
+        >
+            {tag}
+        </span>
+    ) : null;
+}
 
 /** Set on the scroller while a pinned prompt shows: how far below the sticky line (the scroller's top padding) the
  *  band's bottom edge sits, so another sticky row (a code block's head, codeblock.tsx) sticks under the band, not
@@ -170,12 +188,16 @@ function useScrollerPaddingTop(rootRef: RefObject<HTMLElement>, on: boolean): nu
  *  off over the bubble it stands for read as a jump. Each pinned prompt is its own row, keyed by its index, so one
  *  leaving and the next arriving cross over instead of the text swapping in place.
  *  prompts, when given, is every prompt's text in the order of root's data-user-prompt elements (text is prompts[index]);
- *  with PROMPT_MENU_MIN or more the bar offers the list of them. */
+ *  with PROMPT_MENU_MIN or more the bar offers the list of them. tags, when given, is who wrote each (tags[i] for
+ *  prompts[i]); menuTitle and itemWord rename the list ("Your prompts") and an entry ("prompt"). */
 export function PinnedPromptBar({
     rootRef,
     index,
     text,
     prompts,
+    tags,
+    menuTitle = MENU_TITLE,
+    itemWord = ITEM_WORD,
     bg,
     className,
     cardClassName,
@@ -184,6 +206,9 @@ export function PinnedPromptBar({
     index: number;
     text: string | undefined;
     prompts?: readonly string[];
+    tags?: readonly string[];
+    menuTitle?: string;
+    itemWord?: string;
     bg: string;
     className?: string;
     cardClassName?: string;
@@ -206,6 +231,9 @@ export function PinnedPromptBar({
                         index={index}
                         text={text}
                         prompts={prompts}
+                        tags={tags}
+                        menuTitle={menuTitle}
+                        itemWord={itemWord}
                         bg={bg}
                         pad={pad}
                         cardClassName={cardClassName}
@@ -233,6 +261,9 @@ function PinnedBand({
     index,
     text,
     prompts,
+    tags,
+    menuTitle,
+    itemWord,
     bg,
     pad,
     cardClassName,
@@ -241,6 +272,9 @@ function PinnedBand({
     index: number;
     text: string;
     prompts?: readonly string[];
+    tags?: readonly string[];
+    menuTitle: string;
+    itemWord: string;
     bg: string;
     pad: number; // the scroller's top padding the band covers (useScrollerPaddingTop)
     cardClassName?: string;
@@ -402,12 +436,13 @@ function PinnedBand({
                         <button
                             type="button"
                             onClick={jump}
-                            title="Back to this prompt"
+                            title={`Back to this ${itemWord}`}
                             className={cn(
                                 "flex min-w-0 flex-1 cursor-pointer items-center gap-2 px-3 py-[5px] text-left hover:bg-surface-hover",
                                 menu != null ? "rounded-l-[7px]" : "rounded-[7px]"
                             )}
                         >
+                            <Tag tag={tags?.[index]} />
                             <span className="min-w-0 flex-1 truncate text-[12.5px] text-primary">{text}</span>
                             <ArrowUp size={12} strokeWidth={2.2} aria-hidden className="flex-none text-muted" />
                         </button>
@@ -421,8 +456,8 @@ function PinnedBand({
                                     onClick={() => setOpen((o) => !o)}
                                     aria-haspopup="menu"
                                     aria-expanded={open}
-                                    aria-label={`All your prompts (${index + 1} of ${menu.length})`}
-                                    title="All your prompts"
+                                    aria-label={`${menuTitle} (${index + 1} of ${menu.length})`}
+                                    title={menuTitle}
                                     className={cn(
                                         "flex flex-none cursor-pointer items-center gap-1 rounded-r-[7px] pl-[9px] pr-2 text-[11.5px] tabular-nums text-muted hover:bg-surface-hover",
                                         open && "bg-surface-hover"
@@ -444,7 +479,7 @@ function PinnedBand({
                                 {open ? (
                                     <motion.div
                                         role="menu"
-                                        aria-label="Your prompts"
+                                        aria-label={menuTitle}
                                         variants={springPop}
                                         initial="initial"
                                         animate="animate"
@@ -455,6 +490,9 @@ function PinnedBand({
                                         <PromptMenuBody
                                             listRef={listRef}
                                             prompts={menu}
+                                            tags={tags}
+                                            title={menuTitle}
+                                            itemWord={itemWord}
                                             index={index}
                                             onPick={pick}
                                             onKey={onListKey}
@@ -475,12 +513,18 @@ function PinnedBand({
 function PromptMenuBody({
     listRef,
     prompts,
+    tags,
+    title,
+    itemWord,
     index,
     onPick,
     onKey,
 }: {
     listRef: RefObject<HTMLDivElement>;
     prompts: readonly string[];
+    tags?: readonly string[];
+    title: string;
+    itemWord: string;
     index: number;
     onPick: (i: number) => void;
     onKey: (e: KeyboardEvent) => void;
@@ -488,7 +532,7 @@ function PromptMenuBody({
     return (
         <>
             <div className="flex flex-none items-baseline justify-between px-3 pb-[5px] pt-[9px]">
-                <span className="text-[11.5px] font-medium text-muted">Your prompts</span>
+                <span className="text-[11.5px] font-medium text-muted">{title}</span>
                 <span className="text-[11px] tabular-nums text-muted">{prompts.length}</span>
             </div>
             {/* data-owns-keys: the list is portalled out of the pane's own key region, so without it the dispatcher
@@ -517,6 +561,7 @@ function PromptMenuBody({
                         <span className="w-[18px] flex-none text-right text-[11px] tabular-nums text-muted">
                             {i + 1}
                         </span>
+                        <Tag tag={tags?.[i]} />
                         <span className="min-w-0 flex-1 truncate text-[12.5px] text-primary">{text}</span>
                         {i === index ? <span className="flex-none text-[11px] text-muted">reading</span> : null}
                     </button>
@@ -530,7 +575,7 @@ function PromptMenuBody({
                 </span>
                 <span className="flex items-center gap-1">
                     <KeyCap chord="Enter" variant="inline" />
-                    go to prompt
+                    go to {itemWord}
                 </span>
                 <span className="flex items-center gap-1">
                     <KeyCap chord="Esc" variant="inline" />

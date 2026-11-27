@@ -16,6 +16,7 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { useEffect, useState, type ReactNode, type RefObject } from "react";
 import type { EditorLike, KeyLike } from "./chateditor";
+import { menuGhost } from "./menughost";
 import { PickerList, type PickerGroup, type PickerLook } from "./pickerlist";
 import {
     BUILTIN_COMMANDS,
@@ -36,6 +37,10 @@ export interface SlashMenuState {
     commands: SlashCommand[];
     // the list is on screen (a `/` word with at least one match)
     shown: boolean;
+    // the rest of the highlighted command's name, drawn faint after the caret at the text's end (menughost.ts); "" for none
+    ghost: string;
+    // takes the ghost: completes the highlighted command, as Tab does
+    takeGhost: () => void;
     onKeyDown: (e: KeyLike) => void;
     onCaret: (el: EditorLike) => void;
 }
@@ -255,5 +260,11 @@ export function useSlashMenu({
             )}
         />
     );
-    return { list, commands: known.commands, shown, onKeyDown, onCaret };
+    const ghost = shown && query != null && caret === text.length ? menuGhost(query, [matches[at].name]) : "";
+    const takeGhost = () => {
+        if (shown) {
+            choose(matches[at], "complete");
+        }
+    };
+    return { list, commands: known.commands, shown, ghost, takeGhost, onKeyDown, onCaret };
 }

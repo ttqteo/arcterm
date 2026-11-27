@@ -93,7 +93,10 @@ export function sleepingStatus(
 /** Pure: the agent status the roster reads for a block. A held service's block (tool:service, pkg/services) has none:
  *  a program a service runs may start agents of its own (a dashboard calling `claude -p`), and their hooks report into
  *  the service's block, whose WAVETERM_BLOCKID they inherit. Read as an agent, the service would list twice in the
- *  sidebar, once as an agent and once as its service row. Every other block reads as sleepingStatus gives it. */
+ *  sidebar, once as an agent and once as its service row. An agent the server's boot is bringing back
+ *  (agent:restoring, pkg/blockcontroller/agentrestore.go) has no status until it reports, the status living in the
+ *  server's memory: it reads as idle from its meta meanwhile, or the first load would drop it from the split it was a
+ *  cell of and move focus off it. Every other block reads as sleepingStatus gives it. */
 export function rosterStatus(
     status: AgentStatusData | null | undefined,
     meta: Record<string, unknown> | undefined | null,
@@ -101,6 +104,20 @@ export function rosterStatus(
 ): AgentStatusData | null | undefined {
     if (meta?.["tool:service"] === true) {
         return undefined;
+    }
+    const restoring = meta?.["agent:restoring"];
+    const cmd = meta?.["cmd"];
+    if (!status?.state && typeof restoring === "number" && restoring > 0 && typeof cmd === "string" && cmd !== "") {
+        const transcript = meta?.["agent:transcriptpath"];
+        const cwd = meta?.["cmd:cwd"];
+        return {
+            oref,
+            state: "idle",
+            agent: cmd,
+            ts: restoring,
+            ...(typeof transcript === "string" && transcript !== "" ? { transcriptpath: transcript } : {}),
+            ...(typeof cwd === "string" && cwd !== "" ? { cwd } : {}),
+        };
     }
     return sleepingStatus(status, meta, oref);
 }
