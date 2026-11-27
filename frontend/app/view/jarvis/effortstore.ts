@@ -25,6 +25,7 @@ export type ChunkRowModel = {
     trail: EffortNote[];
     owner?: string;
     due?: string; // YYYY-MM-DD, `wsh effort chunk due`
+    priority?: string; // critical | high | medium | low | information; unset ranks as medium (chunkorder.ts)
     workrefs: ChunkWorkRef[];
 };
 
@@ -41,6 +42,7 @@ export function effortChunkRows(effort: Effort): ChunkRowModel[] {
             trail,
             owner: c.owner,
             due: c.due,
+            priority: c.priority,
             workrefs: c.workrefs ?? [],
         };
     });
@@ -109,6 +111,11 @@ export async function advanceChunk(oref: string, note?: string): Promise<void> {
 }
 export async function setChunkStatus(oref: string, chunk: string, status: string, note?: string): Promise<void> {
     await mutateEffort(oref, [{ op: "setChunkStatus", chunk, status, note }]);
+}
+// Set a chunk's priority (a level of chunkorder.ts's CHUNK_PRIORITIES; "" clears it). `chunk` is a chunk ref, as
+// the other helpers take. The server refuses any other level and writes the trail note.
+export async function setChunkPriority(oref: string, chunk: string, priority: string): Promise<void> {
+    await mutateEffort(oref, [{ op: "setChunkPriority", chunk, priority }]);
 }
 export async function reopenChunk(oref: string, chunk: string): Promise<void> {
     await mutateEffort(oref, [{ op: "reopen", chunk }]);

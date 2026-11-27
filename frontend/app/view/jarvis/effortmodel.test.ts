@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+// The Go rule (pkg/waveobj/chunkorder.go) reads this same file: `advance` and `nextChunk` are checked against one table.
+import shared from "../../../../pkg/waveobj/testdata/chunkorder-cases.json";
 import { isIdea } from "./briefrows";
 import {
     buildEffortCard,
@@ -434,6 +436,74 @@ describe("effortFacts", () => {
             next: null,
             idle: "No open chunk.",
         });
+    });
+});
+
+describe("nextChunk", () => {
+    // the first chunk of the shared order of work, or none when nothing is open
+    for (const c of shared.cases) {
+        it(`names the first of the order of work: ${c.name}`, () => {
+            const chunks: { status: string; priority?: string }[] = c.chunks;
+            const want = c.order.length > 0 ? chunks[c.order[0]] : undefined;
+            expect(nextChunk(chunks)).toBe(want);
+        });
+    }
+
+    it("is the highest-ranked pending chunk, the first by position among equals", () => {
+        const chunks = [
+            { label: "A", status: "done" },
+            { label: "B", status: "pending", priority: "low" },
+            { label: "C", status: "pending" },
+            { label: "D", status: "pending", priority: "critical" },
+            { label: "E", status: "pending", priority: "critical" },
+        ];
+        expect(nextChunk(chunks)?.label).toBe("D");
+    });
+
+    it("keeps the active chunk, whatever a pending chunk's level is", () => {
+        const chunks = [
+            { label: "A", status: "pending", priority: "critical" },
+            { label: "B", status: "active", priority: "information" },
+        ];
+        expect(nextChunk(chunks)?.label).toBe("B");
+    });
+
+    it("opens a pending chunk before a blocked or deferred one, whatever their levels", () => {
+        const chunks = [
+            { label: "A", status: "blocked", priority: "critical" },
+            { label: "B", status: "deferred", priority: "high" },
+            { label: "C", status: "pending", priority: "information" },
+        ];
+        expect(nextChunk(chunks)?.label).toBe("C");
+        expect(nextChunk(chunks.slice(0, 2))?.label).toBe("A");
+    });
+
+    it("is undefined when nothing is open", () => {
+        expect(nextChunk([])).toBeUndefined();
+        expect(nextChunk([{ status: "done" }, { status: "skipped" }, { status: "proposed" }])).toBeUndefined();
+    });
+});
+
+describe("effortFacts' next chunk follows the order of work", () => {
+    it("names the highest-ranked pending chunk with its stage and tone", () => {
+        const f = effortFacts(
+            {
+                oid: "e1",
+                otype: "effort",
+                version: 1,
+                meta: {},
+                title: "SIEM",
+                status: "active",
+                createdts: 0,
+                updatedts: 0,
+                chunks: [
+                    { label: "A", status: "pending", stage: "S1" },
+                    { label: "B", status: "pending", stage: "S2", priority: "high" },
+                ],
+            } as Effort,
+            []
+        );
+        expect(f.next).toEqual({ label: "B", stage: "S2", tone: "pending" });
     });
 });
 

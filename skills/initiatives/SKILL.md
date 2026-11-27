@@ -50,8 +50,8 @@ An effort too foggy to name its phases gets a tracker of decisions first, not bu
 
 | Command | What it does |
 |---|---|
-| `wsh effort list [--project P] [--archived] [--topics]` | efforts: oid, title, status, done/total, active chunk; archived hidden unless `--archived`; `--topics` keeps only the efforts others are linked under |
-| `wsh effort show <effort>` | full detail: chunks, statuses, owners, note trails, and for each open chunk the commit it was written at and the commits since |
+| `wsh effort list [--project P] [--archived] [--topics]` | efforts: oid, title, status, done/total, next chunk (the active one, else the first in the order of work); archived hidden unless `--archived`; `--topics` keeps only the efforts others are linked under |
+| `wsh effort show <effort>` | full detail: chunks in plan order with statuses, owners, due days, priorities, note trails, and for each open chunk the commit it was written at and the commits since; an `Order of work:` line under the title numbers the open chunks in the order they open, and `← next` marks the first |
 | `wsh effort rename <effort> <title>` | retitle |
 | `wsh effort project <effort> <project\|"">` | set/clear project |
 | `wsh effort ticket <effort> <ticket\|"">` | set/clear ticket |
@@ -60,9 +60,9 @@ An effort too foggy to name its phases gets a tracker of decisions first, not bu
 | `wsh effort pin <effort> [--replace-oldest]` / `unpin <effort>` | pin to (or unpin from) the Brief's cards, at most 6; at the cap `pin` fails naming the oldest pin, and `--replace-oldest` unpins it to make room. A view preference: no note, no event, the effort's updated time is kept. Archiving unpins |
 | `wsh effort link <effort> --parent <effort>` / `unlink` | parent link (e.g. sub-migration under the rollout) |
 | `wsh effort delete <effort> [--force]` | delete (refuses unless archived or `--force`) |
-| `wsh effort advance <effort> [--note "..."]` | active chunk → done; marker moves to the next non-done chunk |
+| `wsh effort advance <effort> [--note "..."]` | active chunk → done; marker moves to the next chunk in the order of work: the pending chunk with the highest priority (ties by position; unset ranks as medium, `information` last), and only when none is pending the best blocked or deferred one |
 | `wsh effort reopen <effort> <chunk>` | undo an advance (done → active, previous active back to pending) |
-| `wsh effort chunk add <effort> "<label>" [--at N] [--owner X] [--due YYYY-MM-DD\|+Nd] [--proposed]` | add a chunk; `--proposed` leaves it for the person to accept or drop |
+| `wsh effort chunk add <effort> "<label>" [--at N] [--owner X] [--due YYYY-MM-DD\|+Nd] [--priority critical\|high\|medium\|low\|information] [--proposed]` | add a chunk; `--proposed` leaves it for the person to accept or drop |
 | `wsh effort chunk rename <effort> <chunk> "<label>"` | rename a chunk (its commit moves to today's HEAD) |
 | `wsh effort chunk recheck <effort> <chunk> [--note "..."]` | mark an open chunk still right for today's code: its commit moves to the project's HEAD |
 | `wsh effort stale [effort]` | list open chunks whose named files changed or went away since they were written (all active initiatives without an argument) |
@@ -73,6 +73,7 @@ An effort too foggy to name its phases gets a tracker of decisions first, not bu
 | `wsh effort chunk note <effort> <chunk> --note "..."` | append an annotation to the chunk's trail |
 | `wsh effort chunk owner <effort> <chunk> <owner\|"">` | set/clear the chunk's owner |
 | `wsh effort chunk due <effort> <chunk> <YYYY-MM-DD\|+Nd\|"">` | set/clear the day the chunk comes due |
+| `wsh effort chunk priority <effort> <chunk> <critical\|high\|medium\|low\|information\|"">` | set/clear the chunk's priority: it decides which open chunk `advance` opens next, and never changes its position or number |
 | `wsh effort chunk attach <effort> <chunk> --run <oid> \| --agent <tabid>` | record that a run/agent is working this chunk |
 | `wsh effort chunk detach <effort> [chunk] --run <oid> \| --agent <tabid>` | remove a workref |
 
@@ -88,7 +89,9 @@ Chunks are always referenced by exact label, never index.
 - **Annotate every significant state change** with `--note` — the note becomes the chunk's dated
   trail entry. Status changes auto-stamp; your notes add the why.
 - **Advance** moves the active marker: `wsh effort advance <effort>` — use it at completion
-  handoffs, or set the next chunk `active` explicitly.
+  handoffs, or set the next chunk `active` explicitly. It opens by priority, not position: to make a chunk come
+  sooner or later, `wsh effort chunk priority <effort> "<chunk>" <level>` instead of `chunk move`, which renumbers
+  the chunks that notes and answers cite. A priority never takes the active slot from the chunk that holds it.
 - **Reopen undoes**: `wsh effort reopen <effort> "<chunk>"` when a done chunk turns out not to be.
 - **Blocked is a state, not a note**: `wsh effort chunk status <effort> "<chunk>" blocked --note "why"`.
   The briefing's attention banner folds blocked chunks in, so a stuck effort stays visible.

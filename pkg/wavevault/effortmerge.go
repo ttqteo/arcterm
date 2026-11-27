@@ -142,6 +142,7 @@ func mergeChunk(baseBy, oursBy, theirsBy map[string]waveobj.EffortChunk, label s
 		win.Stage = pickField(inBase, theirsNewer, b.Stage, o.Stage, t.Stage)
 		win.Owner = pickField(inBase, theirsNewer, b.Owner, o.Owner, t.Owner)
 		win.Due = pickField(inBase, theirsNewer, b.Due, o.Due, t.Due)
+		win.Priority = pickField(inBase, theirsNewer, b.Priority, o.Priority, t.Priority)
 		win.BaseCommit = pickField(inBase, theirsNewer, b.BaseCommit, o.BaseCommit, t.BaseCommit)
 		win.Notes = mergeByTs(b.Notes, o.Notes, t.Notes, func(n waveobj.EffortNote) int64 { return n.Ts })
 		win.WorkRefs = mergeByTs(b.WorkRefs, o.WorkRefs, t.WorkRefs, func(w waveobj.ChunkWorkRef) int64 { return w.Ts })

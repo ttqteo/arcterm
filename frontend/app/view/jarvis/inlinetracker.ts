@@ -66,7 +66,8 @@ export const flatPlanId = (oref: string): string => `${oref}/flat`;
 /**
  * One initiative's plan, its rows keyed under the effort's oref. A folded stage is not shut: it previews its first
  * STAGE_PREVIEW_CAP chunks and a `more` row counts the rest, while an unfolded stage shows every chunk. A flat plan
- * folds the same way, longer than the cap from the start; a stage starts folded by stageStartsOpen.
+ * folds the same way, longer than the cap from the start; a stage starts folded by stageStartsOpen. The rows keep plan
+ * order, except that the next chunk (a priority can put it past the preview) shows just before the `more` row.
  *
  * `chunks` is null while the effort detail is still loading, and the plan says so rather than flickering an empty one.
  *
@@ -114,11 +115,19 @@ export function initiativeRows(args: {
             notes: noteCounts.get(row.label) ?? 0,
             next: next != null && row.label === next.label,
         });
-    // a folded run: its first chunks, then how many it hides
+    // A folded run: its first chunks, then how many it hides. The next chunk is always on the card: a priority can put it
+    // past the cut, and then its row comes just before the count, which counts the rest. When it was the only chunk the
+    // fold hid, the whole run shows and there is no count.
     const pushPreview = (rows: ChunkRowModel[], stageId: string) => {
         rows.slice(0, STAGE_PREVIEW_CAP).forEach(pushChunk);
-        if (rows.length > STAGE_PREVIEW_CAP) {
-            out.push({ kind: "more", id: stageId + "/more", oref, stageId, n: rows.length - STAGE_PREVIEW_CAP });
+        const hidden = rows.slice(STAGE_PREVIEW_CAP);
+        const hiddenNext = next != null ? hidden.find((r) => r.label === next.label) : undefined;
+        if (hiddenNext != null) {
+            pushChunk(hiddenNext);
+        }
+        const n = hidden.length - (hiddenNext != null ? 1 : 0);
+        if (n > 0) {
+            out.push({ kind: "more", id: stageId + "/more", oref, stageId, n });
         }
     };
     // A plan with no staged chunk is flat. It draws no stage header: one header over the whole plan would only repeat

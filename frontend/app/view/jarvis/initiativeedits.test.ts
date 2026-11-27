@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const store = vi.hoisted(() => ({
     setChunkStatus: vi.fn(async () => {}),
+    setChunkPriority: vi.fn(async () => {}),
     moveChunk: vi.fn(async () => {}),
     moveChunkToStage: vi.fn(async () => {}),
     addChunkAt: vi.fn(async () => {}),
@@ -81,6 +82,29 @@ describe("buildTrackerEdits", () => {
         expect(toast?.text).toBe("Marked “Cards” active");
         toast?.undo?.();
         expect(store.setChunkStatus).toHaveBeenLastCalledWith("effort:e1", "Cards", "pending");
+    });
+
+    it("sets a chunk's priority and offers to put the old level back, or none", () => {
+        const prioritized = {
+            ...EFFORT,
+            chunks: (EFFORT.chunks ?? []).map((c) => (c.label === "Sheet" ? { ...c, priority: "low" } : c)),
+        } as Effort;
+        const edits = buildTrackerEdits(deps({ effort: prioritized }));
+        edits.onSetPriority("Cards", "critical");
+        expect(store.setChunkPriority).toHaveBeenCalledWith("effort:e1", "Cards", "critical");
+        const toast = globalStore.get(briefToastAtom);
+        expect(toast?.text).toBe("Set “Cards” to critical");
+        // Cards had no level, so the Undo clears it
+        toast?.undo?.();
+        expect(store.setChunkPriority).toHaveBeenLastCalledWith("effort:e1", "Cards", "");
+
+        // clearing a level says so, and its Undo puts the level back
+        edits.onSetPriority("Sheet", "");
+        expect(store.setChunkPriority).toHaveBeenLastCalledWith("effort:e1", "Sheet", "");
+        const cleared = globalStore.get(briefToastAtom);
+        expect(cleared?.text).toBe("Cleared the priority of “Sheet”");
+        cleared?.undo?.();
+        expect(store.setChunkPriority).toHaveBeenLastCalledWith("effort:e1", "Sheet", "low");
     });
 
     it("moves a chunk down past the proposed one to the place the server counts", () => {

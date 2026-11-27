@@ -298,7 +298,7 @@ func EffortSummaryOf(e *waveobj.Effort) wshrpc.EffortSummary {
 	}
 	for _, c := range e.Chunks {
 		cs := wshrpc.EffortChunkSummary{
-			Label: c.Label, Status: c.Status, Stage: c.Stage, Owner: c.Owner, WorkRefs: c.WorkRefs,
+			Label: c.Label, Status: c.Status, Stage: c.Stage, Owner: c.Owner, Priority: c.Priority, WorkRefs: c.WorkRefs,
 		}
 		if c.Status == "blocked" {
 			cs.Blocked = blockedOf(c)
@@ -312,19 +312,12 @@ func EffortSummaryOf(e *waveobj.Effort) wshrpc.EffortSummary {
 			s.Total++
 		}
 	}
-	for _, c := range e.Chunks {
-		if c.Status == "active" {
-			s.ActiveChunk = c.Label
-			break
-		}
-	}
-	if s.ActiveChunk == "" {
-		for _, c := range e.Chunks {
-			if c.Status != "done" && c.Status != "skipped" && c.Status != "proposed" {
-				s.ActiveChunk = c.Label
-				break
-			}
-		}
+	// the chunk the order of work names first: the active chunk, else the highest-ranked pending one, else the
+	// highest-ranked blocked or deferred one (the same rule advance opens by)
+	if next := waveobj.NextChunkIndex(len(s.Chunks), func(i int) (string, string) {
+		return s.Chunks[i].Status, s.Chunks[i].Priority
+	}); next >= 0 {
+		s.ActiveChunk = s.Chunks[next].Label
 	}
 	s.LastNote = lastNoteOf(e)
 	return s

@@ -21,6 +21,7 @@ type BandWorkRef = { kind: string; oref: string; ts?: number };
 export type BandChunk = {
     label: string;
     status: string;
+    priority?: string;
     stage?: string;
     workrefs?: BandWorkRef[];
 };
@@ -63,11 +64,13 @@ export function canWorkOn(chunk: BandChunk): boolean {
     );
 }
 
-/** Pure: the Chunks section's rows. `window` is the fixed window the section shows, in plan order and without repeats:
- *  the last done chunk this agent holds (the newest of its workrefs among its done chunks), its own chunk, the next two
- *  (`nextChunks`, as the popover has them: a pending chunk before its own is not next), and every live chunk another
- *  holder has. `all` is every non-proposed chunk in plan order, the window's rows keeping their kinds and the rest `plan`
- *  (the `All chunks (N)` list); `total` is N. */
+/** Pure: the Chunks section's rows. `window` is the fixed window the section shows, without repeats: the last done chunk
+ *  this agent holds (the newest of its workrefs among its done chunks), its own chunk, the next two (`nextChunks`, as the
+ *  popover has them: the first pending chunks in the order of work, wherever they sit in the plan, so a pending chunk
+ *  before its own is next when it ranks first), and every live chunk another holder has. Its rows are in plan order,
+ *  except that the next rows come in the order of work (they fill the window's next places, best ranked first). `all` is
+ *  every non-proposed chunk in plan order, the window's rows keeping their kinds and the rest `plan` (the `All chunks (N)`
+ *  list); `total` is N. */
 export function bandRows(effort: BandEffort, tabId: string): { window: BandRow[]; all: BandRow[]; total: number } {
     const ref = "agent:" + tabId;
     const own = agentChunk(effort, tabId);
@@ -83,7 +86,8 @@ export function bandRows(effort: BandEffort, tabId: string): { window: BandRow[]
             lastTs = w.ts ?? 0;
         }
     }
-    const next = new Set(nextChunks(effort, own?.label ?? null));
+    const nextOrder = nextChunks(effort, own?.label ?? null);
+    const next = new Set(nextOrder);
 
     const kindOf = (c: BandChunk): BandRow["kind"] => {
         if (own != null && c.label === own.label) {
@@ -109,7 +113,15 @@ export function bandRows(effort: BandEffort, tabId: string): { window: BandRow[]
             workOn: canWorkOn(c),
         })
     );
-    return { window: all.filter((r) => r.kind !== "plan"), all, total: all.length };
+    // The window is in plan order, but its next rows come in the order of work: they fill the window's next places, best
+    // ranked first, and no other row moves.
+    const shown = all.filter((r) => r.kind !== "plan");
+    const places = shown.flatMap((r, i) => (r.kind === "next" ? [i] : []));
+    const inOrder = places.map((i) => shown[i]).sort((a, b) => nextOrder.indexOf(a.label) - nextOrder.indexOf(b.label));
+    places.forEach((at, k) => {
+        shown[at] = inOrder[k];
+    });
+    return { window: shown, all, total: all.length };
 }
 
 /** Pure: the tag on a row for one of its holders: `this agent` for the agent's own tab, another agent's roster name
