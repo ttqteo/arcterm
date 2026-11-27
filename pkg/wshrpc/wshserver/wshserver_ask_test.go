@@ -685,3 +685,45 @@ func TestIdlePromptDuringAPermissionPromptIsNotPublished(t *testing.T) {
 		t.Fatalf("status = %s, want the idle_prompt held back while the permission prompt is open", got.State)
 	}
 }
+
+// a run's pause ends the worker's tree, and with it the mod's `wsh ask --wait`: a question the pause suspended stays
+// pending, under the same id and with no waiter, for the person to answer while the run is paused
+func TestAskCommandWaitCancelKeepsASuspendedAsk(t *testing.T) {
+	ws := &WshServer{}
+	oref := waveobj.MakeORef("block", uuid.NewString()).String()
+	agentask.GlobalRegistry = agentask.MakeRegistry()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		_, _ = ws.AskCommand(ctx, askData(oref, true))
+		close(done)
+	}()
+	var raised agentask.PendingAsk
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if p, ok := agentask.GlobalRegistry.Get(oref); ok && agentask.GlobalRegistry.HasWaiter(p.AskId) {
+			raised = p
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("waited ask never registered")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !agentask.GlobalRegistry.Suspend(oref) {
+		t.Fatal("Suspend found no pending ask")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("wait RPC never returned after cancel")
+	}
+	p, ok := agentask.GlobalRegistry.Get(oref)
+	if !ok || p.AskId != raised.AskId {
+		t.Fatalf("a suspended ask must stay pending as %s, got %#v (pending=%v)", raised.AskId, p, ok)
+	}
+	if agentask.GlobalRegistry.HasWaiter(p.AskId) {
+		t.Fatal("the dead caller's waiter must be gone")
+	}
+}

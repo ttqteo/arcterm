@@ -166,6 +166,50 @@ func (s *Store) Estimate(pattern, project string, table uint64) (uint64, jobqueu
 	return figure(best.Peaks), basisOf(best.Peaks, true)
 }
 
+// Has reports whether the store keeps peaks for the key (pattern, project).
+func (s *Store) Has(pattern, project string) bool {
+	if s == nil {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.keys[key{pattern, project}] != nil
+}
+
+// Forget drops kept peaks of the key (pattern, project), for `wsh jobslot forget`: the largest one, the peak the
+// estimate rests on (a run the meter measured wrong, or one that will not come again), or every one when all is set.
+// A key left with no peak leaves the store, and an unknown pattern left with no heavy peak in any project goes back to
+// light (tidy). dropped are the peaks taken out, left the ones kept, newest first; ok is false when there is no such
+// key. The file is written at once, so a wavesrv that restarts keeps the change.
+func (s *Store) Forget(pattern, project string, all bool) (dropped, left []uint64, ok bool) {
+	if s == nil {
+		return nil, nil, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	k := key{pattern, project}
+	e := s.keys[k]
+	if e == nil {
+		return nil, nil, false
+	}
+	if all {
+		dropped = slices.Clone(e.Peaks)
+		e.Peaks = nil
+	} else {
+		i := slices.Index(e.Peaks, slices.Max(e.Peaks))
+		dropped = []uint64{e.Peaks[i]}
+		e.Peaks = slices.Delete(slices.Clone(e.Peaks), i, i+1)
+	}
+	left = slices.Clone(e.Peaks)
+	if len(e.Peaks) == 0 {
+		delete(s.keys, k) // before tidy, which reads every kept key's largest peak
+	}
+	s.tidy(s.now())
+	s.save()
+	s.syncLearned()
+	return dropped, left, true
+}
+
 // Learned is the set of unknown patterns that read heavy now. The map is the caller's to keep.
 func (s *Store) Learned() map[string]bool {
 	set := map[string]bool{}

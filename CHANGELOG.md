@@ -34,6 +34,18 @@ and a picture given to a line that is not big.
 
 ### Added
 
+- `wsh jobslot forget <command>` drops the largest RAM peak measured for a command in the current project, so one
+  bad measurement no longer makes the heavy-job queue hold that command back for its next five runs. `--all` drops
+  every measured peak.
+- Jarvis initiative cards and rows show how many open chunks carry each priority ("1 critical", "4 high"), so you see
+  the urgent work without opening the initiative.
+- When All initiatives has many projects, the three you used last sit as buttons left of the project menu: one press
+  shows that project, a second press shows every project again.
+
+### Fixed
+
+- A question an agent in a paused run had open no longer disappears when the run pauses: you can answer it while the
+  run is paused, and the agent gets your answer when the run resumes.
 - The chat box's `/` menu and `@` list show the rest of the highlighted name faintly after what you typed (`/co` shows
   `ntext`); Tab or → takes it.
 - Snap layouts for a split, as Windows has: rest the pointer on the layout button in the agent header (Focus board's,

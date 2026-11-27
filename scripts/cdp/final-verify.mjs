@@ -21,8 +21,10 @@
 // BUILD_SLOTS final stages run at once, each holding one slot: a slot is a cargo target dir, and `cargo tauri dev`
 // runs the exe it builds there, so a second stage building into it would overwrite the exe the first is running.
 //
-// The user's packaged arcterm shares the dev app's image names, so only the PID this script spawned is ever killed.
-import { execFileSync, spawn } from "node:child_process";
+// The user's packaged arcterm shares the dev app's image names, so only the PIDs this script's dev command started, and
+// the slot's own exe by its full path, are ever killed (devtree.mjs). A watchdog stops them when this script is killed
+// before its cleanup runs (an Arc pause, a worker's terminal closing), which left whole dev apps running.
+import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { closeSync, cpSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, rmdirSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { connect, createServer } from "node:net";
@@ -30,8 +32,9 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { devRoots, killTree, startWatchdog, stopDevTree } from "./devtree.mjs";
 import { EXIT_UNVERIFIED, makeRunReporter, unknownScenarios } from "./report.mjs";
-export { EXIT_UNVERIFIED };
+export { EXIT_UNVERIFIED, killTree };
 
 const DEFAULT_PORT = 9230;
 const PORT_SCAN = 100;
@@ -252,18 +255,6 @@ export async function inUse(port) {
     return hits.some(Boolean);
 }
 
-export function killTree(pid) {
-    try {
-        if (process.platform === "win32") {
-            execFileSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore" });
-        } else {
-            process.kill(-pid, "SIGKILL");
-        }
-    } catch {
-        // already gone
-    }
-}
-
 async function answers(port) {
     try {
         const res = await fetch(`http://127.0.0.1:${port}/json`, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
@@ -461,8 +452,14 @@ async function main() {
             ARC_TELEGRAM_API_BASE: process.env.ARC_TELEGRAM_API_BASE || "http://127.0.0.1:18765",
         },
     });
+    // the slot's exe outlives a closed console, which takes every console process of the chain above it
+    const slotExe = mode === "browser" ? undefined : join(slotPath("target", slot), "debug", DEV_EXE);
+    let roots = [dev.pid];
+    let watchdog = null;
     const stop = () => {
-        killTree(dev.pid);
+        // first, so it never acts on a PID freed by the stop below
+        watchdog?.kill();
+        stopDevTree(roots, slotExe);
         lock.close();
     };
     for (const sig of ["SIGINT", "SIGTERM"]) {
@@ -471,6 +468,11 @@ async function main() {
             process.exit(1);
         });
     }
+    // a killed stage runs no handler: on windows its dev command's shell dies with it and the rest of the chain keeps
+    // running, so the watchdog is told the shell's children
+    roots = await devRoots(dev.pid);
+    watchdog = startWatchdog(process.pid, roots, slotExe);
+    console.log(`watchdog ${watchdog.pid} stops the dev app (${roots.join(", ")}) if this stage is killed`);
 
     let code;
     let reason;

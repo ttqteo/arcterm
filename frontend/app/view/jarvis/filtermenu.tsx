@@ -38,6 +38,8 @@ export type FilterSpec<T> = {
     options: { value: T; label: string; count?: number; search?: string }[];
     value: T;
     onChange: (v: T) => void;
+    // a few options (values among `options`) a long filter also offers as chips left of its menu: the recent projects
+    quick?: T[];
 };
 
 export function FilterMenu<T>(spec: FilterSpec<T>) {

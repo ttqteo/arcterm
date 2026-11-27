@@ -135,7 +135,8 @@ describe("inUse", () => {
 describe("final-verify.mjs", () => {
     let dir;
     afterEach(() => {
-        if (dir) rmSync(dir, { recursive: true, force: true });
+        // windows holds a killed exe's file for a moment after the process is gone
+        if (dir) rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
         dir = undefined;
     });
 
@@ -168,6 +169,121 @@ describe("final-verify.mjs", () => {
         expect(existsSync(pidFile)).toBe(true);
         expect(await gone(Number(readFileSync(pidFile, "utf8")), 5000)).toBe(true);
     }, 30_000);
+
+    // starts the real CLI and leaves it running: resolves once it prints its watchdog line, with that watchdog's pid
+    function startStage(env) {
+        const cwd = mkdtempSync(join(tmpdir(), "final-cwd-"));
+        env = { ...env };
+        for (const key of ["WAVETERM_BLOCKID", "ARC_VERIFY_RUNID", "ARC_VERIFY_COMMAND"]) delete env[key];
+        const child = spawn(process.execPath, [SCRIPT], { env, cwd, stdio: ["ignore", "pipe", "ignore"] });
+        let out = "";
+        const armed = new Promise((resolve, reject) => {
+            child.stdout.on("data", (d) => {
+                out += d;
+                const m = out.match(/^watchdog (\d+) stops the dev app/m);
+                if (m) resolve(Number(m[1]));
+            });
+            child.once("exit", (code) => reject(new Error(`the stage exited ${code} before its watchdog started:\n${out}`)));
+        });
+        return { child, cwd, armed };
+    }
+
+    async function readWhenWritten(file, ms) {
+        const deadline = Date.now() + ms;
+        while (!existsSync(file)) {
+            if (Date.now() >= deadline) throw new Error(`${file} was never written`);
+            await new Promise((r) => setTimeout(r, 50));
+        }
+        return JSON.parse(readFileSync(file, "utf8"));
+    }
+
+    // a stage killed outright (an Arc pause, a worker's tool timeout) runs no handler. On windows its dev command's shell
+    // dies with it, and what the shell started kept running with the dev app (run de501e59 t-9, 4841c993 t-12)
+    it("stops what its dev command started when the stage itself is killed", async () => {
+        dir = mkdtempSync(join(tmpdir(), "final-verify-"));
+        const pidFile = join(dir, "pids.json");
+        const fakeDev = join(dir, "fake-dev.cjs");
+        writeFileSync(
+            fakeDev,
+            `const kid = require("child_process").spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+require("fs").writeFileSync(${JSON.stringify(pidFile)}, JSON.stringify({ dev: process.pid, kid: kid.pid }));
+setInterval(() => {}, 1000);
+`
+        );
+        const stage = startStage({
+            ...process.env,
+            LOCALAPPDATA: join(dir, "localappdata"),
+            ARC_FINAL_OUT: join(dir, "out"),
+            ARC_FINAL_BOOT_MS: "60000",
+            ARC_FINAL_DEV_CMD: `node "${fakeDev}"`,
+            ARC_FINAL_VITE_PORT: String(await freePort()),
+        });
+        try {
+            const watchdog = await stage.armed;
+            const { dev, kid } = await readWhenWritten(pidFile, 10_000);
+            stage.child.kill("SIGKILL");
+            expect(await gone(dev, 15_000)).toBe(true);
+            expect(await gone(kid, 15_000)).toBe(true);
+            expect(await gone(watchdog, 5_000)).toBe(true);
+        } finally {
+            stage.child.kill("SIGKILL");
+            rmSync(stage.cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+        }
+    }, 60_000);
+
+    // an agent's terminal closing takes every console process of the chain, the stage and its dev command included, but
+    // not wave-tauri, which has none: it kept running from the slot's target dir (run fbac552a t-6)
+    it.skipIf(process.platform !== "win32")("stops the slot's exe when the stage and its dev command are both gone", async () => {
+        dir = mkdtempSync(join(tmpdir(), "final-verify-"));
+        const pidFile = join(dir, "pids.json");
+        const fakeDev = join(dir, "fake-dev.cjs");
+        // a copy of node under the slot exe's name, detached so nothing in the dev command's tree reaches it
+        writeFileSync(
+            fakeDev,
+            `const fs = require("fs"), path = require("path");
+const exe = path.join(process.env.CARGO_TARGET_DIR, "debug", "wave-tauri.exe");
+fs.mkdirSync(path.dirname(exe), { recursive: true });
+fs.copyFileSync(process.execPath, exe);
+const app = require("child_process").spawn(exe, ["-e", "setInterval(() => {}, 1000)"], { detached: true, stdio: "ignore", windowsHide: true });
+app.unref();
+fs.writeFileSync(${JSON.stringify(pidFile)}, JSON.stringify({ dev: process.pid, app: app.pid }));
+setInterval(() => {}, 1000);
+`
+        );
+        const stage = startStage({
+            ...process.env,
+            LOCALAPPDATA: join(dir, "localappdata"),
+            ARC_FINAL_OUT: join(dir, "out"),
+            ARC_FINAL_BOOT_MS: "60000",
+            ARC_FINAL_DEV_CMD: `node "${fakeDev}"`,
+            ARC_FINAL_VITE_PORT: String(await freePort()),
+            ARC_FINAL_BROWSER: "0",
+        });
+        let app;
+        let watchdog;
+        try {
+            watchdog = await stage.armed;
+            let dev;
+            ({ dev, app } = await readWhenWritten(pidFile, 20_000));
+            stage.child.kill("SIGKILL");
+            process.kill(dev, "SIGKILL");
+            expect(await gone(app, 20_000)).toBe(true);
+        } finally {
+            stage.child.kill("SIGKILL");
+            if (app && alive(app)) process.kill(app, "SIGKILL");
+            // it is still matching the exe when the app goes; the exe's dir is removed after the test
+            if (watchdog) await gone(watchdog, 10_000);
+            rmSync(stage.cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+            // the copied exe's file can stay locked for seconds after its process is gone, with nothing running from it
+            // (a scan of a freshly written exe): a temp dir left behind is not this test's failure
+            try {
+                rmSync(dir, { recursive: true, force: true, maxRetries: 50, retryDelay: 200 });
+            } catch {
+                // left to the os's temp cleanup
+            }
+            dir = undefined;
+        }
+    }, 60_000);
 
     // a dev app is running on the vite port most of the time here: the final one takes another port, and builds
     // and stores everything where the running one cannot see it

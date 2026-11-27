@@ -29,6 +29,21 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
   row and header button) drops as each judge card's head comes on screen, and the working agent's own turns never count.
   The judge cards and the "paired this agent with" line name the judge "Judge: …", not the project, old replies too.
   (b9659f45b, 861017c4a)
+- [ ] (arcterm) **Priority badges and recent-project buttons on Jarvis initiatives.** In the dev app open Jarvis with
+  an initiative whose open chunks have levels set (`wsh effort chunk priority …`): its card shows pills like
+  "1 critical" (red) "4 high" right of the `n/m %` count, and its row in All initiatives shows them after the title; at
+  a narrow window the row keeps a few words of the title and the pills clip, never the reverse. With more than seven
+  projects, three project buttons sit left of the `project ▾` menu (the last launched-into, sorted by name); a press
+  filters to it and shows it pressed, a second press goes back to all. Not seen in the running app: no dev app was up.
+
+- [ ] (arcterm) **`wsh jobslot forget` drops a bad peak.** After a build with it installed, in the arcterm checkout run
+  `wsh jobslot forget scripts/verify.mjs`: it should print `dropped 10.6 GB` (the 21:42 run of 2026-11-27), the four
+  kept peaks, and `admitted on 4.8 GB`; the next queued verify.mjs row in the Jobs popover reads about 4.8 GB, and
+  `jobpeaks.json` (data dir) no longer holds the 10.6 GB peak. `wshcmd-jobslotforget.go`, `jobpeaks.Forget`.
+- [ ] (arcterm) **A paused run keeps its worker's open question.** After a build, start a run whose worker asks you
+  something (AskUserQuestion, arc mod on), pause the run while the question is open: it should stay in Needs you and on
+  the run. Answer it while paused, resume: the reopened worker should start with "the person answered your question:
+  …" and carry on. Commit e2c1334ef.
 - [ ] (arcterm) **Save for later: the What's new picture.** Take it with `node scripts/whatsnew-shot.mjs save-later
   --selector [data-jarvis-brief-region="later-chunks"]` (the Brief with a few later items on screen), then swap the
   CHANGELOG line's `<!-- shot: none -->` for the comment it prints, in one commit (spec "Builder's calls" 17). Until
