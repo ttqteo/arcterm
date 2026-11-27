@@ -22,6 +22,7 @@ import { BoardCanvas } from "./boardcanvas";
 import { boardCommands } from "./boardcommands";
 import { boardKey } from "./boardentries";
 import { BoardHeader } from "./boardheader";
+import { BoardHistory } from "./boardhistory";
 import type { BoardPart } from "./boardparts";
 import { boardMaxAtom, closeBoard, setBoardMax, switchBoard, type BoardSplit } from "./boardsplitstore";
 import { BoardStatus } from "./boardstatus";
@@ -135,6 +136,7 @@ function OpenCell({
                 chat={{ id: chatId, title: chatTitle, alive }}
                 chats={chats}
                 onChat={(tabId) => void act(() => moveBoardToChat(target, tabId))}
+                history={<BoardHistory boardId={boardId} talk={talk} />}
                 parts={parts}
                 part={part}
                 onPart={setPart}

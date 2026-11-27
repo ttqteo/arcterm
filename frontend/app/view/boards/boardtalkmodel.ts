@@ -87,6 +87,84 @@ export function statusTurn(
     return pick == null ? null : { turn: pick, view: turnView(pick, now) };
 }
 
+// One turn as a row of the History menu in a board's header.
+export interface HistoryRow {
+    id: string;
+    time: string; // when it landed, else when it was asked: "15:20", "12 Nov"
+    title: string; // what was drawn, else what was asked or briefed
+    brief: string; // the whole request or question, for the row's tooltip
+    by: "agent" | "you";
+    state: TurnShown;
+    stateText: string;
+    detail: string; // a drawn turn's counts ("+14 shapes · 2 changed"), a failed one's reason
+    drawingId: string | null; // the drawing a press on the row eases to, null when none on the board is its
+}
+
+const HISTORY_STATE: Record<TurnShown, string> = {
+    waiting: "Queued",
+    answering: "Answering",
+    slow: "Still answering",
+    drawn: "Drawn",
+    forwarded: "Sent to the agent",
+    failed: "Couldn't draw",
+    stopped: "Stopped",
+};
+
+function counts(turn: BoardTurn): string {
+    const parts: string[] = [];
+    if (turn.added) {
+        parts.push(`+${plural(turn.added, "shape")}`);
+    }
+    if (turn.changed) {
+        parts.push(`${turn.changed} changed`);
+    }
+    if (turn.removed) {
+        parts.push(`${turn.removed} removed`);
+    }
+    return parts.join(" · ");
+}
+
+// The drawing a drawn turn made or changed: the one an edit named, else the newest drawing titled as the turn is (the
+// drawer's title names a new drawing's frame). Null when that drawing is gone from the board.
+function turnDrawing(turn: BoardTurn, drawings: readonly { id: string; title: string }[]): string | null {
+    if (turn.drawingid && drawings.some((d) => d.id === turn.drawingid)) {
+        return turn.drawingid;
+    }
+    if (!turn.title) {
+        return null;
+    }
+    for (let i = drawings.length - 1; i >= 0; i--) {
+        if (drawings[i].title === turn.title) {
+            return drawings[i].id;
+        }
+    }
+    return null;
+}
+
+// The board's talk as the History menu lists it, newest first. `drawings` is the drawings row the open canvas publishes
+// (boardDrawingsAtom), so a row can ease to its drawing; with none published no row has one.
+export function historyRows(
+    talk: BoardTalk | null | undefined,
+    drawings: readonly { id: string; title: string }[],
+    now: number
+): HistoryRow[] {
+    return [...(talk?.turns ?? [])].reverse().map((turn) => {
+        const view = turnView(turn, now);
+        const drawn = view.state === "drawn";
+        return {
+            id: turn.id,
+            time: talkTime(turn.answeredts || turn.ts, now),
+            title: turnText(turn),
+            brief: (turn.question || turn.context || "").trim(),
+            by: turn.kind === KIND_REQUEST ? "agent" : "you",
+            state: view.state,
+            stateText: HISTORY_STATE[view.state],
+            detail: drawn ? counts(turn) : view.state === "failed" ? (turn.reason ?? "") : "",
+            drawingId: drawn ? turnDrawing(turn, drawings) : null,
+        };
+    });
+}
+
 // "12s", "1m 5s": how long a turn has been answering
 export function elapsedLabel(seconds: number): string {
     const s = Math.max(0, Math.floor(seconds));

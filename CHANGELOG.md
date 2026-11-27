@@ -34,6 +34,9 @@ and a picture given to a line that is not big.
 
 ### Added
 
+- History in a board's header (a clock with the turn count), beside Library → Boards' buttons too: every drawing the
+  agent asked for and every question, newest first, when and how it went. Press a drawn one and the board eases to its
+  drawing; hover one for the whole request.
 - `→` and `←` on a board step to the next and previous drawing, easing there as a click on its chip does, so a board
   of drawings reads like slides. A dense drawing read in parts still steps through its parts first.
 - A Note button on the nav rail, above Translate, and `Mod`+`Shift`+`N` open a new note straight away: you type its
