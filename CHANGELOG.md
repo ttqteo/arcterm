@@ -34,6 +34,10 @@ and a picture given to a line that is not big.
 
 ### Added
 
+- A running background command shows how much RAM it holds, beside how long it has run, in the sidebar and in the
+  agent's Background tasks. On Windows an agent's RAM now counts what its commands run too, such as a build's compilers,
+  which it used to leave out.
+
 - Answer an agent's permission prompt from its sidebar row: the row says what the agent asks ("subagent · Update the
   board scenarios", `$ npm test`) and holds Allow and Deny under it, so you no longer pick the agent or open its chat.
   A prompt with choices of its own, such as a plan approval, offers Answer in chat instead. <!-- big -->

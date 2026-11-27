@@ -8,7 +8,7 @@
 import { resmonSnapshotAtom } from "@/app/cockpit/resmonstore";
 import { atom, useAtomValue, type Atom, type Getter } from "jotai";
 import { useEffect } from "react";
-import { agentRamBytes, needsConsumersPoll, runRamBytes } from "./agentram";
+import { agentRamBytes, bgTaskRamBytes, needsConsumersPoll, runRamBytes } from "./agentram";
 import { consumersReadingAtom, loadConsumers } from "./consumersstore";
 import { ramReading, sameRamReading, type RamReading } from "./rowcols";
 import { rowFieldsAtom } from "./rowfieldsstore";
@@ -36,6 +36,24 @@ export function agentRamAtom(blockId: string | undefined): Atom<RamReading | nul
     if (a == null) {
         a = readingAtom((get) => agentRamBytes(key, get(resmonSnapshotAtom), get(consumersReadingAtom).data));
         ramAtoms.set(key, a);
+    }
+    return a;
+}
+
+const taskRamAtoms = new Map<string, Atom<RamReading | null>>();
+
+/** The RAM reading of one of an agent's background shell tasks (bgTaskRamBytes), or null while no snapshot names it.
+ * A task's id, command and start never change, so the atom is keyed by the agent's block and the task's tool-use id. */
+export function bgTaskRamAtom(
+    blockId: string | undefined,
+    task: { toolUseId: string; taskId?: string; command?: string; startMs?: number }
+): Atom<RamReading | null> {
+    const key = `${blockId ?? ""}\u0000${task.toolUseId}`;
+    let a = taskRamAtoms.get(key);
+    if (a == null) {
+        const { taskId, command, startMs } = task;
+        a = readingAtom((get) => bgTaskRamBytes(blockId, { taskId, command, startMs }, get(resmonSnapshotAtom)));
+        taskRamAtoms.set(key, a);
     }
     return a;
 }

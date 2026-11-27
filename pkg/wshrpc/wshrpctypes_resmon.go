@@ -59,15 +59,30 @@ type ResMonMachine struct {
 }
 
 type ResMonGroup struct {
-	Key       string        `json:"key"`               // "arc", or "job:<rootpid>:<root createts>"; stable for the job's life
-	OwnerKind string        `json:"ownerkind"`         // ResMonOwner_*
-	OwnerId   string        `json:"ownerid,omitempty"` // block id (agenttab, runworker), run id (runcmd), "" for arc
-	Label     string        `json:"label"`
-	Runtime   string        `json:"runtime,omitempty"` // claude | pi: the tab's session:agent, for the swatch
-	Killable  bool          `json:"killable"`
-	Cpu       float64       `json:"cpu"`
-	Mem       int64         `json:"mem"`
-	Rows      []ProcessInfo `json:"rows"` // pre-order tree; Depth from 0
+	Key       string `json:"key"`               // "arc", or "job:<rootpid>:<root createts>"; stable for the job's life
+	OwnerKind string `json:"ownerkind"`         // ResMonOwner_*
+	OwnerId   string `json:"ownerid,omitempty"` // block id (agenttab, runworker), run id (runcmd), "" for arc
+	Label     string `json:"label"`
+	Runtime   string `json:"runtime,omitempty"` // claude | pi: the tab's session:agent, for the swatch
+	Killable  bool   `json:"killable"`
+	// the rows' sum, plus what the shell tasks run outside the job: Git Bash starts a command out of the agent's job
+	// (MSYS asks for CREATE_BREAKAWAY_FROM_JOB), so a build's cargo and rustc are no row of it but count here
+	Cpu   float64           `json:"cpu"`
+	Mem   int64             `json:"mem"`
+	Rows  []ProcessInfo     `json:"rows"`            // pre-order tree; Depth from 0
+	Tasks []ResMonShellTask `json:"tasks,omitempty"` // the commands claude runs with its Bash and PowerShell tools
+}
+
+// ResMonShellTask is one command a claude agent runs with its Bash or PowerShell tool, in the foreground or the
+// background: the process claude started for it, everything under it in the job, and what Git Bash started for it out
+// of the job. The frontend matches it to a background task as ResMonKillShellTask does: a PowerShell task by its id, a
+// Bash one by its command, the nearest start winning.
+type ResMonShellTask struct {
+	TaskId   string  `json:"taskid,omitempty"`  // a PowerShell-tool task: the id its output file names
+	Command  string  `json:"command,omitempty"` // a Bash-tool task: the command it evals, verbatim
+	CreateTs int64   `json:"createts"`          // its root's start, epoch ms
+	Cpu      float64 `json:"cpu"`
+	Mem      int64   `json:"mem"`
 }
 
 type ResMonSnapshotData struct {

@@ -309,7 +309,7 @@ import {
 } from "./subagentsstore";
 import { rowFieldsAtom } from "./rowfieldsstore";
 import { AGENT_TREE_WIDE_PX, agentTreeWidth } from "./rowfields";
-import { agentRamAtom, runRamAtom, useAgentRamPoll } from "./agentramstore";
+import { agentRamAtom, bgTaskRamAtom, runRamAtom, useAgentRamPoll } from "./agentramstore";
 import { rowCols, type RamReading, type RowCell, type RowColKey } from "./rowcols";
 import { runningBackgroundTasks } from "./transcriptprojection";
 import { unreadLabel } from "./unreadagents";
@@ -1172,14 +1172,32 @@ function RunSubline({
 // agent: it sets monitorPeekAtom and nothing else (no focusIdAtom, no pane). Always mounted, though it draws nothing
 // without rows, so a peek whose row went away (the task ended, the agent fell asleep, the project folded) is cleared
 // rather than coming back with the row.
+// A running shell task's RAM after its second line ("running · 8m · 1.2 GB"), while the sidebar's RAM field is on: what
+// the command and everything it started hold, the processes Git Bash started out of the agent's job included. Nothing
+// before a snapshot names it, off Windows, or for a Monitor.
+function BgTaskRam({ blockId, task }: { blockId: string | undefined; task: BackgroundTaskRow["task"] }) {
+    const on = useAtomValue(rowFieldsAtom).ram;
+    const ram = useAtomValue(bgTaskRamAtom(on ? blockId : undefined, task));
+    if (!on || ram == null) {
+        return null;
+    }
+    return (
+        <span data-testid="background-task-row-ram" className={ram.warn ? "text-warning" : undefined}>
+            {` · ${ram.label}`}
+        </span>
+    );
+}
+
 function BackgroundTaskRows({
     model,
     agentId,
+    blockId,
     rows,
     depth,
 }: {
     model: AgentsViewModel;
     agentId: string;
+    blockId: string | undefined; // the agent's terminal while it is live: whose Resource Manager group holds its tasks
     rows: BackgroundTaskRow[];
     depth: number; // the agent row's level plus one: they sit one level under it
 }) {
@@ -1276,6 +1294,9 @@ function BackgroundTaskRows({
                                         className="mt-[3px] truncate text-[10.5px] text-muted"
                                     >
                                         {r.sub}
+                                        {!monitor && r.task.status === "running" ? (
+                                            <BgTaskRam blockId={blockId} task={r.task} />
+                                        ) : null}
                                     </div>
                                 </div>
                                 {r.left != null && r.expiresAt != null ? (
@@ -1862,6 +1883,7 @@ function ParentRow({
             <BackgroundTaskRows
                 model={model}
                 agentId={agent.id}
+                blockId={agent.sleeping != null ? undefined : agent.blockId}
                 rows={tasksOpenNow ? taskRows : []}
                 depth={depth + 1}
             />

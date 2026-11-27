@@ -79,7 +79,8 @@ type treeRow struct {
 type jobView struct {
 	Job    jobobject.LiveJob
 	Info   OwnerInfo
-	RootTs int64 // the root's create time as first seen, so the key outlives the root
+	RootTs int64       // the root's create time as first seen, so the key outlives the root
+	Tasks  []shellTask // the job's tool commands (shelltaskmem.go)
 }
 
 // isArcChild guards a ppid link against pid reuse: the child must not be older than its parent. An unknown
@@ -371,6 +372,7 @@ func buildGroups(procs map[int]proc, arcRows []treeRow, jobs []jobView, hostPid,
 			continue
 		}
 		addTotals(&g)
+		addShellTasks(&g, procs, jv.Tasks)
 		groups = append(groups, g)
 	}
 	return groups
