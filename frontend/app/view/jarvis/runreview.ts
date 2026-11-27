@@ -98,6 +98,36 @@ export function groupAge(g: Pick<RunReviewGroup, "createdts">, now: number): str
     return formatAgeShort(now - g.createdts);
 }
 
+/**
+ * A group's head: the run's goal less the plan path a plan run's goal carries ("Build X as specified in <path> and land
+ * it" reads "Build X"). The full goal stays in the head's title. A goal that is nothing but the path keeps it.
+ */
+export function groupTitle(goal: string): string {
+    const short = goal
+        .replace(/\s+as specified in\s+\S+/i, "")
+        .replace(/\s+and land it\.?\s*$/i, "")
+        .trim();
+    return short === "" ? goal : short;
+}
+
+// the longest head labelParts makes bold: past it the head is most of the label, and bolding it adds nothing
+const HEAD_MAX = 120;
+
+/**
+ * A row's label split for reading at a glance: the head is what comes before the first ": " or ". ", drawn strong, and
+ * the rest muted. A label with neither, or whose head would be most of it, is all head. Nothing is cut: the two parts
+ * joined are the label.
+ */
+export function labelParts(label: string): { head: string; rest: string } {
+    const m = /[:.]\s/.exec(label);
+    if (m == null || m.index === 0 || m.index > HEAD_MAX) {
+        return { head: label, rest: "" };
+    }
+    const cut = m.index + 1;
+    const rest = label.slice(cut);
+    return rest.trim() === "" ? { head: label, rest: "" } : { head: label.slice(0, cut), rest };
+}
+
 /** Every drawn row's key, in the order drawn: the sheet's j/k order. */
 export function reviewRowKeys(groups: ReviewGroup[]): string[] {
     return groups.flatMap((g) => g.items.map((i) => i.key));

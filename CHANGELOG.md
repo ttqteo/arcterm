@@ -41,6 +41,11 @@ and a picture given to a line that is not big.
 - Each Claude agent names the Claude account it runs on: left of the model under the chat box, and before the model
   under its row in the sidebar.
 
+### Changed
+
+- The To review sheet on Jarvis reads more calmly: Later and Drop show only on the row under the pointer or the `j`/`k`
+  cursor, each proposal's opening phrase is in bold, and a run's heading no longer trails its plan's file path.
+
 ### Fixed
 
 - The To review sheet on Jarvis shows each proposal whole, with its initiative under it, and scrolls when the list is

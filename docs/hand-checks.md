@@ -30,7 +30,10 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
 - [ ] (arcterm) **To review sheet: long rows stay whole.** Jarvis with more To review items than the sheet's height
   (18 on the person's store): open Review. Each label reads in full with its initiative in muted text under it, and the
   list scrolls; `j`/`k` past the bottom brings the row into view; Later on a row folds it on the spring with no jump of
-  the rows below. Only a flex repro in headless Edge was checked (`feff567a7`).
+  the rows below. Only a flex repro in headless Edge was checked (`feff567a7`). Then the calmer rows: Later and Drop
+  fade in only on the row under the pointer, on the `j`/`k` cursor's row and on Tab into a row, and showing them does
+  not reflow the label; each label's text before its first ": " or ". " is bold; a plan run's heading ends before "as
+  specified in". Only a static mock was checked (the commit after `4f52092fb`).
 - [ ] (arcterm) **Plan to review card in Chat: its motion.** An agent whose initiative has proposed chunks, in Chat mode:
   the card opens on the spring under the last reply (no jump of what is above it). Accept all: the footer folds away
   on the spring and the card keeps its rows, now `accepted · now pending`. Let the agent take a turn: the card folds

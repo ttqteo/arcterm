@@ -18,6 +18,8 @@ import { CURSOR_RING, cursorAttrs, REGION_LABEL, SMALL_BTN } from "./briefstyle"
 import {
     footerLine,
     groupAge,
+    groupTitle,
+    labelParts,
     oldestLine,
     startLabel,
     stripLine,
@@ -87,6 +89,7 @@ function Row({
 }) {
     // the cursor rides the row you last touched, so j and k go on from it
     const touch = () => setRunReviewCursor(item.key);
+    const parts = labelParts(item.label);
     return (
         // flex-none: in the group's column an overflow-hidden row has a min-height of 0, so it would shrink to fit and
         // clip its label instead of the sheet scrolling
@@ -96,7 +99,7 @@ function Row({
                 data-run-review-marked={marked ? "true" : undefined}
                 {...cursorAttrs(focused)}
                 className={cn(
-                    "flex items-start gap-2.5 rounded-[9px] border-b border-edge-faint px-2.5 py-2",
+                    "group flex items-start gap-2.5 rounded-[9px] border-b border-edge-faint px-2.5 py-2",
                     marked && "bg-surface-hover",
                     focused && CURSOR_RING
                 )}
@@ -122,10 +125,21 @@ function Row({
                     <Check size={11} strokeWidth={3} aria-hidden />
                 </button>
                 <div className="flex min-w-0 flex-1 flex-col gap-[3px]">
-                    <span className="text-[13px] leading-[1.4] text-primary">{item.label}</span>
+                    <span className="text-[13px] leading-[1.4]">
+                        <span className="font-medium text-primary">{parts.head}</span>
+                        {parts.rest !== "" ? <span className="text-secondary">{parts.rest}</span> : null}
+                    </span>
                     <span className="text-[10.5px] text-muted">{item.efforttitle}</span>
                 </div>
-                <div className="flex flex-none gap-1 pt-px">
+                {/* shown on the row under the pointer or the j/k cursor, and while one has keyboard focus: on every
+                    row at once the two columns of buttons were most of what the sheet showed. They keep their room,
+                    so a label does not reflow as they show */}
+                <div
+                    className={cn(
+                        "flex flex-none gap-1 pt-px opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100",
+                        focused && "opacity-100"
+                    )}
+                >
                     <button
                         type="button"
                         data-run-review-later
@@ -172,7 +186,7 @@ function Group({
         >
             <div className="flex items-baseline gap-2 px-2.5 pb-1 pt-2">
                 <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-secondary" title={group.goal}>
-                    {group.goal}
+                    {groupTitle(group.goal)}
                 </span>
                 <span className="flex-none font-mono text-[10px] text-muted">{group.runid.slice(0, 8)}</span>
                 <span className="flex-none text-[10.5px] tabular-nums text-muted">{groupAge(group, now)}</span>

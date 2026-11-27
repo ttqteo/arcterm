@@ -6,6 +6,8 @@ import { chunkKey } from "./briefundo";
 import {
     footerLine,
     groupAge,
+    groupTitle,
+    labelParts,
     listedKeys,
     neighborKey,
     oldestLine,
@@ -335,5 +337,40 @@ describe("the sheet's cursor", () => {
     it("has none when the folded row was the only one", () => {
         expect(neighborKey([keys[0]], keys[0])).toBeUndefined();
         expect(neighborKey(keys, "gone")).toBeUndefined();
+    });
+});
+
+describe("groupTitle", () => {
+    it("drops a plan run's path and its landing tail", () => {
+        expect(groupTitle("Build Coupons as specified in D:\\x\\docs\\plan.md and land it")).toBe("Build Coupons");
+        expect(groupTitle("Build Coupons as specified in /x/plan.md")).toBe("Build Coupons");
+    });
+    it("keeps a goal with no path", () => {
+        expect(groupTitle("Rail Verify Implementation Plan")).toBe("Rail Verify Implementation Plan");
+    });
+    it("keeps a goal that is only the path", () => {
+        expect(groupTitle("as specified in /x/plan.md")).toBe("as specified in /x/plan.md");
+    });
+});
+
+describe("labelParts", () => {
+    it("splits at the first colon or sentence end", () => {
+        expect(labelParts("Decide: an amended resubmit drops the light")).toEqual({
+            head: "Decide:",
+            rest: " an amended resubmit drops the light",
+        });
+        expect(labelParts("Rows clip. The sheet shrinks them: fix it")).toEqual({
+            head: "Rows clip.",
+            rest: " The sheet shrinks them: fix it",
+        });
+    });
+    it("leaves a dot or colon with no space after it alone", () => {
+        const label = "final-verify.mjs left its dev app running at 12:30";
+        expect(labelParts(label)).toEqual({ head: label, rest: "" });
+    });
+    it("keeps the whole label as head when the head runs long or nothing follows", () => {
+        const long = "x".repeat(130) + ": tail";
+        expect(labelParts(long)).toEqual({ head: long, rest: "" });
+        expect(labelParts("Ends here. ")).toEqual({ head: "Ends here. ", rest: "" });
     });
 });
