@@ -1,6 +1,6 @@
 ---
 name: cockpit
-description: Use when you want to show the user something in the arcterm cockpit (a run, an agent terminal, a record, a memory note, a surface), read what they're looking at, or run a cockpit action for them — via `wsh ui`; or, in a Claude agent, when an explanation of a flow, an architecture or a choice would read better as a picture, or the person asks you to draw — via `wsh board draw`.
+description: Use when you want to show the user something in the arcterm cockpit (a run, an agent terminal, a record, a memory note, a surface), read what they're looking at, or run a cockpit action for them — via `wsh ui`; or, in a Claude agent, when an explanation of a flow, an architecture or a choice would read better as a picture, when you sum up progress over time, results with their numbers, or a roadmap of what to do and read next, or the person asks you to draw — via `wsh board draw`.
 ---
 
 # Driving the arcterm cockpit
@@ -35,6 +35,20 @@ Claude agents"), and so is one from a folder that is no registered project.
 **When to draw.** An explanation of a flow, an architecture or a choice often reads better as a picture than as
 paragraphs, and the person may ask you to draw. Draw then, and still explain in words in your reply: the drawer draws
 and never answers in words. Don't draw a one-line answer.
+
+What people put on boards, and the tool that fits each (the person's real use, most used first):
+
+| When your reply… | Draw | Not on the board |
+|---|---|---|
+| sums up progress over time (weeks, phases, "Part 1–4") | a timeline of the dated steps; a flowchart of the parts and what feeds what | |
+| reports results with numbers (a research question's scores, a dataset filtered down) | a bar chart of the numbers; a funnel of the counts at each filter; a few insight boxes, each with its number | a chart of numbers alone: a mermaid block in Chat |
+| lays out a roadmap (what to learn, do and read next) | a map of the topics and how they connect | the to-do and to-read items: chunks of an initiative (`arc:initiatives`), so they can be ticked off and given a due day |
+| explains an architecture, a flow or a choice | the boxes that matter and the direction of the flow | |
+
+When such a summary runs to several dated steps, several numbers or several next items and the person did not ask for
+a picture, end the reply by offering it in one line, in their language, that names what you would draw ("Vẽ timeline 1/4–4/4 lên board
+không?"), and draw on a yes; one of each stays words, with no offer. When they asked for a picture, draw. Put each
+row's drawings on one board named for the topic (`thesis-progress`, `rq4-results`), one request per drawing.
 
 **How.** The board is named by a short topic (`wavesrv-startup`, `auth-flow`).
 

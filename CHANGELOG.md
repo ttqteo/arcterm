@@ -56,6 +56,9 @@ and a picture given to a line that is not big.
 
 ### Changed
 
+- When an agent sums up progress over time, results with numbers or a roadmap in words, Chat offers a chip to draw it
+  on a board ("vẽ timeline lên board"), and the agent offers it itself: a timeline, a chart, a map of topics, with the
+  to-do items going to an initiative instead.
 - An agent can now fix a drawing on a board in place, or delete one, instead of drawing a corrected copy beside it:
   ask it to fix "Part 1" and the drawer edits that drawing.
 - A board's Tidy button is gone.
