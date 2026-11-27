@@ -1,6 +1,7 @@
 // Scenario `boards-chat`: a board in the agent's Chat (docs/superpowers/specs/2026-11-19-kael-boards-design.md, plan
 // 2026-11-19-kael-boards.md Tasks 6 and 8): the toast when the drawer draws for an agent you are not looking at, the
-// card a turn that ran `wsh board draw` ends in, and the chip a question forwarded from a board wears.
+// card a turn that ran `wsh board draw` ends in, and the chip a question forwarded from a board wears. Step 7b presses
+// the agent header's Focus board ([data-board-focus]) over the board split the card opened.
 //
 //   board card   [data-chat-board="<board id>"] at the end of its turn's [data-chat-agent] group, with [data-chat-board-name],
 //                [data-chat-board-facts] (`9 shapes`, then ` · drawing…` while the drawer answers the agent's last
@@ -71,7 +72,15 @@ const requestTurn = (id, over = {}) => ({
 export default function (kit) {
     const { waveService, polishNap, ahReload, GRID_KEY, GRID_EMPTY } = kit;
     const { makeTab, closeTabs } = AC.tabFixtures({ waveService });
-    const LS_KEYS = [GRID_KEY, "agent.chatmode", "agent.openboards"];
+    // with the three the header's Focus board writes (step 7b)
+    const LS_KEYS = [
+        GRID_KEY,
+        "agent.chatmode",
+        "agent.openboards",
+        "agent.gridSizes",
+        "agent.tree.folded",
+        "agent.rail.visible",
+    ];
 
     // a record's time: real time, strictly after the one before, so the transcript reads in the order it was written
     const stamp = (ctx) => {
@@ -582,6 +591,83 @@ export default function (kit) {
                         // the board is on screen as its own cell beside the agent's Chat
                         after.cell === 1,
                     { clicked, before, after }
+                );
+            });
+
+            await run("7b. Focus board in the agent header folds the tree, hides the rail, gives the board 7 of 10; a second press puts it back", async (name) => {
+                // the layout the header button changes, as the stores and the page hold it
+                const layout = () =>
+                    AC.agentPage(
+                        h,
+                        `const B = await mod("app/view/boards/boardsplitstore.ts");
+                        const R = await mod("app/view/agents/railstore.ts");
+                        const G = await mod("app/view/agents/gridstore.ts");
+                        const S = await mod("app/view/agents/gridsash.tsx");
+                        const project = globalStore.get(G.projectGridsAtom).project ?? "";
+                        const grid = document.querySelector("[data-agent-grid]");
+                        const cols = grid ? getComputedStyle(grid).gridTemplateColumns.split(" ").map(parseFloat) : [];
+                        const btn = document.querySelector("[data-board-focus]");
+                        return {
+                            button: btn?.getAttribute("data-board-focus") ?? null,
+                            pressed: btn?.getAttribute("aria-pressed") ?? null,
+                            tree: globalStore.get(B.treeFoldedAtom),
+                            rail: globalStore.get(R.railVisibleAtom),
+                            col: S.sizesOf(globalStore.get(S.gridSizesAtom), project).col,
+                            // the chat's share of the two columns as laid out
+                            drawn: cols.length >= 2 ? Math.round((cols[0] / (cols[0] + cols[1])) * 100) / 100 : null,
+                        };`
+                    );
+                const press = () =>
+                    AC.agentPage(
+                        h,
+                        `const btn = document.querySelector("[data-board-focus]");
+                        if (!btn) return false;
+                        btn.click();
+                        return true;`
+                    );
+                // a known start: tree open, rail shown, the split even
+                await AC.agentPage(
+                    h,
+                    `const B = await mod("app/view/boards/boardsplitstore.ts");
+                    const R = await mod("app/view/agents/railstore.ts");
+                    const G = await mod("app/view/agents/gridstore.ts");
+                    const S = await mod("app/view/agents/gridsash.tsx");
+                    globalStore.set(B.treeFoldedAtom, false);
+                    globalStore.set(R.railVisibleAtom, true);
+                    globalStore.set(S.gridSizesAtom, globalStore.get(G.projectGridsAtom).project ?? "", { col: 0.5, row: 0.5 });
+                    return true;`
+                );
+                await until(async () => (await layout()).button === "off");
+                const before = await layout();
+                const pressed1 = await press();
+                await until(async () => (await layout()).button === "on");
+                await polishNap(500); // the tree's fold settles before the shot
+                const on = await layout();
+                await shot("board-focus-on");
+                const pressed2 = await press();
+                await until(async () => (await layout()).button === "off");
+                const back = await layout();
+                await closeSplit();
+                await until(async () => (await layout()).button == null, 5000);
+                const gone = await layout();
+                rec(
+                    name,
+                    pressed1 &&
+                        pressed2 &&
+                        before.button === "off" &&
+                        on.button === "on" &&
+                        on.pressed === "true" &&
+                        on.tree === true &&
+                        on.rail === false &&
+                        Math.abs(on.col - 0.3) < 0.01 &&
+                        on.drawn != null &&
+                        Math.abs(on.drawn - 0.3) < 0.02 &&
+                        back.tree === false &&
+                        back.rail === true &&
+                        back.col === 0.5 &&
+                        // no board split, no button
+                        gone.button == null,
+                    { before, on, back, gone }
                 );
             });
 
