@@ -71,6 +71,108 @@ export function permissionSummaryLine(request: Pick<AgentPermissionRequest, "too
     return request.toolname === "Bash" ? `$ ${request.summary}` : request.summary;
 }
 
+// ---- the sidebar row (permissionrow.tsx): what an agent's row in the tree says of its queue and offers to answer ----
+
+/** What an agent's sidebar row does with its permission queue: Allow and Deny (`screen`: a ScreenPick head, whose Allow
+ *  picks its Yes off the terminal), "Answer in chat" for a head it may not allow, or the refusal line alone once the
+ *  refused request has left the queue. */
+export type RowPermission =
+    | { kind: "answer"; head: AgentPermissionRequest; screen: boolean }
+    | { kind: "chat"; head: AgentPermissionRequest }
+    | { kind: "refusal" };
+
+/** Pure: what the row shows for queue `requests`, head first, or null for nothing. `shown` is cardShown (a stale queue
+ *  of an asleep or idle agent stays hidden); `otherAsk` is another ask on the row (a held card such as Token burn, a doc
+ *  review, a brainstorm's ask), which keeps the row and is never answered past by an Allow; `refused` is the agent's
+ *  refusal line, which outlives the request it refused. An AskUserQuestion head is a question, not a permission: the
+ *  row leaves it as it is. */
+export function rowPermission(
+    requests: readonly AgentPermissionRequest[],
+    opts: { shown: boolean; otherAsk: boolean; refused: boolean }
+): RowPermission | null {
+    if (!opts.shown || opts.otherAsk) {
+        return null;
+    }
+    const head = requests[0];
+    if (head == null) {
+        return opts.refused ? { kind: "refusal" } : null;
+    }
+    if (head.toolname === "AskUserQuestion") {
+        return null;
+    }
+    if (head.screenpick === true) {
+        return { kind: "answer", head, screen: true };
+    }
+    return head.answerable ? { kind: "answer", head, screen: false } : { kind: "chat", head };
+}
+
+// the summary wavesrv falls back to when the field it reads is missing: the tool name, then its input as JSON
+function rawSummary(request: Pick<AgentPermissionRequest, "toolname" | "summary">): boolean {
+    return request.summary === request.toolname || request.summary.startsWith(`${request.toolname} {`);
+}
+
+function baseName(path: string): string {
+    return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+}
+
+/** Pure: the short words of the head on the row's second line, in place of "asking"; `mono` for a Bash command. A
+ *  subagent reads its description (without the "(Explore on haiku)" wavesrv adds), a file tool its file's name, a fetch
+ *  its URL without the scheme. A head the row may not allow reads a short name only, never its input as JSON: plan
+ *  approval for ExitPlanMode, else the tool's name. The full summary is the row's title (permissionSummaryLine). */
+export function permissionRowLabel(
+    request: Pick<AgentPermissionRequest, "toolname" | "summary" | "answerable" | "screenpick">
+): { text: string; mono: boolean } {
+    const tool = request.toolname;
+    if (!request.answerable && request.screenpick !== true) {
+        return { text: tool === "ExitPlanMode" ? "plan approval" : tool, mono: false };
+    }
+    const subagent = tool === "Agent" || tool === "Task";
+    if (rawSummary(request)) {
+        return { text: subagent ? "subagent" : tool, mono: false };
+    }
+    const summary = request.summary.replace(/\s+/g, " ").trim();
+    switch (tool) {
+        case "Bash":
+            return { text: `$ ${summary}`, mono: true };
+        case "Agent":
+        case "Task":
+            return { text: `subagent · ${summary.replace(/ \([^()]*\)$/, "")}`, mono: false };
+        case "Edit":
+        case "MultiEdit":
+        case "NotebookEdit":
+            return { text: `edit ${baseName(summary)}`, mono: false };
+        case "Write":
+            return { text: `write ${baseName(summary)}`, mono: false };
+        case "WebFetch":
+            return { text: `fetch ${summary.replace(/^https?:\/\//, "")}`, mono: false };
+        case "WebSearch":
+            return { text: `search ${summary}`, mono: false };
+        case "Artifact":
+            return { text: `artifact · ${summary}`, mono: false };
+    }
+    return { text: `${tool} · ${summary}`, mono: false };
+}
+
+/** Pure: the muted words at the right of the row's buttons, "+1 more · waiting 8s"; no "+N more" with nothing behind
+ *  the head. */
+export function rowWaitLine(behind: number, ts: number, now: number): string {
+    const wait = waitingFor(ts, now);
+    return behind > 0 ? `+${behind} more · ${wait}` : wait;
+}
+
+/** Pure: whether a computed CSS `transform` moves its element: a row re-sorting slides on a translate (motion's layout
+ *  animation), and while it does its buttons take no click, so a click aimed at one agent's Allow cannot land on
+ *  another's. A scale alone (the settle pulse) moves nothing. */
+export function transformMoves(transform: string): boolean {
+    const m = /^matrix(3d)?\(([^)]*)\)$/.exec(transform.trim());
+    if (m == null) {
+        return false;
+    }
+    const v = m[2].split(",").map((s) => Number(s.trim()));
+    const [x, y] = m[1] != null ? [v[12], v[13]] : [v[4], v[5]];
+    return Math.abs(x ?? 0) >= 0.5 || Math.abs(y ?? 0) >= 0.5;
+}
+
 /** Pure: the ids of `prev` that `next` no longer holds. The store forgets their in-flight lock. */
 export function requestsGone(prev: readonly { id: string }[], next: readonly { id: string }[]): string[] {
     const alive = new Set(next.map((r) => r.id));

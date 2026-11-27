@@ -113,6 +113,8 @@ import { BackgroundTaskPeek } from "./backgroundtaskpeek";
 import { focusConversationSoon, focusReadOn } from "./chatfocusreadstore";
 import { backgroundActivity, launchedServers, shownState, type ShownState } from "./bgactivity";
 import { compactingNow } from "./chatmodel";
+import { selectCellView } from "./chatmodestore";
+import { PermissionRowLine, PermissionRowNote, useRowPermission } from "./permissionrow";
 import { treeLine, treeLineAsks, waitsOnUser, type BrainstormFile, type BuilderCheckRecord } from "./brainstormmodel";
 import { runStepView, runTreeText } from "./brainstormrunmodel";
 import { brainstormAtom, shownBrainstormFile } from "./brainstormstore";
@@ -1541,8 +1543,14 @@ function ParentRow({
         brainstormFile != null &&
         !agent.ask?.hold &&
         treeLineAsks(brainstormFile, asking && waitsOnUser(brainstormFile));
+    // a permission prompt at the head of its queue: its words take the note's place, and Allow and Deny a third line
+    // (permissionrow.tsx). Another ask on the row (a held card, a review, a brainstorm's ask) keeps the row as it is
+    const perm = useRowPermission(agent, agent.ask?.hold === true || review != null || brainstormAsks);
+    const permNote = <PermissionRowNote perm={perm} />;
     const askNote =
-        asking && !review && !brainstormAsks ? (
+        perm.row != null && perm.row.kind !== "refusal" ? (
+            permNote
+        ) : asking && !review && !brainstormAsks ? (
             <span
                 data-agent-ask-note
                 title={askingLabel(agent)}
@@ -1758,6 +1766,15 @@ function ParentRow({
                         {badges}
                     </div>
                 )}
+                <PermissionRowLine
+                    agentId={agent.id}
+                    perm={perm}
+                    now={now}
+                    onOpenChat={() => {
+                        selectAgentRow(model, agent.id);
+                        selectCellView(agent.id, "chat", Date.now());
+                    }}
+                />
             </div>
             {/* subagent reveal: the children block expands/collapses via composerReveal (height+opacity).
                 It is not a layout node itself, so its height animation and the row-list reflow don't fight. */}
