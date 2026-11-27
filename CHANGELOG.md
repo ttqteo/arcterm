@@ -39,7 +39,7 @@ and a picture given to a line that is not big.
   the "next" arrow points at, is the open chunk with the highest level, equal levels keeping their plan order. Advancing
   an initiative, `wsh effort show` and the agent's Initiative tab follow the same order, so a chunk no longer has to move
   up the plan, and change its number, to come first. <!-- big -->
-  <!-- shot: none -->
+  <!-- shot: 1.12.0-chunk-priority.webp -->
 - Answer an agent's permission prompt from its sidebar row: the row says what the agent asks ("subagent · Update the
   board scenarios", `$ npm test`) and holds Allow and Deny under it, so you no longer pick the agent or open its chat.
   A prompt with choices of its own, such as a plan approval, offers Answer in chat instead. <!-- big -->
