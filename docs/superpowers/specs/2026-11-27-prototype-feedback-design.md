@@ -186,7 +186,9 @@ support.js"; this equivalent path is the deviation, recorded).
   `data-canvas-capturing`, every Arc overlay in it (marks, draft, chips, the layer's outline) hides for that
   frame, the window is captured and cropped to the board's visible part, then the overlays come back. Window
   capture can fail (a Mac without Screen Recording, a dev browser with no Tauri host): the mark is kept with no
-  picture, and a group with no picture is captured at send as today, so drawing a mark never needs it. At send,
+  picture, and a group with no picture is captured at send as today only when its context is the one on screen
+  (any other such group is sent with its line and no picture, never a picture of another screen or variant),
+  so drawing a mark never needs it. At send,
   marks are grouped by context in order of first appearance; each group's newest picture gets the group's boxes
   and numbers drawn onto it (accent color read from the theme token) and is written as its own `NNN.png`; one
   line names each group's picture and context, groups joined by ` | `. Why compose at send: removing a mark or
