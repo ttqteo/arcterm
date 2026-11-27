@@ -20,7 +20,6 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/shirou/gopsutil/v4/mem"
 	"github.com/wavetermdev/waveterm/pkg/agentask"
-	"github.com/wavetermdev/waveterm/pkg/agentobserve"
 	"github.com/wavetermdev/waveterm/pkg/authkey"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/blockcontroller"
@@ -652,11 +651,7 @@ func main() {
 	// the sessions engine runs, temp folders and headless passes leave in ~/.claude/projects move to
 	// ~/.arc/archive/claude-sessions, where Claude Desktop does not list them: now, then hourly
 	if !snapshotSkips("sessionarchive.StartSweepLoop") { // it moves files in the user's own ~/.claude
-		sessionarchive.StartSweepLoop(context.Background(), sessionarchive.Rules{
-			TempDir:      os.TempDir(),
-			WorktreeRoot: orchestrate.WorktreeRoot(),
-			HeadlessSlug: agentobserve.HeadlessAgentSlug(),
-		})
+		sessionarchive.StartSweepLoop(context.Background(), wshserver.SessionArchiveRules())
 	}
 	// Session ideas: every 5 minutes, once the person has pressed Scan my sessions, scan the sessions 7 days from
 	// deletion at once and those 10 days from it in a leftover 5h window

@@ -130,6 +130,26 @@ func TestSessionsNamesEachRowsProject(t *testing.T) {
 	if len(rows) != 1 || rows[0].ProjectDir != filepath.Dir(c.Path) || rows[0].Project != "mit-thesis" {
 		t.Fatalf("a row carries its Claude Code folder and the name of the folder it was started in: %+v", rows)
 	}
+	if rows[0].ProjectPath != c.Cwd {
+		t.Fatalf("a row carries the folder it was started in: got %q, want %q", rows[0].ProjectPath, c.Cwd)
+	}
+}
+
+// the home dir reads "~", a folder under it "~/…"; a folder elsewhere, or one whose name only starts like home, is kept
+func TestHomeAsTilde(t *testing.T) {
+	home := filepath.Join(string(filepath.Separator)+"users", "ann")
+	cases := []struct{ path, want string }{
+		{home, "~"},
+		{filepath.Join(home, ".arc", "no-folder"), filepath.Join("~", ".arc", "no-folder")},
+		{filepath.Join(string(filepath.Separator)+"work", "SIEM", "src"), filepath.Join(string(filepath.Separator)+"work", "SIEM", "src")},
+		{home + "-old", home + "-old"},
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := homeAsTilde(c.path, home); got != c.want {
+			t.Errorf("homeAsTilde(%q) = %q, want %q", c.path, got, c.want)
+		}
+	}
 }
 
 func TestSessionsLeavesOutSkippedAndArchived(t *testing.T) {

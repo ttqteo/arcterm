@@ -71,6 +71,30 @@ func exists(p string) bool {
 	return err == nil
 }
 
+// Owns names arcterm's folders by their slug alone, whether or not Sweep would move them yet
+func TestOwns(t *testing.T) {
+	f := newFixture(t)
+	base := filepath.Dir(f.root)
+	cases := []struct {
+		name string
+		cwd  string
+		want bool
+	}{
+		{"a run's task tree", filepath.Join(base, "arc-wt", "03d550fc-t-1"), true},
+		{"a run's lead tree", filepath.Join(base, "arc-wt", "03d550fc"), true},
+		{"a legacy in-project tree", filepath.Join(base, "proj", ".waveterm", "worktrees", "t-1"), true},
+		{"a temp folder", filepath.Join(base, "tmp", "verify-agent-chat-run-27enQh"), true},
+		{"the headless passes", filepath.Join(base, "data", "headless"), true},
+		{"a project", filepath.Join(base, "work", "mit-thesis"), false},
+		{"the home dir", base, false},
+	}
+	for _, c := range cases {
+		if got := f.rules.Owns(agentobserve.SlugifyCwd(c.cwd)); got != c.want {
+			t.Errorf("%s (%s): Owns = %v, want %v", c.name, c.cwd, got, c.want)
+		}
+	}
+}
+
 func TestSweepMovesAFinishedRunsTree(t *testing.T) {
 	f := newFixture(t)
 	slug := f.session(filepath.Join(f.rules.WorktreeRoot, "0f74867d-t-1"), "a", time.Hour) // the tree is gone

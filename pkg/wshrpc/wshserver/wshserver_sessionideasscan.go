@@ -16,10 +16,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/wavetermdev/waveterm/pkg/agentobserve"
 	"github.com/wavetermdev/waveterm/pkg/agentsessions"
 	"github.com/wavetermdev/waveterm/pkg/consult"
 	"github.com/wavetermdev/waveterm/pkg/effortstore"
+	"github.com/wavetermdev/waveterm/pkg/orchestrate"
 	"github.com/wavetermdev/waveterm/pkg/panichandler"
+	"github.com/wavetermdev/waveterm/pkg/sessionarchive"
 	"github.com/wavetermdev/waveterm/pkg/sessionideas"
 	"github.com/wavetermdev/waveterm/pkg/wavebase"
 	"github.com/wavetermdev/waveterm/pkg/wconfig"
@@ -120,13 +123,25 @@ var realSessionIdeasDeps = func() sessionideas.Deps {
 	return sessionideas.Deps{
 		Run:            runSessionIdeasModel,
 		ProjectContext: sessionIdeasProjectContext,
-		// the person's sessions only: a scan never reads, and the list never counts, one arcterm's machinery left
+		// the person's sessions only: a scan never reads, and the list never counts, one arcterm's machinery left, by
+		// its folder (a run's tree or a temp folder not yet archived) or by its head
 		Candidates: func() []agentsessions.DigestSession {
-			return sessionideas.PersonSessions(agentsessions.ClaudeDigestCandidates(agentsessions.DigestWindowDays))
+			cands := agentsessions.ClaudeDigestCandidates(agentsessions.DigestWindowDays)
+			return sessionideas.PersonSessions(sessionideas.LeaveOutArcterms(cands, SessionArchiveRules().Owns))
 		},
 		Read:        agentsessions.ReadDigestFor,
 		CleanupDays: func() int { return sessionideas.CleanupPeriodDays(sessionideas.ClaudeSettingsPath()) },
 		Now:         time.Now,
+	}
+}
+
+// SessionArchiveRules is which Claude Code folders are arcterm's own: the archive's sweep moves them out of
+// ~/.claude/projects, and Session ideas never offers or reads them.
+func SessionArchiveRules() sessionarchive.Rules {
+	return sessionarchive.Rules{
+		TempDir:      os.TempDir(),
+		WorktreeRoot: orchestrate.WorktreeRoot(),
+		HeadlessSlug: agentobserve.HeadlessAgentSlug(),
 	}
 }
 
@@ -147,7 +162,8 @@ func sessionIdeasOnDisk() ([]agentsessions.DigestSession, int) {
 
 // fixtureSession is a seeded session as a transcript on disk: the file's own fields, and with named its session too.
 func fixtureSession(s wshrpc.SessionIdeasSession, named bool) agentsessions.DigestSession {
-	d := agentsessions.DigestSession{Path: s.TranscriptPath, Stem: s.SessionID, Mtime: time.UnixMilli(s.LastWriteTs), Size: s.Size}
+	// a seeded ProjectPath stands for the cwd its head would name, so the list names the row's project by it
+	d := agentsessions.DigestSession{Path: s.TranscriptPath, Stem: s.SessionID, Mtime: time.UnixMilli(s.LastWriteTs), Size: s.Size, Cwd: s.ProjectPath}
 	if named {
 		d.Session = &agentsessions.SessionInfo{ID: s.SessionID, Task: s.Title, ProjectName: s.Project, ProjectPath: s.Project}
 	}

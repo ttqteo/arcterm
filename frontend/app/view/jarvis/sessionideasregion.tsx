@@ -625,6 +625,7 @@ export function SessionIdeasOffer() {
                                                         value: p.dir,
                                                         label: p.label,
                                                         count: p.sessions,
+                                                        search: p.path,
                                                     })),
                                                 ]}
                                                 value={picked?.dir ?? null}

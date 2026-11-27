@@ -5875,6 +5875,7 @@ declare global {
         title: string;
         project: string;
         projectdir: string;
+        projectpath?: string;
         transcriptpath: string;
         size: number;
         lastwritets: number;

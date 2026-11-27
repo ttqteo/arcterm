@@ -576,6 +576,91 @@ export function sessionIdeasBriefScenarios(kit) {
                 };
             });
 
+            // 10c. Many projects: the menu opens a picker with a filter field instead of the context menu, each project
+            // named by the folder its sessions were started in ("SIEM/src", "~"); typing narrows the list, Enter picks
+            // and gives the keys back to the face, Esc closes
+            await stepOf(steps, "10c. a long project menu is a picker with a filter field, its projects named by their folders", async () => {
+                const PATHS = [
+                    "D:\\Workspace\\SIEM\\src",
+                    "~",
+                    "~\\.arc\\no-folder",
+                    "D:\\Workspace\\SIEM\\apps\\website",
+                    "D:\\Workspace\\SIEM\\website\\apps\\website",
+                    "D:\\work\\vnstock-js",
+                    "D:\\work\\portfolio-journal",
+                    "D:\\work\\lingua",
+                    "D:\\work\\mit-thesis",
+                ];
+                await reseed(h, ctx, (seed) => {
+                    seed.data.ideas = [];
+                    seed.data.marks = [];
+                    seed.data.firstscandone = false;
+                    seed.data.scanprojects = [];
+                    seed.data.lastscants = 0;
+                    seed.data.nextscants = 0;
+                    delete seed.data.scan;
+                    const base = seed.sessions[2];
+                    PATHS.forEach((projectpath, n) => {
+                        seed.sessions.push({
+                            ...base,
+                            sessionid: `sib-many-${n}`,
+                            title: `SIB many ${n}`,
+                            project: "",
+                            projectpath,
+                            transcriptpath: `C:\\arc-verify-sib\\many-${n}\\.claude\\sib-many-${n}.jsonl`,
+                            size: 50_000 + n,
+                        });
+                    });
+                });
+                await briefReload(h);
+                await hook(h, true);
+                const OFFER = "[data-jarvis-ideas] [data-jarvis-sessionideas-offer]";
+                const FACE = `${OFFER} [data-jarvis-sessionideas-offer-project]`;
+                const PICKER = "[data-filter-picker]";
+                const items = () => h.ev(`[...document.querySelectorAll("${PICKER} [data-filter-picker-item]")].map((el) => el.getAttribute("data-filter-picker-item"))`);
+                const shown = await polishWaitFor(h, `!!${q(FACE)}`, 30000);
+                await click(h, FACE);
+                const opened = await polishWaitFor(h, `!!${q(PICKER)} && document.activeElement === ${q(`${PICKER} [data-filter-picker-input]`)}`, 5000);
+                const noContextMenu = !(await exists(h, "[data-context-menu]"));
+                const all = await items();
+                await h.shot("cdp-shots/sessionideas-brief-offer-picker.png");
+                await h.cdp("Input.insertText", { text: "siem" });
+                const narrowed = await polishWaitFor(h, `document.querySelectorAll("${PICKER} [data-filter-picker-item]").length === 3`, 5000);
+                const siem = await items();
+                await h.shot("cdp-shots/sessionideas-brief-offer-picker-filtered.png");
+                await h.cdp("Input.insertText", { text: " src" });
+                await polishWaitFor(h, `document.querySelectorAll("${PICKER} [data-filter-picker-item]").length === 1`, 5000);
+                for (const type of ["keyDown", "keyUp"]) {
+                    await h.cdp("Input.dispatchKeyEvent", { type, key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+                }
+                const picked = await polishWaitFor(h, `(${q(`${OFFER} [data-jarvis-sessionideas-offer-scan]`)}?.textContent ?? "").trim() === "Scan SIEM/src"`, 5000);
+                const closed = await polishWaitFor(h, `!${q(PICKER)}`, 5000);
+                const faceFocused = await h.ev(`document.activeElement === ${q(FACE)}`);
+                await click(h, FACE);
+                const reopened = await polishWaitFor(h, `!!${q(PICKER)}`, 5000);
+                for (const type of ["keyDown", "keyUp"]) {
+                    await h.cdp("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+                }
+                const escClosed = await polishWaitFor(h, `!${q(PICKER)}`, 5000);
+                const want = ["all", "SIEM/src", "~", "no-folder", "SIEM/apps/website", "website/apps/website", "vnstock-js"];
+                return {
+                    ok:
+                        shown &&
+                        opened &&
+                        noContextMenu &&
+                        all.length === PATHS.length + 2 &&
+                        want.every((l) => all.includes(l)) &&
+                        narrowed &&
+                        JSON.stringify([...siem].sort()) === JSON.stringify(["SIEM/apps/website", "SIEM/src", "website/apps/website"].sort()) &&
+                        picked &&
+                        closed &&
+                        faceFocused &&
+                        reopened &&
+                        escClosed,
+                    detail: { shown, opened, noContextMenu, all, narrowed, siem, picked, closed, faceFocused, reopened, escClosed },
+                };
+            });
+
             // 11. A scan that runs: the progress says which session it is reading, Stop is there, the ideas found stay listed and
             // Scan now is not offered meanwhile
             await stepOf(steps, "11. a scan that runs shows its progress with Stop, and the rows stay", async () => {

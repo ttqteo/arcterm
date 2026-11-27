@@ -6,11 +6,30 @@ package sessionideas
 import (
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/agentsessions"
+	"github.com/wavetermdev/waveterm/pkg/wavebase"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
+
+// homeAsTilde is path with the home dir at its head written as "~" ("~/notes", and "~" for the home dir itself), so a
+// name drawn from it reads "~" rather than the user's account name. Any other path, and "", is returned as it is.
+func homeAsTilde(path, home string) string {
+	if path == "" || home == "" {
+		return path
+	}
+	// Rel compares without case on Windows, as the file system does; another drive is an error
+	rel, err := filepath.Rel(home, path)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return path
+	}
+	if rel == "." {
+		return "~"
+	}
+	return "~" + string(filepath.Separator) + rel
+}
 
 // Sessions is the list the Sessions scanned fold draws and the counts above it: one row per transcript on disk (the
 // candidates), newest write first. Each row says what the scan made of the session as it stands now:
@@ -56,6 +75,7 @@ func Sessions(d wshrpc.SessionIdeasData, candidates []agentsessions.DigestSessio
 		row := wshrpc.SessionIdeasSession{
 			SessionID:      c.Stem,
 			ProjectDir:     ProjectDir(c.Path),
+			ProjectPath:    homeAsTilde(c.Cwd, wavebase.GetHomeDir()),
 			TranscriptPath: c.Path,
 			Size:           c.Size,
 			LastWriteTs:    c.Mtime.UnixMilli(),

@@ -99,7 +99,10 @@ type SessionIdeasSession struct {
 	Project   string `json:"project"`
 	// ProjectDir is the Claude Code folder the transcript sits in, one per project folder a session was started in: the
 	// key a scan of one project (CommandSessionIdeasScanData.Project) and the schedule's scope (ScanProjects) go by.
-	ProjectDir     string `json:"projectdir"`
+	ProjectDir string `json:"projectdir"`
+	// ProjectPath is the folder the session was started in, as its transcript's head names it, with the home dir
+	// written as "~": what the offer names a project by ("SIEM/src" rather than "src"). "" when the head names none.
+	ProjectPath    string `json:"projectpath,omitempty"`
 	TranscriptPath string `json:"transcriptpath"`
 	Size           int64  `json:"size"`
 	LastWriteTs    int64  `json:"lastwritets"`

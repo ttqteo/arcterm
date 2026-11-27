@@ -23,6 +23,19 @@ func ProjectDir(transcriptPath string) string {
 	return filepath.Dir(transcriptPath)
 }
 
+// LeaveOutArcterms is the candidates without those whose Claude Code folder arcterm owns (owns is
+// sessionarchive.Rules.Owns on the folder's name): an engine run's tree or a temp folder the archive's sweep has not
+// moved yet is no project of the person's, so the list never offers it and a scan never reads it.
+func LeaveOutArcterms(cands []agentsessions.DigestSession, owns func(slug string) bool) []agentsessions.DigestSession {
+	out := make([]agentsessions.DigestSession, 0, len(cands))
+	for _, c := range cands {
+		if !owns(filepath.Base(ProjectDir(c.Path))) {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
 // sameDir compares two folders as the file system does: without case on Windows.
 func sameDir(a, b string) bool {
 	a, b = filepath.Clean(a), filepath.Clean(b)

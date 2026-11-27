@@ -5,7 +5,9 @@ package sessionideas
 
 import (
 	"context"
+	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/wavetermdev/waveterm/pkg/agentsessions"
@@ -107,5 +109,22 @@ func TestInScope(t *testing.T) {
 	}
 	if got := InScope(wshrpc.SessionIdeasData{FirstScanDone: true, ScanProjects: []string{"/claude/b"}}, all); len(got) != 2 {
 		t.Errorf("once every project is on, the scope no longer limits, got %v", got)
+	}
+}
+
+// A session in a folder arcterm owns (a run's tree, a temp folder) is left out; the person's are kept in their order.
+func TestLeaveOutArcterms(t *testing.T) {
+	cands := []agentsessions.DigestSession{
+		{Path: filepath.Join("claude", "D--work-thesis", "a.jsonl")},
+		{Path: filepath.Join("claude", "C--arc-wt-03d550fc-t-1", "b.jsonl")},
+		{Path: filepath.Join("claude", "D--work-arc", "c.jsonl")},
+	}
+	owns := func(slug string) bool { return strings.HasPrefix(slug, "C--arc-wt-") }
+	var got []string
+	for _, c := range LeaveOutArcterms(cands, owns) {
+		got = append(got, c.Path)
+	}
+	if want := []string{cands[0].Path, cands[2].Path}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
 	}
 }

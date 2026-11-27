@@ -29511,6 +29511,33 @@ const cursorCalls = (h, command) => h.ev(`window.${CURSOR_DELAY_KEY}?.state.call
 
 // One Claude transcript the backend scan reads as a session: a user prompt with `cwd`, `ageMs` old in both its record
 // and its mtime (the scan orders by the mtime).
+// What an earlier history-older or launcher-resume-older left when it was cut off before its teardown: its transcript
+// folders under ~/.claude/projects and its sessions' folders under the home dir. Left behind, they are 111 sessions of a
+// project nobody has (the Brief's Session ideas offered ".verify-history-older-1IsIQT" to scan). Only folders an hour
+// old go, so a run in another slot keeps its own.
+const OLDER_SEED_PREFIXES = {
+    projects: ["verify-history-", "verify-lazy-"],
+    // ".verify-launcher-older-" also covers launcher-resume-older's second project (verify-launcher-older-b)
+    home: [".verify-history-older-", ".verify-launcher-older-"],
+};
+function removeStaleOlderSeeds() {
+    const cutoff = Date.now() - 3_600_000;
+    const sweep = (root, prefixes) => {
+        if (!existsSync(root)) return;
+        for (const name of readdirSync(root)) {
+            if (!prefixes.some((p) => name.startsWith(p))) continue;
+            const path = join(root, name);
+            try {
+                if (statSync(path).mtimeMs < cutoff) rmSync(path, { recursive: true, force: true });
+            } catch (e) {
+                console.error(`removing the stale seed ${path} failed: ${e?.message ?? e}`);
+            }
+        }
+    };
+    sweep(join(homedir(), ".claude", "projects"), OLDER_SEED_PREFIXES.projects);
+    sweep(homedir(), OLDER_SEED_PREFIXES.home);
+}
+
 function seedOlderSession(folder, cwd, title, ageMs) {
     const id = randomUUID();
     const at = new Date(Date.now() - ageMs);
@@ -29569,6 +29596,7 @@ const launcherResumeOlder = {
     name: "launcher-resume-older",
     surface: "cockpit",
     async arrange(h) {
+        removeStaleOlderSeeds();
         const ctx = { dirs: [], projects: [] };
         // a throw past this point still returns ctx, so teardown removes whatever was already made
         try {
@@ -29889,6 +29917,7 @@ const historyOlder = {
     name: "history-older",
     surface: "agent",
     async arrange(h) {
+        removeStaleOlderSeeds();
         // under the home dir: the scan drops a session whose project sits under the temp dir
         const cwd = mkdtempSync(join(homedir(), ".verify-history-older-"));
         const ctx = { cwd };

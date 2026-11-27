@@ -50,7 +50,9 @@ and a picture given to a line that is not big.
 
 - Ideas from your sessions can scan one project first: the offer card on Jarvis's Brief has a project menu (most
   sessions first), and its estimate and button follow the pick. Until you scan all projects, arcterm keeps reading only
-  the projects you scanned, and the region says which.
+  the projects you scanned, and the region says which. Each project is named by the folder its sessions were started in
+  (`SIEM/src`, `~` for your home folder), a long menu has a search field, and the folders of arcterm's own runs and
+  temp folders are left out of the menu and the scan.
 - The To review sheet on Jarvis reads more calmly: Later and Drop show only on the row under the pointer or the `j`/`k`
   cursor, each proposal's opening phrase is in bold, and a run's heading no longer trails its plan's file path.
 

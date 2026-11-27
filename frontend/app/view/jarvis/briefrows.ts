@@ -993,9 +993,9 @@ export function leavingLine(data: SessionIdeasData, now: number): string | null 
 // estimate for the offer; the first scan records the real numbers (docs/open-issues.md, RAM watch).
 export const SCAN_TOKENS_PER_SESSION = 10_000;
 
-/** A project the offer can scan alone: its Claude Code folder (the scan's key), its name, and its quiet sessions not
- *  yet scanned. */
-export type OfferProject = { dir: string; label: string; sessions: number };
+/** A project the offer can scan alone: its Claude Code folder (the scan's key), its name, the folder its sessions were
+ *  started in when one names it (the picker's filter matches it), and its quiet sessions not yet scanned. */
+export type OfferProject = { dir: string; label: string; path?: string; sessions: number };
 
 // the folder's own name: the last part of a path written with either separator
 const lastPart = (path: string): string =>
@@ -1004,54 +1004,134 @@ const lastPart = (path: string): string =>
         .split(/[\\/]/)
         .pop() ?? path;
 
+// a folder name that says nothing alone ("src" of which project?): its parent goes in front ("SIEM/src")
+const VAGUE_FOLDERS = new Set([
+    "app",
+    "apps",
+    "backend",
+    "client",
+    "code",
+    "docs",
+    "frontend",
+    "lib",
+    "main",
+    "packages",
+    "server",
+    "src",
+    "web",
+    "webapp",
+]);
+
+// a folder's parts, outermost first, without a drive ("D:") or empty parts: "~" stays a part of its own
+const pathParts = (path: string): string[] => path.split(/[\\/]+/).filter((p) => p !== "" && !/^[a-z]:$/i.test(p));
+
+const lastParts = (parts: string[], n: number): string => parts.slice(-n).join("/");
+
+/** The name each project goes by in the offer and the scope, keyed by its Claude Code folder (lowercased). A project
+ *  is named by the folder its sessions were started in: its last part ("mit-thesis"), with its parents in front of a
+ *  vague one up to one that is not ("SIEM/src"), "~" for the home dir. Without that folder, by the name a scanned session carries, else by
+ *  the Claude Code folder's own name. Two projects of one name take parent folders until they differ
+ *  ("SIEM/website/apps/website" and "SIEM/apps/website"); those named otherwise tell apart by their Claude Code folder. */
+export function projectLabels(data: SessionIdeasData): Map<string, string> {
+    type Named = { dir: string; parts: string[] | null; label: string };
+    const byDir = new Map<string, Named>();
+    for (const s of data.sessions) {
+        if (s.projectdir === "") {
+            continue;
+        }
+        const key = s.projectdir.toLowerCase();
+        const p = byDir.get(key) ?? { dir: s.projectdir, parts: null, label: "" };
+        // any row of a folder that names it names it: the folder it was started in first, then a scanned row's name
+        if (p.parts == null && s.projectpath) {
+            p.parts = pathParts(s.projectpath);
+        }
+        if (p.label === "" && s.project !== "") {
+            p.label = s.project;
+        }
+        byDir.set(key, p);
+    }
+    const named = [...byDir.values()];
+    const depth = new Map<Named, number>();
+    for (const p of named) {
+        if (p.parts != null && p.parts.length > 0) {
+            // the vague folders at the end, and the first one that is not ("ManagementPanel/src/main/webapp")
+            let n = 1;
+            while (n < p.parts.length && VAGUE_FOLDERS.has(p.parts[p.parts.length - n].toLowerCase())) {
+                n++;
+            }
+            depth.set(p, n);
+            p.label = lastParts(p.parts, n);
+        } else if (p.label === "") {
+            p.label = lastPart(p.dir);
+        }
+    }
+    // a clash among the named-by-folder takes one more parent each round, until each differs or has none left
+    for (;;) {
+        const clashing = clashes(named);
+        const grow = named.filter((p) => clashing.has(p.label) && depth.has(p) && depth.get(p)! < p.parts!.length);
+        if (grow.length === 0) {
+            break;
+        }
+        for (const p of grow) {
+            depth.set(p, depth.get(p)! + 1);
+            p.label = lastParts(p.parts!, depth.get(p)!);
+        }
+    }
+    const clashing = clashes(named);
+    for (const p of named) {
+        if (clashing.has(p.label)) {
+            p.label = `${p.label} (${lastPart(p.dir)})`;
+        }
+    }
+    return new Map([...byDir].map(([key, p]) => [key, p.label]));
+}
+
+// the labels more than one project goes by
+function clashes(named: { label: string }[]): Set<string> {
+    const count = new Map<string, number>();
+    for (const p of named) {
+        count.set(p.label, (count.get(p.label) ?? 0) + 1);
+    }
+    return new Set([...count].filter(([, n]) => n > 1).map(([label]) => label));
+}
+
 /** The projects the offer can scan one at a time: those with quiet sessions not yet scanned, leaving out the ones
- *  already in the scope (their sessions are Scan now's), most sessions first. Two projects with one name tell apart
- *  by their Claude Code folder. */
+ *  already in the scope (their sessions are Scan now's), most sessions first, each named by projectLabels. */
 export function offerProjects(data: SessionIdeasData): OfferProject[] {
     const scope = new Set((data.scanprojects ?? []).map((d) => d.toLowerCase()));
-    // any row of a folder that carries a name names it: a scanned one does, an unscanned one only when its head said
-    const names = new Map<string, string>();
+    const labels = projectLabels(data);
+    const paths = new Map<string, string>();
     for (const s of data.sessions) {
-        if (s.project !== "" && !names.has(s.projectdir)) {
-            names.set(s.projectdir, s.project);
+        if (s.projectpath && !paths.has(s.projectdir.toLowerCase())) {
+            paths.set(s.projectdir.toLowerCase(), s.projectpath);
         }
     }
     const byDir = new Map<string, OfferProject>();
     for (const s of data.sessions) {
-        if (s.outcome !== "not-scanned" || s.projectdir === "" || scope.has(s.projectdir.toLowerCase())) {
+        const key = s.projectdir.toLowerCase();
+        if (s.outcome !== "not-scanned" || s.projectdir === "" || scope.has(key)) {
             continue;
         }
-        const p = byDir.get(s.projectdir) ?? {
+        const p = byDir.get(key) ?? {
             dir: s.projectdir,
-            label: names.get(s.projectdir) ?? lastPart(s.projectdir),
+            label: labels.get(key) ?? lastPart(s.projectdir),
+            path: paths.get(key),
             sessions: 0,
         };
         p.sessions++;
-        byDir.set(s.projectdir, p);
+        byDir.set(key, p);
     }
-    const out = [...byDir.values()];
-    const named = new Map<string, number>();
-    for (const p of out) {
-        named.set(p.label, (named.get(p.label) ?? 0) + 1);
-    }
-    for (const p of out) {
-        if ((named.get(p.label) ?? 0) > 1) {
-            p.label = `${p.label} (${lastPart(p.dir)})`;
-        }
-    }
-    return out.sort((a, b) => b.sessions - a.sessions || a.label.localeCompare(b.label));
+    return [...byDir.values()].sort((a, b) => b.sessions - a.sessions || a.label.localeCompare(b.label));
 }
 
-/** The names of the projects in the scope, as the session list names them ("mit-thesis"): empty once every project is
+/** The names of the projects in the scope, as the offer names them ("mit-thesis"): empty once every project is
  *  scanned, or before any project scan. */
 export function scopeNames(data: SessionIdeasData): string[] {
     if (data.firstscandone) {
         return [];
     }
-    return (data.scanprojects ?? []).map((dir) => {
-        const row = data.sessions.find((s) => s.projectdir.toLowerCase() === dir.toLowerCase() && s.project !== "");
-        return row?.project ?? lastPart(dir);
-    });
+    const labels = projectLabels(data);
+    return (data.scanprojects ?? []).map((dir) => labels.get(dir.toLowerCase()) ?? lastPart(dir));
 }
 
 /** Whether the offer card shows: until every project is scanned, while some project's sessions wait for their first

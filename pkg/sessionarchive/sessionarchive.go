@@ -89,6 +89,13 @@ func (r Rules) classify(slug string) kind {
 	return kindOther
 }
 
+// Owns says whether the store folder named slug is arcterm's own: an engine run's tree, a folder under the temp dir, or
+// the headless passes'. Sweep moves such a folder only once it is quiet and its cwd is gone, so until then it sits in the
+// projects folder beside the person's own.
+func (r Rules) Owns(slug string) bool {
+	return (r.HeadlessSlug != "" && slug == r.HeadlessSlug) || r.classify(slug) != kindOther
+}
+
 // Sweep moves arcterm's own store folders from root into archive and returns how many folders and headless
 // transcripts it moved. A folder moves once nothing under it was written for Quiet and its cwd is gone from disk (a
 // run's tree is removed when its task lands; one kept, a held run's, can still be resumed in place), or, under the

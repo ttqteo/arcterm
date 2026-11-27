@@ -123,6 +123,13 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
 - [ ] (arcterm) **Session ideas: the popup's width.** With no ideas waiting the quiet card is 332 px wide; decide the last
   idea or scan a new one → it widens to 420 px while ideas wait and goes back after, and at 420 px the four chips wrap
   onto as many lines as they need without being cut at the panel's edge. (`petpeek.tsx`, 07192f191)
+- [ ] (arcterm) **Session ideas: the project picker.** With 8 or more projects waiting for a scan, press the offer card's
+  `project ▾` → a frosted picker springs open under it (not the context menu), the filter field focused; type `siem` →
+  the list narrows to the SIEM projects, `website/apps/website` included (its path matches); ↑ ↓ move the highlight,
+  Enter picks (the button reads `Scan SIEM/src`, the picker closes, focus is back on `project ▾`), Esc closes, a press
+  outside closes, and a press on `project ▾` while open closes it. Near the window's bottom it opens upward or scrolls.
+  The menu lists no `arc-wt` run trees (`03d550fc-t-1`), temp folders or `verify-history-*` seeds, and `~` for the home
+  folder. Not seen live: CDP step 10c of `sessionideas-brief` was written, not run. (`filtermenu.tsx`)
 - [ ] (arcterm) **Session ideas: a chip press is logged.** Press any chip, then read the end of `waveapp.log` (the
   installed app's `%LOCALAPPDATA%\dev.arc.app\data\waveapp.log`) → one line `sessionideas: pick chip=<kind> at=<n>
   text=…`. Not observed: the line's text is unit-tested, the call through `getApi().sendLog` was only read. (`petideas.tsx`,

@@ -22,6 +22,7 @@ import {
     offerShown,
     plainSummary,
     projectCounts,
+    projectLabels,
     projectName,
     queueLine,
     quietCount,
@@ -1537,6 +1538,38 @@ describe("From your sessions", () => {
             expect(sessionScanMeta(scoped)).toBe("scanned Nov 27 · mit-thesis only");
             expect(scopeNames(data({ sessions, scanprojects: [T], firstscandone: true }))).toEqual([]);
             expect(scopeNames(data({ scanprojects: ["C:\\claude\\d--gone"] }))).toEqual(["d--gone"]);
+        });
+
+        it("names a project by the folder its sessions were started in, so the odd ones read as what they are", () => {
+            const at = (dir: string, projectpath: string, project = "") =>
+                session({ sessionid: dir, projectdir: `C:\\claude\\${dir}`, projectpath, project });
+            const labels = projectLabels(
+                data({
+                    sessions: [
+                        at("home", "~"),
+                        at("nofolder", "~\\.arc\\no-folder"),
+                        at("src", "D:\\Workspace\\SIEM\\src"),
+                        at("webapp", "D:\\Workspace\\SIEM\\src\\ManagementPanel\\src\\main\\webapp"),
+                        at("site1", "D:\\Workspace\\SIEM\\website\\apps\\website"),
+                        at("site2", "D:\\Workspace\\SIEM\\apps\\website"),
+                        // the folder wins over a scanned row's name, and one row naming the folder names all of them
+                        at("thesis", "", "thesis-registry"),
+                        at("thesis", "/Users/ann/mit-thesis"),
+                        at("nohead", ""),
+                    ],
+                })
+            );
+            const lastSlug = (dir: string) => dir.split("\\").pop();
+            expect(Object.fromEntries([...labels].map(([dir, label]) => [lastSlug(dir), label]))).toEqual({
+                home: "~",
+                nofolder: "no-folder",
+                src: "SIEM/src",
+                webapp: "ManagementPanel/src/main/webapp",
+                site1: "website/apps/website",
+                site2: "SIEM/apps/website",
+                thesis: "mit-thesis",
+                nohead: "nohead",
+            });
         });
     });
 
