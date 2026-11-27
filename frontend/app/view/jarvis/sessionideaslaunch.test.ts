@@ -169,15 +169,40 @@ describe("discussIdea", () => {
         expect(launchAgent.mock.calls[0][1]).toMatchObject({ projectPath: NO_FOLDER_PATH, projectName: HOME_NAME });
     });
 
-    it("starts one agent for two presses made while the first is starting", async () => {
+    it("starts one agent for two presses made while the first is starting, and gives both its tab", async () => {
         let release!: (tab: string) => void;
         launchAgent.mockReturnValue(new Promise<string>((r) => (release = r)));
         const first = discussIdea(model, idea({ id: "i-1" }));
         const second = discussIdea(model, idea({ id: "i-1" }));
         release("tab-9");
         expect(await first).toBe("tab-9");
-        expect(await second).toBeNull();
+        // the second press opened nothing, but an agent is open for it: a caller reading null as a failure would be wrong
+        expect(await second).toBe("tab-9");
         expect(launchAgent).toHaveBeenCalledTimes(1);
+    });
+
+    it("gives a press made while a launch that then fails was starting the same null, with one toast", async () => {
+        let fail!: (e: Error) => void;
+        launchAgent.mockReturnValueOnce(new Promise<string>((_, r) => (fail = r)));
+        const first = discussIdea(model, idea({ id: "i-1" }));
+        const second = discussIdea(model, idea({ id: "i-1" }));
+        fail(new Error("no active workspace"));
+        expect(await first).toBeNull();
+        expect(await second).toBeNull();
+        expect(pushToast).toHaveBeenCalledTimes(1);
+        // once it has settled, the next press starts a launch of its own
+        expect(await discussIdea(model, idea({ id: "i-1" }))).toBe("tab-1");
+        expect(launchAgent).toHaveBeenCalledTimes(2);
+    });
+
+    it("starts the Discuss of another idea while one is starting", async () => {
+        let release!: (tab: string) => void;
+        launchAgent.mockReturnValueOnce(new Promise<string>((r) => (release = r)));
+        const first = discussIdea(model, idea({ id: "i-1" }));
+        expect(await discussIdea(model, idea({ id: "i-2" }))).toBe("tab-1");
+        expect(launchAgent).toHaveBeenCalledTimes(2);
+        release("tab-9");
+        expect(await first).toBe("tab-9");
     });
 
     it("says why on a toast, remembers nothing, and lets the next press try again", async () => {

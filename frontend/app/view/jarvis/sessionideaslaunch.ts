@@ -156,8 +156,8 @@ export type IdeaLaunchRecord = {
 let hookOn = false;
 const recorded: IdeaLaunchRecord[] = [];
 
-// a press made while the same launch is still starting would open a second agent
-const starting = new Set<string>();
+// the launches still starting, by key: a press made meanwhile waits for that one instead of opening a second agent
+const starting = new Map<string, Promise<string | null>>();
 
 const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
@@ -171,21 +171,27 @@ async function noFolder(): Promise<{ name: string; path: string }> {
     return { name: HOME_NAME, path: rtn.path };
 }
 
-async function start(
-    model: AgentsViewModel,
-    key: string,
-    spec: {
-        kind: IdeaLaunchRecord["kind"];
-        ideas: readonly SessionIdea[];
-        task: string;
-        label: string;
-        folder: () => Promise<{ name: string; path: string }>;
+type LaunchSpec = {
+    kind: IdeaLaunchRecord["kind"];
+    ideas: readonly SessionIdea[];
+    task: string;
+    label: string;
+    folder: () => Promise<{ name: string; path: string }>;
+};
+
+// One launch per key at a time: a press while `key` is still starting resolves to that launch's tab (or its null), so
+// null always means the agent did not start, and a toast said why.
+function start(model: AgentsViewModel, key: string, spec: LaunchSpec): Promise<string | null> {
+    const inFlight = starting.get(key);
+    if (inFlight) {
+        return inFlight;
     }
-): Promise<string | null> {
-    if (starting.has(key)) {
-        return null;
-    }
-    starting.add(key);
+    const launch = launchOnce(model, spec).finally(() => starting.delete(key));
+    starting.set(key, launch);
+    return launch;
+}
+
+async function launchOnce(model: AgentsViewModel, spec: LaunchSpec): Promise<string | null> {
     try {
         const folder = await spec.folder();
         const ideaIds = spec.ideas.map((i) => i.id);
@@ -215,13 +221,12 @@ async function start(
     } catch (e) {
         pushToast({ level: "error", title: "Couldn't open an agent for the ideas", message: errText(e) });
         return null;
-    } finally {
-        starting.delete(key);
     }
 }
 
 /** Discuss: a sonnet claude agent in the idea's project (No folder when the idea carries none: an agent with no folder would
- *  open in the wrong place). Resolves to its tab, or null when it did not start (a toast says why) or a press is still starting. */
+ *  open in the wrong place). Resolves to its tab, or null when it did not start (a toast says why). A press while the idea's
+ *  Discuss is still starting resolves as that one does. */
 export function discussIdea(model: AgentsViewModel, idea: SessionIdea): Promise<string | null> {
     return start(model, `discuss:${idea.id}`, {
         kind: "discuss",
@@ -233,7 +238,8 @@ export function discussIdea(model: AgentsViewModel, idea: SessionIdea): Promise<
 }
 
 /** Go through N: one sonnet claude agent in No folder, for all of `ideas` (they span projects, and a quick pass needs no
- *  project's AGENTS.md, memory or skills). Resolves to its tab, or null as discussIdea does; opens nothing for no ideas. */
+ *  project's AGENTS.md, memory or skills). Resolves to its tab, or null as discussIdea does; a press while a Go through is
+ *  still starting resolves to that agent, whose ideas are the ones waiting a moment ago. Opens nothing for no ideas. */
 export function goThroughIdeas(model: AgentsViewModel, ideas: readonly SessionIdea[]): Promise<string | null> {
     if (ideas.length === 0) {
         return Promise.resolve(null);
