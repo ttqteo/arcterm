@@ -440,6 +440,9 @@ function InitiativePane({ model, agent }: { model: AgentsViewModel; agent: Agent
         const menuOpen = sub?.kind === "menu" && sub.label === label && sub.list === list ? sub : null;
         const renaming = sub?.kind === "rename" && sub.label === label && sub.list === list ? sub : null;
         const tag = rowTag(row, agent.id, nameOf);
+        // the row the cursor is on, or whose menu is open, shows its whole title over as many lines as it takes; the
+        // others keep one line
+        const full = isCur || menuOpen != null || renaming != null;
         return (
             <div key={`${list}:${label}`} className="flex flex-col">
                 <div
@@ -452,6 +455,7 @@ function InitiativePane({ model, agent }: { model: AgentsViewModel; agent: Agent
                     className={cn(
                         ROW,
                         "group min-h-[28px]",
+                        full && "items-start py-[5px]",
                         isMine ? "bg-surface-selected" : "hover:bg-surface-hover",
                         isCur && CURSOR_RING
                     )}
@@ -460,6 +464,7 @@ function InitiativePane({ model, agent }: { model: AgentsViewModel; agent: Agent
                         aria-hidden
                         className={cn(
                             "h-[8px] w-[8px] flex-none rounded-full",
+                            full && "mt-[5px]",
                             isMine
                                 ? "bg-working"
                                 : row.status === "done"
@@ -467,7 +472,14 @@ function InitiativePane({ model, agent }: { model: AgentsViewModel; agent: Agent
                                   : "border-[1.5px] border-edge-strong"
                         )}
                     />
-                    <span className="w-[18px] flex-none text-right font-mono text-[11px] text-muted">{row.n}</span>
+                    <span
+                        className={cn(
+                            "w-[18px] flex-none text-right font-mono text-[11px] text-muted",
+                            full && "leading-[18px]"
+                        )}
+                    >
+                        {row.n}
+                    </span>
                     {renaming != null ? (
                         <input
                             autoFocus
@@ -494,8 +506,10 @@ function InitiativePane({ model, agent }: { model: AgentsViewModel; agent: Agent
                     ) : (
                         <span
                             title={label}
+                            data-rail-initiative-label
                             className={cn(
-                                "min-w-0 flex-1 truncate text-[12.5px]",
+                                "min-w-0 flex-1 text-[12.5px]",
+                                full ? "whitespace-normal break-words leading-[18px]" : "truncate",
                                 settled ? "text-muted line-through" : isMine ? "text-ink-hi" : "text-secondary"
                             )}
                         >
@@ -508,6 +522,8 @@ function InitiativePane({ model, agent }: { model: AgentsViewModel; agent: Agent
                         <span
                             className={cn(
                                 "relative flex flex-none items-center justify-end",
+                                // on a wrapped row the cell holds the first line's height, so Work on this sits beside it
+                                full && "min-h-[18px]",
                                 row.workOn && "min-w-[104px]"
                             )}
                         >
@@ -625,11 +641,12 @@ function InitiativePane({ model, agent }: { model: AgentsViewModel; agent: Agent
                 data-rail-initiative-head
                 className="flex flex-none flex-col gap-[6px] border-b border-edge-faint px-3 pb-[10px] pt-[10px]"
             >
-                <div className="flex items-center gap-[6px]">
+                <div className="flex items-start gap-[6px]">
+                    {/* up to three lines of the title, the rest on hover */}
                     <span
                         data-rail-initiative-title
                         title={initiative.title}
-                        className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink-hi"
+                        className="line-clamp-3 min-w-0 flex-1 break-words text-[13px] font-semibold leading-[18px] text-ink-hi"
                     >
                         {initiative.title}
                     </span>
@@ -638,7 +655,7 @@ function InitiativePane({ model, agent }: { model: AgentsViewModel; agent: Agent
                         data-rail-initiative-open-jarvis
                         onMouseDown={keepFocus}
                         onClick={() => openInJarvis({ kind: "effort", effortId: agent.effortId! })}
-                        className="flex-none cursor-pointer border-0 bg-transparent p-0 text-[11.5px] text-muted hover:text-secondary"
+                        className="flex-none cursor-pointer whitespace-nowrap border-0 bg-transparent p-0 text-[11.5px] leading-[18px] text-muted hover:text-secondary"
                     >
                         Open in Jarvis ↗
                     </button>
@@ -675,16 +692,22 @@ function InitiativePane({ model, agent }: { model: AgentsViewModel; agent: Agent
                         {progress.done}/{progress.total}
                     </span>
                 </div>
-                <div data-rail-initiative-on data-rail-initiative-state={state} className="flex items-center gap-[8px]">
+                <div data-rail-initiative-on data-rail-initiative-state={state} className="flex items-start gap-[8px]">
                     {mine != null && mineRow != null ? (
                         <>
+                            {/* the chunk's title over up to three lines beside Mark done, the rest on hover */}
                             <span
                                 title={mine.label}
-                                className="flex min-w-0 flex-1 items-center gap-[6px] text-[12px] text-muted"
+                                className="flex min-w-0 flex-1 items-start gap-[6px] text-[12px] leading-[24px] text-muted"
                             >
-                                <span aria-hidden className="h-[8px] w-[8px] flex-none rounded-full bg-working" />
+                                <span
+                                    aria-hidden
+                                    className="mt-[8px] h-[8px] w-[8px] flex-none rounded-full bg-working"
+                                />
                                 <span className="flex-none">On {mineRow.n} ·</span>
-                                <span className="min-w-0 truncate text-[12.5px] text-ink-hi">{mine.label}</span>
+                                <span className="line-clamp-3 min-w-0 break-words pt-[3px] text-[12.5px] leading-[18px] text-ink-hi">
+                                    {mine.label}
+                                </span>
                             </span>
                             <button
                                 type="button"
