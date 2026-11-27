@@ -119,6 +119,7 @@ import jarvisCardsScenarios from "./scenarios-jarvis-cards.mjs";
 import jarvisLaterScenarios from "./scenarios-jarvis-later.mjs";
 import libraryScenarios, { openLibraryTab } from "./scenarios-library.mjs";
 import jarvisSheetScenarios from "./scenarios-jarvis-sheet.mjs";
+import chunkPriorityScenarios from "./scenarios-chunk-priority.mjs";
 import { sessionIdeasBriefScenarios } from "./sessionideas-brief-scenarios.mjs";
 import { sessionIdeasPetScenarios } from "./sessionideas-pet-scenarios.mjs";
 import kaelAskKeysScenarios from "./scenarios-kael-ask-keys.mjs";
@@ -76766,6 +76767,9 @@ export const SCENARIOS = [
     ...jarvisCardsScenarios(JARVIS_KIT),
     ...jarvisActivityScenarios(JARVIS_KIT),
     ...jarvisSheetScenarios(JARVIS_KIT),
+    // chunk-priority (the sheet) and chunk-priority-rail (the Agent rail's Initiative tab): the Jarvis kit and the Chat
+    // redesign's, which the rail scenario's tabs, reload and saved-grid keys come from
+    ...chunkPriorityScenarios({ ...CR_KIT, ...JARVIS_KIT }),
     ...jarvisLaterScenarios(JARVIS_KIT),
     ...sessionIdeasBriefScenarios(JARVIS_KIT),
     ...sessionIdeasPetScenarios(JARVIS_KIT),

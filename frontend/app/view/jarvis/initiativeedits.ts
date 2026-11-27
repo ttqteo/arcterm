@@ -29,6 +29,7 @@ import {
     removeChunks,
     renameChunk,
     renameEffort,
+    setChunkPriority,
     setChunkStage,
     setChunkStatus,
     setEffortStatus,
@@ -103,6 +104,14 @@ export function buildTrackerEdits(deps: EditsDeps): TrackerEdits {
             const prev = chunks.find((c) => c.label === label)?.status ?? "pending";
             run(() => setChunkStatus(oref, ref(label), next));
             briefUndo.notify(`Marked “${label}” ${next}`, () => run(() => setChunkStatus(oref, ref(label), prev)));
+        },
+        // "" clears the level; the Undo puts the old one (or none) back, as a second change with a note of its own
+        onSetPriority: (label, next) => {
+            const prev = chunks.find((c) => c.label === label)?.priority ?? "";
+            run(() => setChunkPriority(oref, ref(label), next));
+            briefUndo.notify(next === "" ? `Cleared the priority of “${label}”` : `Set “${label}” to ${next}`, () =>
+                run(() => setChunkPriority(oref, ref(label), prev))
+            );
         },
         onRenameChunk: (label, next) => run(() => renameChunk(oref, chunks, label, next)),
         // Accept is immediate and its Undo puts the chunks back as proposed. Drop waits out the undo window like a

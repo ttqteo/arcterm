@@ -34,6 +34,12 @@ and a picture given to a line that is not big.
 
 ### Added
 
+- Give a chunk a priority (critical, high, medium, low or information) from the menu on its status word, or with
+  `wsh effort chunk priority`. The level shows as a word on the chunk's row, and the chunk that opens next, the one
+  the "next" arrow points at, is the open chunk with the highest level, equal levels keeping their plan order. Advancing
+  an initiative, `wsh effort show` and the agent's Initiative tab follow the same order, so a chunk no longer has to move
+  up the plan, and change its number, to come first. <!-- big -->
+  <!-- shot: none -->
 - Answer an agent's permission prompt from its sidebar row: the row says what the agent asks ("subagent · Update the
   board scenarios", `$ npm test`) and holds Allow and Deny under it, so you no longer pick the agent or open its chat.
   A prompt with choices of its own, such as a plan approval, offers Answer in chat instead. <!-- big -->
