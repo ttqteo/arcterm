@@ -52,14 +52,29 @@ describe("matchPhrase", () => {
         expect(matchPhrase("Timeline liền mạch 21/10 - 27/11", shapes)).toEqual(["f2"]);
     });
 
-    it("finds a shape whose whole text sits in a longer phrase", () => {
-        expect(matchPhrase('Không. Nhánh "Sửa tín hiệu, chạy lại vòng học" bị bỏ', shapes)).toEqual(["t4"]);
+    it("finds a shape whose whole text is most of the phrase, and leaves a long one to the quote in it", () => {
+        expect(matchPhrase("Sửa tín hiệu, chạy lại vòng học (ô xám)", shapes)).toEqual(["t4"]);
+        expect(matchPhrase('Không. Nhánh "Sửa tín hiệu, chạy lại vòng học" bị bỏ', shapes)).toEqual([]);
+        expect(matchPhrase("Sửa tín hiệu, chạy lại vòng học", shapes)).toEqual(["t4"]);
     });
 
     it("points a date at the shapes it starts, never at a frame or a longer number", () => {
         expect(matchPhrase("23/10", shapes)).toEqual(["r1", "d1", "r2"]);
         expect(matchPhrase("3/10", shapes)).toEqual([]);
         expect(matchPhrase("21/10", shapes)).toEqual([]);
+    });
+
+    it("never points a heading at a short label it happens to contain", () => {
+        const labels = pointerShapes([
+            { id: "l1", type: "text", text: "quyết định" },
+            { id: "l2", type: "text", text: "RQ2, chưa thử thật" },
+            { id: "l3", type: "text", text: "Harness giúp tạo PoC tốt hơn?" },
+        ]);
+        expect(matchPhrase("Mức 3 — luật quyết định trên test (quan trọng nhất).", labels)).toEqual([]);
+        expect(matchPhrase("chưa thử", labels)).toEqual([]);
+        expect(matchPhrase("harness giúp", labels)).toEqual([]);
+        expect(matchPhrase("Harness giúp tạo PoC", labels)).toEqual(["l3"]);
+        expect(matchPhrase("Đã: quyết định", labels)).toEqual(["l1"]);
     });
 
     it("leaves short phrases, part words and phrases too many shapes share", () => {

@@ -27,17 +27,24 @@ function plain(node: RootContent | Root): string {
     return s;
 }
 
-function phraseNode(phrase: string, children: PhrasingContent[]): PhrasingContent {
+function phraseNode(phrase: string, children: PhrasingContent[], whole = false): PhrasingContent {
     return {
         type: "boardphrase",
         children,
-        data: { hName: "boardphrase", hProperties: { phrase } },
+        data: { hName: "boardphrase", hProperties: { phrase }, whole },
     } as unknown as PhrasingContent;
 }
 
 const remarkBoardPhrase: Plugin<[], Root> = function () {
     return (tree: Root) => {
         visit(tree, (node, index, parent) => {
+            // a bold phrase or cell marked whole is read through too, so a quote in it points when the whole does not
+            if (
+                (node.type as string) === "boardphrase" &&
+                (node as { data?: { whole?: boolean } }).data?.whole === true
+            ) {
+                return;
+            }
             if (SKIPPED.has(node.type)) {
                 return SKIP;
             }
@@ -45,8 +52,7 @@ const remarkBoardPhrase: Plugin<[], Root> = function () {
                 const text = plain(node).trim();
                 if (text !== "" && text.length <= WHOLE_MAX) {
                     const p = node as Parent;
-                    p.children = [phraseNode(text, p.children as PhrasingContent[])] as Parent["children"];
-                    return SKIP;
+                    p.children = [phraseNode(text, p.children as PhrasingContent[], true)] as Parent["children"];
                 }
                 return;
             }
@@ -54,7 +60,9 @@ const remarkBoardPhrase: Plugin<[], Root> = function () {
                 return;
             }
             const parts = splitPhrases(node.value);
-            if (parts == null) {
+            // a phrase that is all of the whole-marked bold phrase or cell it sits in is that phrase already
+            const whole = (parent as { data?: { whole?: boolean } }).data?.whole === true;
+            if (parts == null || (whole && parts.length === 1)) {
                 return;
             }
             const nodes = parts.map((p) =>

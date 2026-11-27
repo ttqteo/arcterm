@@ -84,6 +84,23 @@ function hasWords(hay: string, needle: string): boolean {
     return false;
 }
 
+const words = (s: string) => s.split(" ").length;
+
+// The phrase quotes part of a shape: it sits there as whole words and is either three words or more, or half the
+// shape's text. Two common words ("chưa thử", "harness giúp") recur in prose and in many shapes, so they point at none.
+function phraseInShape(phrase: string, shape: string): boolean {
+    return hasWords(shape, phrase) && (words(phrase) >= 3 || phrase.length * 2 >= shape.length);
+}
+
+// The phrase wraps a shape's whole text (a table cell that quotes a box): only when that text is most of the phrase.
+// A short label inside a long heading ("quyết định" in "Mức 3 — luật quyết định trên test") is the heading's own word.
+function shapeInPhrase(phrase: string, shape: string): boolean {
+    return shape.length >= MIN_CHARS && shape.length >= phrase.length * SHAPE_SHARE && hasWords(phrase, shape);
+}
+
+// how much of a phrase a shape's whole text must be for the phrase to point at it (shapeInPhrase)
+const SHAPE_SHARE = 0.6;
+
 // The shapes a phrase names, by id; empty when it names none or too many.
 export function matchPhrase(phrase: string, shapes: readonly PointerShape[]): string[] {
     const n = normalize(phrase);
@@ -95,7 +112,7 @@ export function matchPhrase(phrase: string, shapes: readonly PointerShape[]): st
         if (n.length < MIN_CHARS) {
             return [];
         }
-        hits = shapes.filter((s) => hasWords(s.norm, n) || (s.norm.length >= MIN_CHARS && hasWords(n, s.norm)));
+        hits = shapes.filter((s) => phraseInShape(n, s.norm) || shapeInPhrase(n, s.norm));
     }
     const ids = [...new Set(hits.map((s) => s.id))];
     return ids.length > MAX_SHAPES ? [] : ids;

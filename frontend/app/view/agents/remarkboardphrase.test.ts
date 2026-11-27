@@ -32,7 +32,11 @@ describe("remarkBoardPhrase", () => {
         ]);
     });
 
-    it("marks a short bold phrase and a short table cell whole", () => {
+    it("marks a short bold phrase and a short table cell whole, and the quotes inside them too", () => {
+        expect(phrases('**Thoi "Dựng harness kiểu nào?"**')).toEqual([
+            'Thoi "Dựng harness kiểu nào?"',
+            "Dựng harness kiểu nào?",
+        ]);
         expect(phrases("Đã chọn **tạo 1 lần, đóng băng** khi đó")).toEqual(["tạo 1 lần, đóng băng"]);
         expect(phrases("| Ngày | Việc |\n|---|---|\n| 23/10 | M4 |")).toEqual(["Ngày", "Việc", "23/10", "M4"]);
     });
