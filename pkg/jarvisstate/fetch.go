@@ -217,21 +217,30 @@ func FetchCaptureStatus(ctx context.Context) (wshrpc.CaptureStatus, error) {
 		}
 	}
 	if efforts, err := defaultSeams.getEfforts(ctx); err == nil {
-		for _, e := range efforts {
-			if e.Status == "archived" {
-				continue
+		st.Efforts = effortsStatusOf(efforts)
+	}
+	return st, nil
+}
+
+// effortsStatusOf counts the initiatives' work for the efforts line of `wsh jarvis status`: the non-archived
+// initiatives and their chunks, without the suggestions not yet accepted and without the chunks saved for later (which
+// are not the initiative's work).
+func effortsStatusOf(efforts []*waveobj.Effort) wshrpc.CaptureEffortsStatus {
+	var st wshrpc.CaptureEffortsStatus
+	for _, e := range efforts {
+		if e.Status == "archived" {
+			continue
+		}
+		st.Active++
+		for _, c := range e.Chunks {
+			if c.Status == "proposed" || c.Later {
+				continue // a suggestion until accepted, or a saved item: not part of the work yet
 			}
-			st.Efforts.Active++
-			for _, c := range e.Chunks {
-				if c.Status == "proposed" {
-					continue // a suggestion until accepted: not part of the work yet
-				}
-				st.Efforts.ChunksTotal++
-				if c.Status == "done" {
-					st.Efforts.ChunksDone++
-				}
+			st.ChunksTotal++
+			if c.Status == "done" {
+				st.ChunksDone++
 			}
 		}
 	}
-	return st, nil
+	return st
 }

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
 
@@ -44,6 +45,19 @@ type EffortFacts struct {
 	OID    string
 	Title  string
 	Chunks []string // labels
+}
+
+// EffortFactsOf is an initiative's facts from its chunks, leaving out the chunks saved for later: those are kept items,
+// not the initiative's plan, so their labels are no chunk of the project, and an initiative that holds only later
+// chunks is an idea here, as it is on the Brief.
+func EffortFactsOf(oid, title string, chunks []waveobj.EffortChunk) EffortFacts {
+	f := EffortFacts{OID: oid, Title: title}
+	for _, c := range chunks {
+		if !c.Later {
+			f.Chunks = append(f.Chunks, c.Label)
+		}
+	}
+	return f
 }
 
 // BuildProjectContext arranges what the caller read for one project: an initiative with chunks is an Initiative, one

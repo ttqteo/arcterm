@@ -285,11 +285,7 @@ func sessionIdeasProjectContext(ctx context.Context, cwd string) (sessionideas.P
 			if e.Project != name || e.Status == "archived" {
 				continue
 			}
-			labels := make([]string, len(e.Chunks))
-			for i, c := range e.Chunks {
-				labels[i] = c.Label
-			}
-			efforts = append(efforts, sessionideas.EffortFacts{OID: e.OID, Title: e.Title, Chunks: labels})
+			efforts = append(efforts, sessionideas.EffortFactsOf(e.OID, e.Title, e.Chunks))
 		}
 	}
 	docs, err := readProjectDocs(ctx, dir)

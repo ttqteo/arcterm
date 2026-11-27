@@ -54,9 +54,9 @@ const (
 )
 
 // ClassifyChunk is where a chunk stands for DUM-E. runLive says whether a run id is still going (neither done nor
-// cancelled); a run that no longer exists is not live.
+// cancelled); a run that no longer exists is not live. A chunk saved for later is a kept item, never DUM-E's work.
 func ClassifyChunk(c waveobj.EffortChunk, runLive func(runId string) bool) State {
-	if c.Owner != Owner {
+	if c.Owner != Owner || c.Later {
 		return StateNone
 	}
 	switch c.Status {

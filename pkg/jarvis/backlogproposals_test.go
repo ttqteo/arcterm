@@ -55,6 +55,18 @@ func TestPickBacklogProposalsSkipsAChunkThatIsNotPending(t *testing.T) {
 	}
 }
 
+// a chunk saved for later that happens to name a run is still a saved item, not a lead's proposal
+func TestBacklogSkipsLater(t *testing.T) {
+	c := waveobj.EffortChunk{Label: "push DEV after issue aaaa1111", Later: true}
+	if got := pickOne(t, backlogEffort("e1", backlogCutoff+10, c), orchRun(backlogRunA, backlogCutoff+5)); len(got) != 0 {
+		t.Fatalf("a later chunk was picked: %+v", got)
+	}
+	c.Later = false
+	if got := pickOne(t, backlogEffort("e1", backlogCutoff+10, c), orchRun(backlogRunA, backlogCutoff+5)); len(got) != 1 {
+		t.Fatalf("the same chunk with no mark was skipped: %+v", got)
+	}
+}
+
 func TestPickBacklogProposalsSkipsAChunkWithAWorkref(t *testing.T) {
 	c := waveobj.EffortChunk{Label: "issue aaaa1111", WorkRefs: []waveobj.ChunkWorkRef{{Kind: "run", ORef: "run:x"}}}
 	if got := pickOne(t, backlogEffort("e1", backlogCutoff+10, c), orchRun(backlogRunA, backlogCutoff+5)); len(got) != 0 {

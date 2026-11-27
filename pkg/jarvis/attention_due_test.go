@@ -61,6 +61,30 @@ func TestChunkDueLeavesWhenDealtWith(t *testing.T) {
 	}
 }
 
+// a later chunk never needs you, whatever its date: the Later section shows its due chip instead
+func TestChunkDueSkipsLater(t *testing.T) {
+	later := dueChunk("decide which parser takes the logs", "pending", "2026-10-20")
+	later.Later = true
+	plan := dueChunk("re-measure", "pending", "2026-10-20")
+	e := dueEffort("e1", "active", later, plan)
+	got := dueKeys(AttentionInput{Efforts: []*waveobj.Effort{e}, Today: "2026-11-02"})
+	if len(got) != 1 || got[0] != "chunk-due:e1:re-measure:2026-10-20" {
+		t.Fatalf("keys: %v, want only the plan chunk's", got)
+	}
+	for _, status := range []string{"pending", "active", "blocked"} {
+		c := dueChunk("saved", status, "2026-10-20")
+		c.Later = true
+		if got := dueKeys(AttentionInput{Efforts: []*waveobj.Effort{dueEffort("e1", "active", c)}, Today: "2026-11-02"}); len(got) != 0 {
+			t.Fatalf("a %s later chunk came due: %v", status, got)
+		}
+	}
+	// "Not later" puts it back where a due chunk belongs
+	later.Later = false
+	if got := dueKeys(AttentionInput{Efforts: []*waveobj.Effort{dueEffort("e1", "active", later)}, Today: "2026-11-02"}); len(got) != 1 {
+		t.Fatalf("a chunk that is no longer later: %v", got)
+	}
+}
+
 func TestChunkDueOnlyInInitiativesInPlay(t *testing.T) {
 	for status, want := range map[string]int{"active": 1, "paused": 1, "done": 0, "archived": 0} {
 		e := dueEffort("e1", status, dueChunk("re-measure", "pending", "2026-10-20"))

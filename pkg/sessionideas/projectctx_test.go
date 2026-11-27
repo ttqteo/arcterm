@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
 
@@ -49,6 +50,30 @@ func TestBuildProjectContextSplitsInitiativesFromIdeas(t *testing.T) {
 	}
 	if !reflect.DeepEqual(pc, want) {
 		t.Fatalf("got %+v, want %+v", pc, want)
+	}
+}
+
+// a later chunk is a kept item, not the initiative's plan: its label is no chunk of the project, and an initiative that
+// holds only later chunks is an idea, as it is on the Brief
+func TestProjectCtxSkipsLater(t *testing.T) {
+	chunks := []waveobj.EffortChunk{
+		{Label: "tokens", Status: "pending"},
+		{Label: "decide which parser takes the logs", Status: "pending", Later: true},
+	}
+	facts := EffortFactsOf("e1", "Theming", chunks)
+	if want := (EffortFacts{OID: "e1", Title: "Theming", Chunks: []string{"tokens"}}); !reflect.DeepEqual(facts, want) {
+		t.Fatalf("got %+v, want %+v", facts, want)
+	}
+	onlyLater := EffortFactsOf("e2", "Leftovers", chunks[1:])
+	if len(onlyLater.Chunks) != 0 {
+		t.Fatalf("a later chunk's label is in the facts: %+v", onlyLater)
+	}
+	pc := BuildProjectContext([]EffortFacts{facts, onlyLater}, nil, nil, "", "")
+	if len(pc.Initiatives) != 1 || pc.Initiatives[0].OID != "e1" || !reflect.DeepEqual(pc.Ideas, []string{"Leftovers"}) {
+		t.Fatalf("context: initiatives %+v, ideas %q", pc.Initiatives, pc.Ideas)
+	}
+	if got := EffortFactsOf("e3", "Empty", nil); got.Chunks != nil {
+		t.Fatalf("no chunks should stay a nil slice: %+v", got)
 	}
 }
 
