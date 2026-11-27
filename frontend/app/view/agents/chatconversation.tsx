@@ -2279,14 +2279,15 @@ export function ChatConversation({
             ) : null}
             {/* one wrapper per item, keyed by its first entry: the place kept and restored is found by it */}
             {rows}
-            {/* Reply, Save as idea and Add note on the right-click menu of selected text: only a live agent has a box
-                to quote it into */}
+            {/* Reply, Save as idea, Save for later and Add note on the right-click menu of selected text: only a live
+                agent has a box to quote it into. Save for later goes into the initiative the agent is linked to */}
             {agent != null ? (
                 <ChatQuoteMenu
                     agentId={agent.id}
                     name={agent.name}
                     project={projectOf(agent) || undefined}
                     session={sessionIdFromTranscript(agent.transcriptPath)}
+                    effortId={agent.effortId}
                     model={model ?? undefined}
                     rootRef={rootRef}
                 />

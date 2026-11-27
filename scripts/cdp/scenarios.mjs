@@ -92,6 +92,7 @@ import briefActScenarios from "./scenarios-brief-act.mjs";
 import chatBrainstormReviewScenarios from "./scenarios-chat-brainstorm-review.mjs";
 import chatRedesignScenarios from "./scenarios-chat-redesign.mjs";
 import chatCodeBoxScenarios from "./scenarios-chat-code-box.mjs";
+import saveLaterScenarios from "./scenarios-save-later.mjs";
 import chatVerdictHandoffScenarios from "./scenarios-chat-verdict-handoff.mjs";
 import chatCouncilScenarios from "./scenarios-chat-council.mjs";
 import chatSuggestCardScenarios from "./scenarios-chat-suggest-card.mjs";
@@ -50460,6 +50461,10 @@ const chatQuote = {
             const menu10 = await h.ev(
                 `[...document.querySelectorAll("[data-context-menu] [data-menu-item]")].map((el) => el.getAttribute("data-menu-item"))`
             );
+            // this agent is linked to no initiative: Save for later names none (save-later steps 1 and 5 hold the rest)
+            const later10 = await h.ev(
+                `(() => { const el = document.querySelector("[data-context-menu] [data-save-later]"); return el ? { found: true, sublabel: el.querySelector(".ml-auto")?.textContent ?? null } : { found: false }; })()`
+            );
             await polishNap(300);
             await h.shot("cdp-shots/chat-quote-10-save-menu.png");
             const pressed10 = up10 && (await pressButton(`document.querySelector("[data-context-menu] [data-chat-save-idea]")`));
@@ -50491,10 +50496,12 @@ const chatQuote = {
             const wantBody = (text) =>
                 new RegExp(`^From agent "${CQ_NAME}" \\(agent:${A}\\), \\d{4}-\\d{2}-\\d{2}\\n\\n> ${text}$`);
             rec(
-                "10. Save as idea (after Reply and Copy) makes an idea named by the passage, in the agent's project, no chunks, whose one note is yours: where it was said, then the passage quoted; a toast says so with Open",
+                "10. the menu reads Reply, Copy, Save as idea, Save for later (no initiative named: the agent is linked to none), Add note; Save as idea makes an idea named by the passage, in the agent's project, no chunks, whose one note is yours: where it was said, then the passage quoted; a toast says so with Open",
                 sel10 &&
                     up10 &&
-                    JSON.stringify(menu10) === JSON.stringify(["Reply", "Copy", "Save as idea", "Add note"]) &&
+                    JSON.stringify(menu10) === JSON.stringify(["Reply", "Copy", "Save as idea", "Save for later", "Add note"]) &&
+                    later10?.found === true &&
+                    later10?.sublabel == null &&
                     pressed10 &&
                     toast10 &&
                     open10 &&
@@ -50503,7 +50510,7 @@ const chatQuote = {
                     idea10?.notes === 1 &&
                     idea10?.author === "you" &&
                     wantBody(CQ_PASSAGE).test(idea10?.text ?? ""),
-                { sel10, up10, menu10, pressed10, toast10, open10, idea10 }
+                { sel10, up10, menu10, later10, pressed10, toast10, open10, idea10 }
             );
 
             // 11. Add note makes a note with the same title, its project and conversation in its frontmatter (the body
@@ -76804,6 +76811,7 @@ export const SCENARIOS = [
     chatAsleepAttachJump,
     chatFork,
     chatQuote,
+    ...saveLaterScenarios(CR_KIT),
     chatFocusRead,
     chatBubbleFold,
     agentTreePinnedFolder,

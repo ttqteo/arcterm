@@ -72,6 +72,48 @@ function AgentToastBody({ t, eyebrow }: { t: ToastNotification; eyebrow: ToastEy
     );
 }
 
+// where a button was pressed, as a viewport point: the pointer's, or the button's centre for a click with no pointer (a
+// key press reads 0, 0)
+function pressPoint(e: React.MouseEvent<HTMLElement>): { x: number; y: number } {
+    if (e.clientX === 0 && e.clientY === 0) {
+        const r = e.currentTarget.getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    }
+    return { x: e.clientX, y: e.clientY };
+}
+
+// the toast's body: pressing it opens what the toast is about (onOpen) and closes it. `tight` leaves its foot short for the
+// row of two actions that follows
+function ToastBody({ t, tight = false }: { t: ToastNotification; tight?: boolean }) {
+    return (
+        <button
+            type="button"
+            data-notification-toast
+            data-notification-open={t.onOpen ? "" : undefined}
+            data-notification-tone={t.eyebrow?.tone}
+            onClick={() => {
+                t.onOpen?.();
+                dismissToast(t.id);
+            }}
+            className={cn("min-w-0 flex-1 py-3 pl-3 text-left", tight && "pb-1.5", t.onOpen && "cursor-pointer")}
+        >
+            {t.eyebrow ? (
+                <AgentToastBody t={t} eyebrow={t.eyebrow} />
+            ) : (
+                <>
+                    <div className="flex items-center gap-2 text-sm font-medium">
+                        {t.check ? (
+                            <Check size={13} strokeWidth={2} aria-hidden className="shrink-0 text-success" />
+                        ) : null}
+                        {t.title}
+                    </div>
+                    {t.message ? <div className="text-xs text-secondary">{t.message}</div> : null}
+                </>
+            )}
+        </button>
+    );
+}
+
 export function NotificationToasts(): React.JSX.Element {
     const toasts = useAtomValue(toastsAtom);
     // the hologram stays in its corner, so the stack stands above it while it draws there and back in the corner after
@@ -114,46 +156,45 @@ export function NotificationToasts(): React.JSX.Element {
                                 t.onOpen && "hover:border-accent-700"
                             )}
                         >
-                            <button
-                                type="button"
-                                data-notification-toast
-                                data-notification-open={t.onOpen ? "" : undefined}
-                                data-notification-tone={t.eyebrow?.tone}
-                                onClick={() => {
-                                    t.onOpen?.();
-                                    dismissToast(t.id);
-                                }}
-                                className={cn("min-w-0 flex-1 py-3 pl-3 text-left", t.onOpen && "cursor-pointer")}
-                            >
-                                {t.eyebrow ? (
-                                    <AgentToastBody t={t} eyebrow={t.eyebrow} />
-                                ) : (
-                                    <>
-                                        <div className="flex items-center gap-2 text-sm font-medium">
-                                            {t.check ? (
-                                                <Check
-                                                    size={13}
-                                                    strokeWidth={2}
-                                                    aria-hidden
-                                                    className="shrink-0 text-success"
-                                                />
-                                            ) : null}
-                                            {t.title}
-                                        </div>
-                                        {t.message ? <div className="text-xs text-secondary">{t.message}</div> : null}
-                                    </>
-                                )}
-                            </button>
-                            {t.action ? (
-                                <button
-                                    type="button"
-                                    data-notification-action
-                                    onClick={() => runToastAction(t.id)}
-                                    className="my-1.5 mr-0.5 shrink-0 cursor-pointer self-center rounded px-2 py-1 text-xs font-medium text-secondary hover:bg-surface-hover hover:text-primary"
-                                >
-                                    {t.action.label}
-                                </button>
-                            ) : null}
+                            {/* a toast with two actions draws them in a row under the message, in a column with the
+                                body; with one, the button stays at the body's right */}
+                            {t.action != null && t.alt != null ? (
+                                <div className="flex min-w-0 flex-1 flex-col">
+                                    <ToastBody t={t} tight />
+                                    <div className="flex gap-1 pb-2 pl-1.5 pr-2">
+                                        <button
+                                            type="button"
+                                            data-notification-action
+                                            onClick={(e) => runToastAction(t.id, "action", pressPoint(e))}
+                                            className="shrink-0 cursor-pointer rounded px-1.5 py-0.5 text-xs font-medium text-accent-soft hover:bg-surface-hover hover:text-primary"
+                                        >
+                                            {t.action.label}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            data-notification-action-alt
+                                            onClick={(e) => runToastAction(t.id, "alt", pressPoint(e))}
+                                            className="shrink-0 cursor-pointer rounded px-1.5 py-0.5 text-xs font-medium text-secondary hover:bg-surface-hover hover:text-primary"
+                                        >
+                                            {t.alt.label}
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <>
+                                    <ToastBody t={t} />
+                                    {t.action ? (
+                                        <button
+                                            type="button"
+                                            data-notification-action
+                                            onClick={(e) => runToastAction(t.id, "action", pressPoint(e))}
+                                            className="my-1.5 mr-0.5 shrink-0 cursor-pointer self-center rounded px-2 py-1 text-xs font-medium text-secondary hover:bg-surface-hover hover:text-primary"
+                                        >
+                                            {t.action.label}
+                                        </button>
+                                    ) : null}
+                                </>
+                            )}
                             {/* a sibling, not inside the body: closing must not open what the toast is about */}
                             <button
                                 type="button"
