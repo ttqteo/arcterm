@@ -34,6 +34,10 @@ and a picture given to a line that is not big.
 
 ### Added
 
+- Chunks an agent proposes for its initiative now show as a Plan to review card at the end of its Chat, so you see
+  them right under the reply that proposed them. Accept, rename or drop each one, or Accept all and continue, without
+  opening the rail. The card goes once you have decided them all and the agent moves on. <!-- big -->
+  <!-- shot: 1.12.0-chat-plan-review.webp -->
 - When your open Claude agents run on more than one Claude account, each one names its account: left of the model
   under the chat box, and before the model under its row in the sidebar. With every agent on one account nothing
   changes.

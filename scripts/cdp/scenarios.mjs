@@ -68822,6 +68822,223 @@ function initRecorder() {
     return { steps, rec };
 }
 
+// --- chat-plan-review: the plan an agent proposed, as a card at the end of its Chat ------------------------------------
+// The Chat is agent-chat's mocked one (a fixture transcript, a mocked roster); the initiative is a real one in wavesrv,
+// so Accept, Undo and Drop write through the same store the rail and the header chip read.
+const CPR_PROJECT = "verify-chat-plan";
+const CPR_TITLE = "Chat plan review: ship the digest";
+const CPR_DONE = "Spec the digest";
+const CPR_P1 = "Collect the digest entries";
+const CPR_P2 = "Render the digest email";
+const CPR_P3 = "Schedule the digest send";
+const CPR_NAME = "chat plan main";
+const CPR_WAIT_MS = 10000;
+const CPR_REPLY =
+    "The digest spec is done. I proposed the next three chunks for the initiative; they wait on your review before they count.";
+
+const cprCard = (id) => `document.querySelector('[data-agent-chat="${id}"] section[data-chat-plan]')`;
+const cprRowOf = (id, label) =>
+    `[...(${cprCard(id)}?.querySelectorAll("[data-plan-row]") ?? [])].find((r) => (r.querySelector(":scope > div > span")?.textContent ?? "") === ${JSON.stringify(label)})`;
+const cprBtn = (id, label, name) => `(${cprRowOf(id, label)})?.querySelector('button[aria-label="${name}"]')`;
+const cprFoot = (id, text) =>
+    `[...(${cprCard(id)}?.querySelectorAll("button") ?? [])].find((b) => b.innerText.trim() === ${JSON.stringify(text)})`;
+const cprRead = (h, id) =>
+    h.ev(`(() => {
+        const c = ${cprCard(id)};
+        if (!c) return null;
+        const chat = document.querySelector('[data-agent-chat="${id}"] [data-chat-conversation]');
+        const slot = c.closest("[data-chat-plan-row]");
+        const items = [...(chat?.querySelectorAll("[data-chat-item]") ?? [])];
+        const last = items[items.length - 1];
+        return {
+            state: c.dataset.chatPlan,
+            header: c.firstElementChild?.firstElementChild?.innerText.replace(/\\s+/g, " ").trim() ?? null,
+            waiting: !!c.querySelector("[data-chat-plan-waiting]"),
+            rows: [...c.querySelectorAll("[data-plan-row]")].map((r) => [r.dataset.planRow, r.querySelector(":scope > div > span")?.textContent ?? "", r.innerText.replace(/\\s+/g, " ").trim()]),
+            // the row buttons show without a hover in Chat (the rail folds them)
+            acceptWidth: Math.round(c.querySelector('[data-plan-row="proposed"] button[aria-label="Accept"]')?.getBoundingClientRect().width ?? 0),
+            // the card's slot follows every chat item
+            afterItems: !!slot && !!last && (last.compareDocumentPosition(slot) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
+            chip: document.querySelector("[data-agent-header] [data-plan-review-chip]")?.innerText.trim() ?? null,
+        };
+    })()`);
+
+function cprRoster(ctx, state = "idle") {
+    const now = Date.now();
+    return [
+        {
+            project: CPR_PROJECT,
+            task: "",
+            agent: "claude",
+            model: "opus",
+            state,
+            idleSince: now - 60_000,
+            id: ctx.tabs.main.tabId,
+            name: CPR_NAME,
+            blockId: ctx.tabs.main.blockId,
+            transcriptPath: ctx.file,
+            effortId: ctx.oid,
+        },
+    ];
+}
+
+const chatPlanReview = {
+    name: "chat-plan-review",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = {
+            dir: mkdtempSync(join(tmpdir(), "verify-chat-plan-")),
+            tabs: {},
+            oids: [],
+            prevGrid: await h.ev(`localStorage.getItem(${JSON.stringify(GRID_KEY)})`),
+            prevModes: await h.ev(`localStorage.getItem("agent.chatmode")`),
+        };
+        let at = "writing the transcript";
+        try {
+            const base = Date.now() - 3_600_000;
+            const o = (sec) => ({ cwd: ctx.dir, ts: new Date(base + sec * 1000).toISOString() });
+            ctx.file = AC.writeTranscript(ctx.dir, "chat-plan-main", [
+                AC.userText("plan the rest of the digest work", o(0)),
+                AC.assistantText(CPR_REPLY, o(4)),
+            ]);
+            // the chat mock reads ctx.files (an ended run's transcript, which this fixture has none of)
+            ctx.files = { main: ctx.file };
+            at = "making the initiative";
+            ctx.oid = await initCreate(h, ctx, { title: CPR_TITLE, project: CPR_PROJECT, chunks: [CPR_DONE] });
+            await initOps(h, ctx.oid, [
+                { op: "setChunkStatus", chunk: CPR_DONE, status: "done" },
+                { op: "addChunk", label: CPR_P1, stage: "Build", status: "proposed" },
+                { op: "addChunk", label: CPR_P2, stage: "Build", status: "proposed" },
+                { op: "addChunk", label: CPR_P3, stage: "Ship", status: "proposed" },
+            ]);
+            at = "resetting the grid";
+            await h.ev(`localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))})`);
+            await h.ev(`localStorage.removeItem("agent.chatmode")`);
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            await h.goto("agent");
+            at = "making the tab";
+            ctx.tabs.main = await acMakeTab(h, ctx, { label: CPR_NAME });
+            at = "installing the chat mock";
+            const mock = await installAgentChatMock(h, ctx);
+            if (mock !== "installed") throw new Error(`chat mock: ${mock}`);
+            at = "setting the roster";
+            await AC.setRoster(h, cprRoster(ctx));
+        } catch (e) {
+            ctx.arrangeError = `${at}: ${String(e?.message ?? e)}`;
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const { steps, rec } = initRecorder();
+        if (ctx.arrangeError != null) {
+            rec("0. the fixture agent, its transcript and its initiative", false, ctx.arrangeError);
+            return steps;
+        }
+        const A = ctx.tabs.main.tabId;
+        const until = (expr, ms = CPR_WAIT_MS) => polishWaitFor(h, expr, ms);
+        const status = (label) => initChunk(h, ctx.oid, label).then((c) => c?.status ?? "gone");
+        const shot = async (name) => {
+            await polishNap(500);
+            await h.shot(`cdp-shots/chat-plan-review-${name}.png`);
+        };
+        try {
+            await h.cdp("Emulation.setFocusEmulationEnabled", { enabled: true });
+
+            // 1. the card at the end of the Chat
+            await AC.focusAgent(h, A);
+            const up1 = await until(`${cprCard(A)}?.querySelectorAll('[data-plan-row="proposed"]').length === 3`, 15000);
+            await acScrollTo(h, cprCard(A));
+            const c1 = await cprRead(h, A);
+            await shot("1-waiting");
+            let picture;
+            try {
+                picture = await h.whatsnewShot("chat-plan-review", { selector: `[data-agent-chat="${A}"] section[data-chat-plan]`, pad: 120 });
+            } catch (e) {
+                picture = { error: String(e?.message ?? e) };
+            }
+            rec(
+                '1. after the reply that proposed them, Chat ends with the Plan to review card: "Plan to review · 3 proposed" with the amber Waiting on you, the three proposed rows in plan order with Accept / Rename / Drop shown without a hover, after every chat item; the header chip reads "3 to review"',
+                up1 && c1 != null && c1.state === "waiting" && c1.waiting && /Plan to review · 3 proposed/.test(c1.header) &&
+                    JSON.stringify(c1.rows.map((r) => r[1])) === JSON.stringify([CPR_P1, CPR_P2, CPR_P3]) &&
+                    c1.rows.every((r) => r[0] === "proposed") && c1.acceptWidth > 0 && c1.afterItems && /^3 to review$/i.test(c1.chip ?? ""),
+                { up1, c1, picture }
+            );
+
+            // 2. Accept one row
+            const clicked2 = await initClick(h, cprBtn(A, CPR_P1, "Accept"));
+            const up2 = await until(`(${cprRowOf(A, CPR_P1)})?.dataset.planRow === "accepted"`);
+            const s2 = await status(CPR_P1);
+            const c2 = await cprRead(h, A);
+            const row2 = c2?.rows.find((r) => r[1] === CPR_P1)?.[2] ?? "";
+            rec(
+                '2. Accept on one row makes the chunk pending in the initiative; the row reads "accepted · now pending" with Undo, the header "2 proposed", the chip "2 to review"',
+                clicked2 && up2 && s2 === "pending" && c2 != null && /2 proposed/.test(c2.header) &&
+                    row2.includes("accepted · now pending") && row2.includes("Undo") && /^2 to review$/i.test(c2.chip ?? ""),
+                { clicked2, up2, s2, c2 }
+            );
+
+            // 3. Undo it
+            const undo = `[...((${cprRowOf(A, CPR_P1)})?.querySelectorAll("button") ?? [])].find((b) => b.innerText.trim() === "Undo")`;
+            const clicked3 = await initClick(h, undo);
+            const up3 = await until(`${cprCard(A)}?.querySelectorAll('[data-plan-row="proposed"]').length === 3`);
+            const s3 = await status(CPR_P1);
+            rec("3. Undo puts the chunk back to proposed, and the card back to three proposed rows", clicked3 && up3 && s3 === "proposed", { clicked3, up3, s3 });
+
+            // 4. Drop one, Accept all the rest
+            const clicked4a = await initClick(h, cprBtn(A, CPR_P3, "Drop"));
+            const dropped = await until(`(${cprRowOf(A, CPR_P3)})?.dataset.planRow === "dropped"`);
+            const clicked4b = await initClick(h, cprFoot(A, "Accept all"));
+            const up4 = await until(`${cprCard(A)}?.dataset.chatPlan === "decided"`);
+            const s4 = [await status(CPR_P1), await status(CPR_P2), await status(CPR_P3)];
+            const c4 = await cprRead(h, A);
+            // the footer folds away on the spring before it leaves the DOM
+            const noFoot = await until(`${cprFoot(A, "Accept all")} == null`);
+            await shot("4-decided");
+            rec(
+                '4. Drop takes one chunk out of the plan, Accept all accepts the other two; the card stays with its decided rows and Undo, reads "all decided", no longer waits on you and offers no footer; the chip is gone',
+                clicked4a && dropped && clicked4b && up4 && JSON.stringify(s4) === JSON.stringify(["pending", "pending", "gone"]) &&
+                    c4 != null && !c4.waiting && /all decided/.test(c4.header) && c4.rows.length === 3 &&
+                    c4.rows.every((r) => r[0] !== "proposed") && c4.chip == null && noFoot === true,
+                { clicked4a, dropped, clicked4b, up4, s4, c4, noFoot }
+            );
+
+            // 5. the agent moves on: the re-read ends the held rows and the card leaves
+            await AC.setRoster(h, cprRoster(ctx, "working"));
+            const gone5 = await until(`!document.querySelector('[data-agent-chat="${A}"] [data-chat-plan-row]')`);
+            rec("5. once the agent changes state, the initiative is read again, the held rows end and the card leaves the Chat", gone5, { gone5 });
+        } catch (e) {
+            rec("x. the steps ran to the end", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`chat-plan-review teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("remove the chat mock", () => removeAgentChatMock(h));
+        await step("restore the roster", () => AC.restoreRoster(h));
+        await step("close the fixture tab", () => acCloseTabs(h, ctx));
+        for (const oid of ctx.oids ?? []) {
+            await step(`delete ${oid}`, () => h.rpc("effortdelete", { effortoid: oid }).catch(() => {}));
+        }
+        await step("restore the grid and the chat modes", () =>
+            h.ev(`(() => {
+                const put = (key, prev) => (prev == null ? localStorage.removeItem(key) : localStorage.setItem(key, prev));
+                put(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(ctx.prevGrid ?? null)});
+                put("agent.chatmode", ${JSON.stringify(ctx.prevModes ?? null)});
+                return true;
+            })()`)
+        );
+        await step("remove the transcript", () => rmSync(ctx.dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 }));
+        await step("reload onto the live roster", () => ahReload(h));
+        await step("go home", () => h.goto("cockpit"));
+    },
+};
+
 // --- initiative-plan-review: a plan an agent proposes, decided on its rail --------------------------------------------
 const PR_PROJECT = "verify-init-plan";
 const PR_MAIN = "Plan review: ship the feed";
@@ -68959,7 +69176,8 @@ const initiativePlanReview = {
                 polishWaitFor(h, `${INIT_RAIL}?.querySelectorAll('[data-plan-row="${state}"]').length === ${n}`, INIT_WAIT_MS);
             const stateOf = (label) => initChunk(h, ctx.main, label).then((c) => c?.status ?? "gone");
 
-            // --- 1. Overview holds no Plan to review; the header chip opens the Initiative tab on it, its four rows first ---
+            // --- 1. an agent with an initiative opens its rail on the Initiative tab by itself (agentrailtabs.ts contextTab,
+            // since 2026-11-25), with Plan to review in it; the header chip opens it unfolded and in view, its four rows first ---
             const chipUp = await polishWaitFor(h, `!!${prChip}`, INIT_WAIT_MS);
             const overview = await h.ev(`(() => ({ selected: ${prSelected}, plan: !!${INIT_RAIL}?.querySelector('[data-rail-section="plan"]'), pane: !!${prPane},
                 tabDot: !!${INIT_RAIL}?.querySelector('[data-rail-tab="initiative"] [data-rail-tab-dot]') }))()`);
@@ -68977,8 +69195,8 @@ const initiativePlanReview = {
             await polishNap(500);
             await h.shot("cdp-shots/initiative-plan-review-1-rail.png");
             rec(
-                '1. Overview has no "Plan to review"; the header chip opens the Initiative tab with it unfolded and in view, the four proposed rows in it',
-                chipUp === true && overview.selected === "overview" && overview.plan === false && overview.pane === false &&
+                '1. the rail opens on the Initiative tab by itself, Plan to review in it and the tab dotted; the header chip opens it unfolded and in view, the four proposed rows in it',
+                chipUp === true && overview.selected === "initiative" && overview.pane === true && overview.tabDot === true &&
                     opened1 === true && four === true && rail1.selected === "initiative" && /^Plan to review\s*4/.test(rail1.head) &&
                     rail1.sections.includes("initiative-plan") && rail1.card && rail1.rows === 4 && rail1.count && rail1.inView === true,
                 { overview, rail1 }
@@ -76485,6 +76703,7 @@ export const SCENARIOS = [
     setupSkillAdditions,
     setupLearned,
     initiativePlanReview,
+    chatPlanReview,
     initiativeLink,
     initiativeReview,
     initiativeParents,

@@ -380,6 +380,8 @@ Cùng những chunk đó hiện ở Jarvis: hàng của initiative ghi `N propos
 
 Chip **N to review** trên header (màu hổ phách) báo có chunk chờ ngay cả khi rail đang ở tab khác hoặc gập lại; bấm nó mở tab **Initiative** với **Plan to review** mở sẵn và cuộn tới.
 
+Ở chế độ Chat, cùng những chunk đó hiện thành card **Plan to review · N proposed** ở cuối hội thoại, ngay dưới reply đã đề xuất chúng, kèm chấm hổ phách **Waiting on you**. Card có cùng các hàng và các nút như trên rail (✓ **Accept**, ✎ **Rename**, ✕ **Drop**, **Accept all and continue**, **Accept all**, **Drop all**), nhưng nút của mỗi hàng luôn hiện, không cần rê chuột. Quyết định ở card hiện ngay trên rail, chip header và Jarvis, và ngược lại. Quyết định xong hết thì card đọc `all decided` và giữ **Undo** cho tới khi agent đổi trạng thái; lúc đó initiative được đọc lại và card rời khỏi Chat.
+
 ### Tab Brainstorm
 
 Có khi agent có một brainstorm gắn vào (`brainstorm.json`), suốt lúc brainstorm còn gắn (đang hỏi, đã xong, builder check, run đã chạy), có câu hỏi đang mở hay không.
