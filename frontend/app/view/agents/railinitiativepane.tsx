@@ -306,7 +306,8 @@ function InitiativePane({ model, agent }: { model: AgentsViewModel; agent: Agent
         unfold(NOTE_ID);
         setSub({ kind: "note", draft: "" });
     };
-    // a row opens its status / rename menu; the All chunks row opens or folds the full list
+    // a row opens its status / rename menu, and a second press on it closes it; the All chunks row opens or folds the
+    // full list
     const openAt = (index: number) => {
         const item = nav[index];
         if (item == null) {
@@ -316,6 +317,10 @@ function InitiativePane({ model, agent }: { model: AgentsViewModel; agent: Agent
         focusRoot();
         if (item.kind === "all") {
             setAllOpen((v) => !v);
+            return;
+        }
+        if (sub?.kind === "menu" && sub.label === item.row.label && sub.list === item.list) {
+            setSub(null);
             return;
         }
         const items = chunkMenuItems(byLabel(item.row.label)?.status ?? "");
@@ -633,6 +638,8 @@ function InitiativePane({ model, agent }: { model: AgentsViewModel; agent: Agent
             onBlur={(e) => {
                 if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
                     setFocused(false);
+                    // a press outside the tab closes a chunk's open status menu
+                    setSub((s) => (s?.kind === "menu" ? null : s));
                 }
             }}
             className="flex min-h-0 flex-1 flex-col outline-none"

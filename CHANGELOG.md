@@ -59,6 +59,7 @@ and a picture given to a line that is not big.
 - Long chunk and initiative titles show in full. In the agent panel's Initiative tab, the title and the chunk the
   agent is on take up to three lines, and the chunk under the cursor or with its menu open shows its whole title.
   Plan to review, in Chat and in the panel, shows each proposed chunk whole.
+- A chunk's status menu in the Initiative tab closes when you click its row again or click outside the tab.
 - The To review sheet on Jarvis shows each proposal whole, with its initiative under it, and scrolls when the list is
   long. Before, a long list squeezed every row to fit and cut its text off.
 - A run on Codex or agy with no model picked shows its harness where it read "default": the plan review's stage line,
