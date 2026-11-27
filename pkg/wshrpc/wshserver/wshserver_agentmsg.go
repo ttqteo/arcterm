@@ -57,6 +57,7 @@ type agentRosterFacts struct {
 // agentRow is a roster row with what the handlers need beyond what they return.
 type agentRow struct {
 	wshrpc.AgentInfo
+	label     string // the tab's session:label, the name the cockpit shows over the title (a judge's "Judge: <worker>")
 	blockId   string
 	status    baseds.AgentStatusData
 	openAsk   bool
@@ -261,6 +262,7 @@ func buildAgentRoster(facts *agentRosterFacts) []agentRow {
 				Cwd:         tf.Status.Cwd,
 				Title:       tf.Status.Title,
 			},
+			label:     strings.TrimSpace(tf.Tab.Meta.GetString(waveobj.MetaKey_SessionLabel, "")),
 			blockId:   tf.BlockId,
 			status:    tf.Status,
 			openAsk:   tf.OpenAsk,

@@ -953,12 +953,15 @@ func TestPairLinkAnswerAtReadsAClaudeTranscript(t *testing.T) {
 	}
 }
 
-func TestPairAgentNameTakesTheTitle(t *testing.T) {
-	if got := pairAgentName(wshrpc.AgentInfo{Name: "mit-thesis", Title: "Plan oracle-tightening"}); got != "Plan oracle-tightening" {
+func TestPairAgentNameTakesTheLabelThenTheTitle(t *testing.T) {
+	if got := pairAgentName("Judge: Plan", wshrpc.AgentInfo{Name: "mit-thesis", Title: "Plan oracle-tightening"}); got != "Judge: Plan" {
+		t.Fatalf("with a label: got %q", got)
+	}
+	if got := pairAgentName(" ", wshrpc.AgentInfo{Name: "mit-thesis", Title: "Plan oracle-tightening"}); got != "Plan oracle-tightening" {
 		t.Fatalf("with a title: got %q", got)
 	}
-	if got := pairAgentName(wshrpc.AgentInfo{Name: "mit-thesis", Title: "  "}); got != "mit-thesis" {
-		t.Fatalf("with no title: got %q", got)
+	if got := pairAgentName("", wshrpc.AgentInfo{Name: "mit-thesis", Title: "  "}); got != "mit-thesis" {
+		t.Fatalf("with neither: got %q", got)
 	}
 }
 

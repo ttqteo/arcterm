@@ -334,7 +334,7 @@ func (l livePairLink) Sleep(ctx context.Context, tab string) error {
 	return nil
 }
 
-// Agent names the tab as the cockpit labels it: the session's title, else the tab's name (its launch name, often the
+// Agent names the tab as the cockpit labels it: its label, else the session's title, else the tab's name (often the
 // project's).
 func (l livePairLink) Agent(ctx context.Context, tab string) (agentpair.AgentFacts, error) {
 	_, row, err := l.find(ctx, tab)
@@ -345,11 +345,16 @@ func (l livePairLink) Agent(ctx context.Context, tab string) (agentpair.AgentFac
 	if err != nil {
 		return agentpair.AgentFacts{}, err
 	}
-	return agentpair.AgentFacts{Name: pairAgentName(row.AgentInfo), Harness: row.Harness, Project: row.Project, Cwd: row.Cwd, Transcript: tpath}, nil
+	return agentpair.AgentFacts{Name: pairAgentName(row.label, row.AgentInfo), Harness: row.Harness, Project: row.Project, Cwd: row.Cwd, Transcript: tpath}, nil
 }
 
-// pairAgentName is the name a pair stores for a side: the session's title, the cockpit's label, over the tab's name.
-func pairAgentName(a wshrpc.AgentInfo) string {
+// pairAgentName is the name a pair stores for a side, in the cockpit's order: the tab's label (a launched judge's
+// "Judge: <worker>", a rename), else the session's title, else the tab's name. A judge joins before its harness has named
+// its session, so without the label it would be stored under the tab's name, the project's.
+func pairAgentName(label string, a wshrpc.AgentInfo) string {
+	if l := strings.TrimSpace(label); l != "" {
+		return l
+	}
 	if t := strings.TrimSpace(a.Title); t != "" {
 		return t
 	}
