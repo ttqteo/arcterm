@@ -22,6 +22,10 @@ const (
 	BusyReason        = "the drawer is answering; ask once this answer lands"
 	StopTooLateReason = "the answer is already on its way to the board"
 
+	// MaxResumeTokens is the drawer session's context past which the next turn starts a new session instead of
+	// resuming. Boards used for a day reached 224k after 10-13 drawings (2026-11-27), each turn re-reading all of it.
+	MaxResumeTokens = 100_000
+
 	// BoardTurn.Kind
 	KindAsk     = "ask"     // the person's line: drawn, or flagged as a question for the agent
 	KindRequest = "request" // the agent's own request (wsh board draw): drawn, or failed
@@ -489,7 +493,13 @@ func (d *Drawer) answer(ctx context.Context, b Board, talk wshrpc.BoardTalk, tur
 		Request: turn.Kind == KindRequest, Context: turn.Context, Draw: turn.Kind == KindAsk && turn.From != "",
 		AgentTitle: agent.title, AgentTurns: agent.text,
 	}
-	call := Call{SessionId: talk.SessionId, Resume: talk.SessionId != "", Prompt: turnPrompt(ti)}
+	// a session past MaxResumeTokens starts over: the first prompt carries the rules, the briefing and the board as it
+	// is now, which is all a turn needs, and every resumed turn would read the whole long talk again
+	resume := talk.SessionId != "" && talk.ContextTokens < MaxResumeTokens
+	if talk.SessionId != "" && !resume {
+		log.Printf("boarddrawer: board %s: session %s holds %d tokens, starting a new one", b.BoardId, talk.SessionId, talk.ContextTokens)
+	}
+	call := Call{SessionId: talk.SessionId, Resume: resume, Prompt: turnPrompt(ti)}
 	first := !call.Resume
 	if first {
 		call.Prompt = firstPrompt(firstInput{BoardName: b.Name, Briefing: boardBriefing(talk)}, ti)

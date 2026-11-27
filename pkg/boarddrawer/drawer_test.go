@@ -449,6 +449,44 @@ func TestRefusedThenRunFailsKeepsFirstReason(t *testing.T) {
 	}
 }
 
+// A session whose context reached MaxResumeTokens is not resumed: the turn starts a new one with the first prompt, and
+// the talk keeps it with its own size. One under the cap resumes.
+func TestLongSessionStartsNew(t *testing.T) {
+	for _, tc := range []struct {
+		tokens int
+		resume bool
+	}{{MaxResumeTokens - 1, true}, {MaxResumeTokens, false}, {224_000, false}} {
+		f := newFake(reply(drawAnswer))
+		f.ctxTokens = 9000
+		f.talks["b1"] = wshrpc.BoardTalk{Project: board.Project, BoardId: "b1", SessionId: "old", ContextTokens: tc.tokens}
+		d := New(f.deps())
+		f.landsAnswers(d, board)
+		if _, err := d.Ask(board, requests("Draw the store.", "The store keeps talks in sidecars.")); err != nil {
+			t.Fatal(err)
+		}
+		talk := settled(t, f, d)
+		calls := f.callList()
+		if len(calls) != 1 || calls[0].Resume != tc.resume {
+			t.Fatalf("%d tokens: want resume=%v, calls %+v", tc.tokens, tc.resume, calls)
+		}
+		if tc.resume {
+			if calls[0].SessionId != "old" {
+				t.Errorf("%d tokens: resumes the old session, got %q", tc.tokens, calls[0].SessionId)
+			}
+			continue
+		}
+		if calls[0].SessionId == "old" || calls[0].SessionId == "" || !strings.Contains(calls[0].Prompt, "## Your reply") {
+			t.Errorf("%d tokens: a new session with the first prompt, got %+v", tc.tokens, calls[0])
+		}
+		if !strings.Contains(calls[0].Prompt, "The store keeps talks in sidecars.") {
+			t.Errorf("%d tokens: the new session's prompt keeps the briefing:\n%s", tc.tokens, calls[0].Prompt)
+		}
+		if talk.SessionId != calls[0].SessionId || talk.ContextTokens != 9000 || talk.Turns[0].State != StateAnswered {
+			t.Errorf("%d tokens: the talk keeps the new session and its size: %+v", tc.tokens, talk)
+		}
+	}
+}
+
 func TestAskBrokenFileFirstTurnKeepsNoSession(t *testing.T) {
 	f := newFake(reply(drawAnswer))
 	f.files["b1"] = `{"elements":[`

@@ -60,6 +60,8 @@ and a picture given to a line that is not big.
 - A board's Tidy button is gone.
 - When a board's drawer answers in a way Arc can't use (a label over 12 words, a reply that is not one JSON object),
   it is told why and asked once more, so fewer drawings end in "Couldn't draw" and need the agent to ask again.
+- A board's drawer starts a fresh session once its talk has grown long, instead of re-reading the whole day's
+  talk for every new drawing: a board drawn on all day stops costing more usage per drawing.
 - Copy image on a diagram in Chat (its toolbar and the enlarged viewer) shows a camera, as Copy screenshot does
   elsewhere, so it no longer looks like copying the text.
 - The part stepper in a board's header (‹ 3/13 ›) stays in one place beside the header's buttons: stepping through
