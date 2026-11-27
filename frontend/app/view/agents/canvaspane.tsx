@@ -13,12 +13,12 @@ import { getApi } from "@/app/store/global";
 import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { Camera, Check, ChevronDown, ChevronLeft, ChevronRight, SquareCheck, SquareDashed } from "lucide-react";
+import { Camera, Check, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { AgentsViewModel } from "./agents";
 import { projectOf, type AgentVM } from "./agentsviewmodel";
 import { copyBoardShot, tauriCopyShotIO } from "./canvascopy";
-import { MarkLayer, MarkTray } from "./canvasmarking";
+import { MarkLayer, MarkTray, ModeToggle } from "./canvasmarking";
 import {
     ALL_TAB,
     boardLabel,
@@ -41,19 +41,14 @@ import {
     type BoardFrame,
     type CanvasBoard,
 } from "./canvasmodel";
-import {
-    canvasStateAtom,
-    detachCanvas,
-    selectCanvasTab,
-    setMarking,
-    stepCanvasBoard,
-    type CanvasState,
-} from "./canvasstore";
+import { canvasStateAtom, detachCanvas, selectCanvasTab, stepCanvasBoard, type CanvasState } from "./canvasstore";
 import { maybeCaptureThumb, tauriThumbIO, THUMB_SETTLE_MS } from "./canvasthumb";
 import { openLauncher } from "./launcherstore";
 import {
     boardPicksKey,
+    markContext,
     picksToResend,
+    protoReadout,
     protoReport,
     slotPickMessage,
     type ProtoReport,
@@ -61,7 +56,7 @@ import {
 } from "./protomodel";
 import { setSlotPick, slotPicksAtom } from "./protostore";
 import { SlotChips } from "./slotchips";
-import { SWAP_BAR, SWAP_BTN, SWAP_BTN_ON, SWAP_LABEL, SWAP_PRIMARY_BTN, SwapTabs } from "./swapbar";
+import { SWAP_BAR, SWAP_BTN, SWAP_LABEL, SWAP_PRIMARY_BTN, SwapTabs } from "./swapbar";
 
 // room above a board's frame for its label; the scroll pane's top padding
 export const CANVAS_TOP_PAD = 36;
@@ -127,6 +122,12 @@ export function CanvasPane({
     const [heights, reportHeight] = useContentHeights(`${s?.topic}:${s?.reloadKey}`);
     const selected = s != null ? shownBoard(s).name : null;
     const tab = s != null ? currentTab(s) : null;
+    // What the shown board's page last reported of itself (its screen and variant slots), with the page it came from:
+    // BoardFrameView never reports null when a page reloads, so a report of another page (a reload, another board, another
+    // canvas) is not read. It names where a mark is drawn and fills the header's readout
+    const reportKey = `${s?.topic}:${s?.reloadKey}:${selected}`;
+    const [reported, setReported] = useState<{ key: string; report: ProtoReport } | null>(null);
+    const report = reported != null && reported.key === reportKey ? reported.report : null;
     // a tab, [ or ] can pick a board below the fold. Only its top edge is brought into view, label included:
     // scrollIntoView top-aligns any board taller than the pane, which scrolled the labels away on every pick
     useEffect(() => {
@@ -149,7 +150,13 @@ export function CanvasPane({
     const scale = (layout.frames.find((f) => f.board.name === board.name) ?? layout.frames[0]).scale;
     const all = layout.frames.length > 1;
     const marking = s.marking && pane === "board";
-    const meta = [updatedAgo(now, s.lastModifiedMs), `${Math.round(scale * 100)}%`].filter(Boolean).join(" · ");
+    // where the board is now: marks are drawn on it, the tray and Send know it, the layer shows only the marks of it
+    const ctx = markContext(report);
+    // under All the shown board is one tile of several, so the header names no screen
+    const readout = all ? "" : protoReadout(report);
+    const meta = [readout, updatedAgo(now, s.lastModifiedMs), `${Math.round(scale * 100)}%`]
+        .filter(Boolean)
+        .join(" · ");
 
     return (
         <div data-canvas-pane className="flex min-h-0 flex-1 flex-col">
@@ -188,23 +195,20 @@ export function CanvasPane({
                 {/* the bar gives way when the pane is narrow or zoomed in: this line first, then the topic and the tabs;
                     the buttons keep their size */}
                 {pane === "board" ? (
-                    <span className="min-w-0 shrink-[6] truncate text-[10.5px] tabular-nums text-muted">{meta}</span>
+                    <span
+                        data-canvas-meta
+                        className="min-w-0 shrink-[6] truncate text-[10.5px] tabular-nums text-muted"
+                    >
+                        {meta}
+                    </span>
                 ) : null}
-                <button
-                    type="button"
-                    title={`Mark parts of the board (${formatChordString("m")})`}
-                    aria-pressed={marking}
+                {/* Try | Mark on a clickable prototype, the one Mark button on a static board; marks stay through Try */}
+                <ModeToggle
+                    agentId={agent.id}
+                    marking={marking}
+                    interactive={board.interactive === true}
                     disabled={pane !== "board"}
-                    onClick={() => setMarking(agent.id, !s.marking)}
-                    className={cn(SWAP_BTN, marking && SWAP_BTN_ON)}
-                >
-                    {marking ? (
-                        <SquareCheck size={14} strokeWidth={1.8} aria-hidden />
-                    ) : (
-                        <SquareDashed size={14} strokeWidth={1.8} aria-hidden />
-                    )}
-                    Mark
-                </button>
+                />
                 {!marking ? (
                     <div className="flex items-center gap-[10px]">
                         {s.base != null ? (
@@ -267,6 +271,11 @@ export function CanvasPane({
                                     reloadKey={s.reloadKey}
                                     onOpen={() => selectCanvasTab(agent.id, f.board.name)}
                                     onContentHeight={(h) => reportHeight(f.board.name, h)}
+                                    onProtoReport={
+                                        f.board.name === board.name
+                                            ? (r) => setReported({ key: reportKey, report: r })
+                                            : undefined
+                                    }
                                     // the gallery's preview, taken off the board the user is looking at
                                     onSettled={
                                         pane === "board" && !marking && !all && f.board.name === board.name
@@ -280,14 +289,17 @@ export function CanvasPane({
                                     }
                                 >
                                     {marking && f.board.name === board.name ? (
-                                        <MarkLayer agentId={agent.id} marks={s.marks} />
+                                        <MarkLayer agentId={agent.id} marks={s.marks} ctx={ctx} />
                                     ) : null}
                                 </BoardFrameView>
                             ))}
                         </div>
                     </div>
                 )}
-                {marking ? <MarkTray agent={agent} marks={s.marks} /> : null}
+                {/* while marking, and after: marks outlive Mark mode, so the tray stays while any is unsent */}
+                {pane === "board" && (s.marking || s.marks.length > 0) ? (
+                    <MarkTray agent={agent} marks={s.marks} ctx={ctx} />
+                ) : null}
             </div>
         </div>
     );
