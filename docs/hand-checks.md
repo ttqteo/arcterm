@@ -24,6 +24,9 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
 
 ## 2026-11-27
 
+- [ ] (arcterm) **A board's drawing chip shows no focus ring on Shift** (`boardstrip.tsx` DrawingsRow, 6f0b0e5c9). Lint
+  only, no dev app. Click drawing chip 1, scroll the canvas to drawing 2, hold Shift and scroll: no blue "[ ]" on
+  chip 1. Then Tab onto a chip: its ring shows whole, inside the chip, not clipped top and bottom.
 - [ ] (arcterm) **An agent fixes or deletes a drawing in place** (`pkg/boarddrawer` answer.go `drawing` key, prompt).
   Go and vitest only, no real drawer run. On a board with two drawings, have an agent run
   `wsh board draw --board <name> --ask "in <title>, drop the long arrows"`: that drawing changes, no new frame appears.
