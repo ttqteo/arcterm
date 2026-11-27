@@ -24,6 +24,16 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
 
 ## 2026-11-27
 
+- [ ] (arcterm) **A sleeping agent's question and permission in Chat** (`sleepheldview.tsx`, `permissioncard.tsx`,
+  `permissionrow.tsx`, the sleep-keeps-ask run). The run's Final passed `sleep-keeps-ask` on a fixture tab (end state
+  only); no real agent was slept while asking, and no motion was watched. With the build
+  installed, let a Claude agent ask you something (AskUserQuestion, arc mod on) and Sleep it from its row menu: Chat
+  should keep the question beside "Asleep since …" and Wake. Pick an option: the question card goes and your answer
+  grows in under the conversation with "Goes in when <name> wakes" (a spring open, no jump; at once under reduced
+  motion), and the agent stays asleep. Press Wake: that block should fold away on the same spring and the agent
+  carries on with your answer. Then let an agent wait on a permission prompt (a Bash command) and Sleep it: its Chat
+  card and its sidebar row should show the command and Wake alone (no Allow, Deny or Answer in Terminal), the dot not
+  pulsing; Wake pressed twice quickly should wake it once.
 - [ ] (arcterm) **Pair: judge replies read in the working agent's Chat lower the ⚖ count.** In a paired agent with
   several judge replies unread, scroll its Chat down past them without opening the pair: the number on the ⚖ line (tree
   row and header button) drops as each judge card's head comes on screen, and the working agent's own turns never count.

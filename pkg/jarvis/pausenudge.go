@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/wavetermdev/waveterm/pkg/agentask"
+	"github.com/wavetermdev/waveterm/pkg/blockcontroller"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
@@ -21,8 +22,30 @@ import (
 const pausedNudgeText = "Arc paused this run and has now resumed it; carry on from where you stopped. " +
 	"If you were waiting on an answer that is not below, ask again."
 
-// heldAnswerPrefix starts the line that carries one answer the person gave while the run was paused.
-const heldAnswerPrefix = "While you were paused, the person answered your question: "
+// heldAnswerPrefix and heldAnswerSleepPrefix start the line that carries one answer the person gave while the run was
+// paused, or while the agent slept. The rest of the line is the same (heldAnswerLines).
+const (
+	heldAnswerPrefix      = "While you were paused, "
+	heldAnswerSleepPrefix = "While you were asleep, "
+)
+
+// sleptNudgeHead and sleptNudgeTail frame the held answers of an agent put to sleep while it waited on the person. The
+// tail says "above": the answers come before it. It always tells the agent to ask again, because a question and a
+// permission request wait in memory only, and the wake drops them.
+const (
+	sleptNudgeHead = "You were put to sleep while waiting on the person; carry on from where you stopped."
+	sleptNudgeTail = "If you were waiting on an answer or a permission that is not above, ask again."
+)
+
+// heldAnswerLines is one line, each after a newline, for each answer the person gave while the agent was away: prefix
+// (heldAnswerPrefix, heldAnswerSleepPrefix) and then the question and what was answered, each on one line.
+func heldAnswerLines(prefix string, held []agentask.HeldAnswer) string {
+	var b strings.Builder
+	for _, h := range held {
+		b.WriteString("\n" + prefix + "the person answered your question: " + oneLine(h.Question) + " → " + oneLine(strings.Join(h.Answers, ", ")))
+	}
+	return b.String()
+}
 
 // PausedNudge is the nudge a resumed agent starts with, for the worker in tab workerORef: the pause text, then a line
 // for each answer the person gave one of its open questions while the run was paused. It takes those answers, so each
@@ -31,11 +54,16 @@ func PausedNudge(ctx context.Context, workerORef string) string {
 	var b strings.Builder
 	b.WriteString(pausedNudgeText)
 	for _, blockORef := range workerBlockORefs(ctx, workerORef) {
-		for _, held := range agentask.TakeHeldAnswers(blockORef) {
-			b.WriteString("\n" + heldAnswerPrefix + oneLine(held.Question) + " → " + oneLine(strings.Join(held.Answers, ", ")))
-		}
+		b.WriteString(heldAnswerLines(heldAnswerPrefix, agentask.TakeHeldAnswers(blockORef)))
 	}
 	return b.String()
+}
+
+// SleptNudge is the nudge an agent put to sleep while it waited on the person starts with when it wakes, for the block
+// blockORef: what happened, a line for each answer the person gave its open question while it slept, and a line telling
+// it to ask again for anything that is not above. It takes those answers, so each reaches the agent once.
+func SleptNudge(blockORef string) string {
+	return sleptNudgeHead + heldAnswerLines(heldAnswerSleepPrefix, agentask.TakeHeldAnswers(blockORef)) + "\n" + sleptNudgeTail
 }
 
 // workerBlockORefs is the oref of each block of the worker's tab, which is what its pending asks and held answers are
@@ -90,8 +118,33 @@ func blockRunPaused(ctx context.Context, block *waveobj.Block) (bool, error) {
 	return RunPaused(run), nil
 }
 
-// answerHeld is agentask.HoldAnswer: an answer for a block of a paused run is held, since the agent's process is
-// gone. A run that cannot be read is treated as not paused: the answer is typed as before.
+// blockSleptAsking reports whether block is an agent put to sleep while it waited on the person (agent:sleeping and
+// agent:sleepasking, set together by the sleep) whose process is over: a mark over a process that runs is stale, a forced
+// restart that was no wake left it, and that agent is awake. A block with no controller left is over: the sleep destroys it.
+func blockSleptAsking(block *waveobj.Block) bool {
+	if !metaSleepAsking(block.Meta) {
+		return false
+	}
+	rs := controllerStatusFn(block.OID)
+	return rs == nil || rs.ShellProcStatus == blockcontroller.Status_Done
+}
+
+// metaSleepAsking reports whether meta carries both sleep marks of an agent slept while it waited on the person.
+func metaSleepAsking(meta waveobj.MetaMapType) bool {
+	var sleptAt float64
+	switch v := meta[waveobj.MetaKey_AgentSleeping].(type) {
+	case float64: // the store hands numbers back as float64
+		sleptAt = v
+	case int64:
+		sleptAt = float64(v)
+	case int:
+		sleptAt = float64(v)
+	}
+	return sleptAt > 0 && meta.GetBool(waveobj.MetaKey_AgentSleepAsking, false)
+}
+
+// answerHeld is agentask.HoldAnswer: an answer for a block of a paused run, or of an agent slept while it asked, is held,
+// since the agent's process is gone. A run that cannot be read is treated as not paused: the answer is typed as before.
 func answerHeld(blockORef string) bool {
 	oref, err := waveobj.ParseORef(blockORef)
 	if err != nil || oref.OType != waveobj.OType_Block {
@@ -104,6 +157,9 @@ func answerHeld(blockORef string) bool {
 			log.Printf("holding an answer for %s: loading the block: %v", blockORef, err)
 		}
 		return false
+	}
+	if blockSleptAsking(block) {
+		return true
 	}
 	paused, err := blockRunPaused(ctx, block)
 	if err != nil {

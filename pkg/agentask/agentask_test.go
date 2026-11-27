@@ -172,3 +172,23 @@ func TestSuspendMarksOnlyThePendingAsk(t *testing.T) {
 		t.Fatal("a new ask must not inherit the mark")
 	}
 }
+
+// a sleep whose meta write failed undoes its Suspend: the process lives on, so its --wait caller must clear the ask
+// as before
+func TestUnsuspendClearsTheMarkOfThePendingAsk(t *testing.T) {
+	r := MakeRegistry()
+	if r.Unsuspend("block:none") {
+		t.Fatal("Unsuspend with nothing pending must report false")
+	}
+	r.Set("block:a", PendingAsk{AskId: "ask-1", Ts: 7})
+	r.Suspend("block:a")
+	if !r.Unsuspend("block:a") {
+		t.Fatal("Unsuspend must find the pending ask")
+	}
+	if r.SuspendedAsk("block:a", "ask-1") {
+		t.Fatal("the ask must not read suspended after Unsuspend")
+	}
+	if p, ok := r.Get("block:a"); !ok || p.AskId != "ask-1" || p.Ts != 7 {
+		t.Fatalf("Unsuspend must leave the ask itself pending, got %#v (pending=%v)", p, ok)
+	}
+}

@@ -13,6 +13,7 @@ import {
     moveChoice,
     permissionBoxKey,
     permissionChoices,
+    permissionReadOnly,
     permissionRowLabel,
     permissionSummaryLine,
     permissionTitle,
@@ -107,6 +108,24 @@ describe("cardShown", () => {
 
     it("hides for a sleeping agent", () => {
         expect(cardShown({ state: "asking", sleeping: { since: 1, freedBytes: 0 } })).toBe(false);
+    });
+
+    it("shows for a sleeping agent that was asleep while it waited on you, whatever state its roster row reads", () => {
+        const asleep = { since: 1, freedBytes: 0, asking: true };
+        expect(cardShown({ state: "idle", sleeping: asleep })).toBe(true);
+        expect(cardShown({ state: "asking", sleeping: asleep })).toBe(true);
+    });
+
+    it("hides for a sleeping agent whose mark is off: a stale queue of an idle sleep stays hidden", () => {
+        expect(cardShown({ state: "idle", sleeping: { since: 1, freedBytes: 0 } })).toBe(false);
+    });
+});
+
+describe("permissionReadOnly", () => {
+    it("holds for a sleeping agent with the asking mark alone", () => {
+        expect(permissionReadOnly({ sleeping: { since: 1, freedBytes: 0, asking: true } })).toBe(true);
+        expect(permissionReadOnly({ sleeping: { since: 1, freedBytes: 0 } })).toBe(false);
+        expect(permissionReadOnly({ sleeping: undefined })).toBe(false);
     });
 });
 
@@ -357,6 +376,30 @@ describe("rowPermission", () => {
     it("keeps the refusal line alone once the queue is empty", () => {
         expect(rowPermission([], { ...open, refused: true })).toEqual({ kind: "refusal" });
         expect(rowPermission([], open)).toBeNull();
+    });
+
+    describe("a sleeping agent that was asleep while it waited on you", () => {
+        const asleep = { ...open, asleep: true };
+
+        it("is read-only: the head it waited on, Wake in place of Allow and Deny, whatever the head is", () => {
+            const bash = req("Bash", "ls");
+            expect(rowPermission([bash, req("Edit", "/a.ts")], asleep)).toEqual({ kind: "asleep", head: bash });
+            const plan = req("ExitPlanMode", 'ExitPlanMode {"plan":"…"}');
+            expect(rowPermission([plan], asleep)).toEqual({ kind: "asleep", head: plan });
+            const art = req("Artifact", "delete https://claude.ai/artifact/x", { screenpick: true });
+            expect(rowPermission([art], asleep)).toEqual({ kind: "asleep", head: art });
+        });
+
+        it("shows nothing for an empty queue, an AskUserQuestion head (its question is Chat's) or another ask on the row", () => {
+            expect(rowPermission([], asleep)).toBeNull();
+            expect(rowPermission([], { ...asleep, refused: true })).toBeNull();
+            expect(rowPermission([req("AskUserQuestion", "{}"), req("Bash", "ls")], asleep)).toBeNull();
+            expect(rowPermission([req("Bash", "ls")], { ...asleep, otherAsk: true })).toBeNull();
+        });
+
+        it("shows nothing when the card is not shown (an unmarked sleeping agent: cardShown is false)", () => {
+            expect(rowPermission([req("Bash", "ls")], { ...asleep, shown: false })).toBeNull();
+        });
     });
 });
 

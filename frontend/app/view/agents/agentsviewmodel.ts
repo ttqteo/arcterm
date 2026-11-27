@@ -181,7 +181,9 @@ export interface AgentVM {
     running?: boolean; // a plain terminal: its shell is running a command, not waiting at its prompt
     // Asleep (block meta agent:sleeping): its process is gone to free RAM, its row, output and conversation stay. The
     // state stays idle; wakeFailed is why the last wake did not come back (the agent stays asleep while it is set).
-    sleeping?: { since: number; freedBytes: number; wakeFailed?: string };
+    // asking (block meta agent:sleepasking): it was asleep while it waited on you, so its question stays on the row
+    // (liveAsk) and its permission request on the card (permissionReadOnly); an answer is held for its wake.
+    sleeping?: { since: number; freedBytes: number; wakeFailed?: string; asking?: boolean };
 }
 
 const STATE_RANK: Record<AgentState, number> = { asking: 0, working: 1, idle: 2 };
@@ -1130,12 +1132,14 @@ export function streamableTranscriptAgents(agents: AgentVM[], now: number, opts:
  *  derived from now - ask.ts. A null/cleared ask leaves the agent untouched. */
 /** Pure: the ask a row overlays (withAsk), or null. A sleeping agent's process is gone, so nothing can be waiting on
  *  an answer from it: an ask its block still holds is one whose clear never reached the cockpit, and overlaying it
- *  read a parked session as asking above the agent that really was.
+ *  read a parked session as asking above the agent that really was. One that was put to sleep while it waited on you
+ *  (`sleeping.asking`, block meta agent:sleepasking) is the exception: wavesrv kept its question on purpose, for you to
+ *  answer while it sleeps (the answer is held for its wake).
  *  A working status does not drop it here: a background subagent's tool calls report working on the same block while
  *  the question waits. wavesrv decides when the agent has moved past a question (retireAskOnResume, which reads the
  *  transcript to see the question still open) and publishes the clear. */
-export function liveAsk(ask: AgentAskData | null | undefined, sleeping: boolean): AgentAskData | null {
-    if (ask == null || sleeping) {
+export function liveAsk(ask: AgentAskData | null | undefined, sleeping: AgentVM["sleeping"]): AgentAskData | null {
+    if (ask == null || (sleeping != null && sleeping.asking !== true)) {
         return null;
     }
     return ask;

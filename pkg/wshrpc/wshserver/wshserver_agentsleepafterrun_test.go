@@ -4,10 +4,13 @@
 package wshserver
 
 import (
+	"bytes"
 	"context"
+	"log"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -256,16 +259,31 @@ func TestSleepAfterRunSkipsWhatAPersonsSleepWould(t *testing.T) {
 			t.Errorf("slept = %v, notices = %v, armed = %v, want nothing slept and the entry dropped", w.slept, w.notices, w.armed())
 		}
 	})
-	t.Run("waiting on a permission", func(t *testing.T) {
-		w := newRunSleepWorld(t)
-		w.writeRun("run-42")
-		w.arm("run-42")
-		w.facts.Tabs[0].Status.State = baseds.AgentState_Waiting
-		w.fireAll()
-		if len(w.slept) != 0 || len(w.notices) != 0 {
-			t.Errorf("slept = %v, want an agent waiting on a permission left awake", w.slept)
-		}
-	})
+	// the person's Sleep puts an agent that waits on the person to sleep; this one nobody asked for, and it refuses it,
+	// naming what it waits on
+	for name, setup := range map[string]func(w *runSleepWorld){
+		"waiting on a permission": func(w *runSleepWorld) { w.facts.Tabs[0].Status.State = baseds.AgentState_Waiting },
+		"a question open":         func(w *runSleepWorld) { w.facts.Tabs[0].OpenAsk = true },
+		"asking by its status":    func(w *runSleepWorld) { w.facts.Tabs[0].Status.State = baseds.AgentState_Asking },
+	} {
+		t.Run(name, func(t *testing.T) {
+			w := newRunSleepWorld(t)
+			w.writeRun("run-42")
+			w.arm("run-42")
+			setup(w)
+			var logged bytes.Buffer
+			prevLog := log.Writer()
+			log.SetOutput(&logged)
+			t.Cleanup(func() { log.SetOutput(prevLog) })
+			w.fireAll()
+			if len(w.slept) != 0 || len(w.notices) != 0 {
+				t.Errorf("slept = %v, want an agent %s left awake", w.slept, name)
+			}
+			if !strings.Contains(logged.String(), "waiting on the person") {
+				t.Errorf("log = %q, want the refusal to say the agent is waiting on the person", logged.String())
+			}
+		})
+	}
 }
 
 func TestSleepAfterRunRefusesAPathThatIsNoBrainstorm(t *testing.T) {

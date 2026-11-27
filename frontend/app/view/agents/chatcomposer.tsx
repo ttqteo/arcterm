@@ -543,8 +543,11 @@ function ComposerBox({
     const permission = usePermission(permissionOref);
     // A question of one is the exception (boxAnswersAsk): what is typed is sent as the ask's typed answer (the answer
     // path the card's own field uses, which locks the ask) instead of waiting behind it. Files riding the message can't
-    // go in an ask's answer, so with any attached it waits as before.
-    const answersAsk = !asleep && boxAnswersAsk(agent.ask) && att.attachments.length === 0;
+    // go in an ask's answer, so with any attached it waits as before. An agent put to sleep while it asked keeps its
+    // question (agent.sleeping.asking), and what is typed answers it the same way: wavesrv holds the answer for the wake
+    // and does not wake the agent. A sleeping agent with no question left takes it as the message that wakes it.
+    const answersAsk =
+        (!asleep || agent.sleeping?.asking === true) && boxAnswersAsk(agent.ask) && att.attachments.length === 0;
     const hold = asleep
         ? null
         : sendHold(permissionHolds(permission, agent.ask != null), agent.ask != null && !agent.ask.hold && !answersAsk);

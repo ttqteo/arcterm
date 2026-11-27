@@ -60,6 +60,32 @@ describe("sleepingOf", () => {
         });
     });
 
+    it("carries the asking mark: the agent was asleep while it waited on you (agent:sleepasking)", () => {
+        expect(sleepingOf({ "agent:sleeping": SINCE, "agent:sleepasking": true })).toEqual({
+            since: SINCE,
+            freedBytes: 0,
+            asking: true,
+        });
+    });
+
+    it("leaves asking off without the mark: absent, false or not a boolean", () => {
+        for (const meta of [
+            { "agent:sleeping": SINCE },
+            { "agent:sleeping": SINCE, "agent:sleepasking": false },
+            { "agent:sleeping": SINCE, "agent:sleepasking": "yes" },
+            { "agent:sleeping": SINCE, "agent:sleepasking": 1 },
+        ]) {
+            const sleeping = sleepingOf(meta);
+            expect(sleeping).toEqual({ since: SINCE, freedBytes: 0 });
+            expect(sleeping?.asking).toBeUndefined();
+        }
+    });
+
+    it("is undefined for an awake block whatever its asking mark: a stale mark is not a sleep", () => {
+        expect(sleepingOf({ "agent:sleepasking": true })).toBeUndefined();
+        expect(sleepingOf({ "agent:sleeping": 0, "agent:sleepasking": true })).toBeUndefined();
+    });
+
     it("is undefined for an awake block: absent, 0, or not a number", () => {
         expect(sleepingOf({ "agent:sleeping": 0, "agent:sleepfreed": 5 })).toBeUndefined();
         expect(sleepingOf({ "agent:sleeping": "yes" })).toBeUndefined();

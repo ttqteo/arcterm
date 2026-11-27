@@ -32,6 +32,10 @@ and a picture given to a line that is not big.
 
 ## Unreleased
 
+### Changed
+
+- Sleep now works on an agent that is asking you a question or waiting for a permission: its question waits for you, an
+  answer you give while it sleeps reaches it when it wakes.
 ### Added
 
 - `wsh jobslot forget <command>` drops the largest RAM peak measured for a command in the current project, so one
