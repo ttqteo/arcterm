@@ -24,6 +24,10 @@ Older parts: [part 10](hand-checks-10.md) · [part 9](hand-checks-9.md) · [part
 
 ## 2026-11-27
 
+- [ ] (arcterm) **`wsh jobslot forget` drops a bad peak.** After a build with it installed, in the arcterm checkout run
+  `wsh jobslot forget scripts/verify.mjs`: it should print `dropped 10.6 GB` (the 21:42 run of 2026-11-27), the four
+  kept peaks, and `admitted on 4.8 GB`; the next queued verify.mjs row in the Jobs popover reads about 4.8 GB, and
+  `jobpeaks.json` (data dir) no longer holds the 10.6 GB peak. `wshcmd-jobslotforget.go`, `jobpeaks.Forget`.
 - [ ] (arcterm) **A paused run keeps its worker's open question.** After a build, start a run whose worker asks you
   something (AskUserQuestion, arc mod on), pause the run while the question is open: it should stay in Needs you and on
   the run. Answer it while paused, resume: the reopened worker should start with "the person answered your question:

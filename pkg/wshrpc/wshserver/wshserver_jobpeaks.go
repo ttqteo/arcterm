@@ -5,6 +5,8 @@ package wshserver
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -19,6 +21,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/memusage"
 	"github.com/wavetermdev/waveterm/pkg/wavebase"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
+	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
 
@@ -85,6 +88,38 @@ func recordJobPeak(d jobmeter.Done) {
 	jobpeaks.Default.Record(pattern, jobProject(context.Background(), d.BlockId), known, d.Peak)
 }
 
+// JobPeaksForgetCommand drops the largest kept peak of a command in the project holding data.Cwd (every one with All),
+// so a run the meter measured wrong stops holding the command's next runs back. data.Command is the pattern the Jobs
+// popover shows ("scripts/verify.mjs", "task check:ts"), or a command line that has that pattern.
+func (ws *WshServer) JobPeaksForgetCommand(ctx context.Context, data wshrpc.CommandJobPeaksForgetData) (*wshrpc.JobPeaksForgetResult, error) {
+	if jobpeaks.Default == nil {
+		return nil, errors.New("this wavesrv keeps no measured peaks")
+	}
+	project := dirProject(data.Cwd)
+	pattern := strings.TrimSpace(data.Command)
+	if !jobpeaks.Default.Has(pattern, project) {
+		p, _, ok := memgate.Pattern(pattern)
+		if !ok {
+			return nil, fmt.Errorf("%q is not one command the queue measures", data.Command)
+		}
+		pattern = p
+	}
+	dropped, left, ok := jobpeaks.Default.Forget(pattern, project, data.All)
+	if !ok {
+		where := "outside any repository"
+		if project != "" {
+			where = "in " + project
+		}
+		return nil, fmt.Errorf("no measured peaks for %q %s", pattern, where)
+	}
+	log.Printf("[jobpeaks] forgot %q (%s): dropped %v, kept %v", pattern, project, dropped, left)
+	// the table's figure is not known from a pattern alone: 0, and Measured false, says the next run falls back to it
+	bytes, basis := jobpeaks.Default.Estimate(pattern, project, 0)
+	return &wshrpc.JobPeaksForgetResult{
+		Pattern: pattern, Project: project, Dropped: dropped, Left: left, Bytes: bytes, Measured: basis.Measured,
+	}, nil
+}
+
 // jobProjects keeps jobProject's answer for each working directory (string → string): the answer reads a few files,
 // and every heavy command asks. It is kept until wavesrv restarts, so a folder given a repository after its first look
 // reads as the no-project key until then.
@@ -102,7 +137,11 @@ func jobProject(ctx context.Context, blockId string) string {
 	if err != nil || block == nil {
 		return ""
 	}
-	cwd := block.Meta.GetString(waveobj.MetaKey_CmdCwd, "")
+	return dirProject(block.Meta.GetString(waveobj.MetaKey_CmdCwd, ""))
+}
+
+// dirProject is jobProject for a working directory: the main checkout of the repository holding cwd, "" outside any.
+func dirProject(cwd string) string {
 	if cwd == "" {
 		return "" // expanded, "" would read as ".": wavesrv's own working directory
 	}

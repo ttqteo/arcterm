@@ -32,6 +32,12 @@ and a picture given to a line that is not big.
 
 ## Unreleased
 
+### Added
+
+- `wsh jobslot forget <command>` drops the largest RAM peak measured for a command in the current project, so one
+  bad measurement no longer makes the heavy-job queue hold that command back for its next five runs. `--all` drops
+  every measured peak.
+
 ### Fixed
 
 - A question an agent in a paused run had open no longer disappears when the run pauses: you can answer it while the
