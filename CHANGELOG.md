@@ -63,6 +63,8 @@ and a picture given to a line that is not big.
   spoke, and a board beside it lost its split with it.
 - A judge arcterm starts for a pair is named "Judge: <agent>" on its replies in Chat, not the project's name, in
   the replies it already sent too while its tab is open.
+- A pair's new-message count on the ⚖ line drops as you scroll the working agent's Chat past each judge reply, and no
+  longer counts the working agent's own messages.
 
 ## 1.12.0 — 2026-11-27
 

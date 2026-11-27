@@ -22,7 +22,7 @@ import { atom, useAtomValue, type Atom, type PrimitiveAtom } from "jotai";
 import { atomFamily } from "jotai/utils";
 import { useEffect, useMemo } from "react";
 import { councilProjectKey } from "./councilmodel";
-import { pairOf, parseSeen } from "./pairmodel";
+import { pairOf, parseSeen, relaySeenThrough } from "./pairmodel";
 
 // two spellings of one project path (`D:\x`, `d:/x/`) share an atom, as the councils' lists do
 const sameProject = (a: string, b: string) => councilProjectKey(a) === councilProjectKey(b);
@@ -325,6 +325,31 @@ export const pairSeenAtom = atomFamily((pairId: string) =>
         }
     )
 );
+
+/** The person has seen the pair's first `count` messages somewhere else (a judge reply relayed into the working agent's
+ *  Chat): the count rises to it, never falls. */
+export function markPairSeenThrough(pairId: string, count: number): void {
+    if (count > globalStore.get(pairSeenAtom(pairId))) {
+        globalStore.set(pairSeenAtom(pairId), count);
+    }
+}
+
+/** A judge reply relayed into the working agent's Chat came on screen: the pair's messages through it count as seen. */
+export async function markRelaySeen(
+    pairId: string,
+    judgeTab: string,
+    time: string | null,
+    relayed: string
+): Promise<void> {
+    if (globalStore.get(pairViewAtom(pairId)) == null) {
+        await loadPair(pairId);
+    }
+    const view = globalStore.get(pairViewAtom(pairId));
+    const through = view != null ? relaySeenThrough(view, judgeTab, time, relayed) : null;
+    if (through != null) {
+        markPairSeenThrough(pairId, through);
+    }
+}
 
 /** The person has the conversation in front of them: every message it holds so far counts as seen. A pair nothing has been
  *  read of yet leaves the count as it was. */

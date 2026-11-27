@@ -136,9 +136,45 @@ export function withDraft(current: string, draft: string): string {
     return draft + current.replace(/^\s*@\S+\s*/, "");
 }
 
-/** How many messages the person has not seen: those past the first `seen`, not counting their own. */
+/** How many messages the person has not seen: those past the first `seen`, not counting their own nor the working
+ *  agent's, which they read in its own Chat. */
 export function newCount(view: PairView, seen: number): number {
-    return (view.messages ?? []).slice(seen).filter((m) => m.from !== "person").length;
+    return (view.messages ?? []).slice(seen).filter((m) => m.from !== "person" && m.from !== "worker").length;
+}
+
+// a time as a relay's head writes it (Go's "15:04", local)
+function clockOf(ts: number): string {
+    const d = new Date(ts);
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+/** Pure: how many of the pair's messages a judge reply relayed into the working agent's Chat accounts for, once the
+ *  person has it on screen: up to and with that reply, or null when none of the pair's messages is it. A relay carries
+ *  the judge's tab (through the pair), its `15:04` time and its text as relayed; of that judge's messages at that time,
+ *  the one whose first line the relayed text holds, else the earliest. Every message before it was relayed before it. */
+export function relaySeenThrough(
+    view: PairView,
+    judgeTab: string,
+    time: string | null,
+    relayed: string
+): number | null {
+    const messages = view.messages ?? [];
+    const at = messages.flatMap((m, n) =>
+        m.from === "judge" && m.tab === judgeTab && (time == null || clockOf(m.ts) === time) ? [n] : []
+    );
+    if (at.length === 0) {
+        return null;
+    }
+    const firstLine = (text: string) =>
+        text
+            .split("\n")
+            .map((l) => l.trim())
+            .find((l) => l !== "") ?? "";
+    const named = at.find((n) => {
+        const line = firstLine(messages[n]?.text ?? "");
+        return line !== "" && relayed.includes(line);
+    });
+    return (named ?? at[0]) + 1;
 }
 
 /** The header button's words: the working agent's own button names its judge and the new messages ("Paired with judge
