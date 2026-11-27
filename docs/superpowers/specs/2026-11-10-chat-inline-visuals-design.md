@@ -47,8 +47,10 @@ What it builds on:
   permission card and shows the pending bubble like a typed one.
 - **The frame mounts when it nears the view and then stays.** An iframe is a document: a long conversation of visuals
   mounts only those within 600 px of the scroller's view (IntersectionObserver), and the last height each path
-  reported is kept in a module map, so a remount keeps its place. The frame grows to the page's height up to 640 px,
-  then offers Show all. Its RAM is not yet measured (`docs/open-issues.md` "RAM watch").
+  reported is kept in a module map, so a remount keeps its place. The frame takes the page's whole height (stopped at
+  4,000 px only for a page whose height runs away), so the chat scrolls past it and nothing scrolls inside it; it has
+  no header row and no Show all (both dropped 2026-11-27: a scroll inside a scroll caught the wheel, and the row's
+  icon was the board mark). The page's file is left out of the turn's changed-files card. Its RAM is not yet measured (`docs/open-issues.md` "RAM watch").
 - **The agent learns it from a skill**, `skills/visual/SKILL.md` (Claude sees it as `arc:visual`), not a system
   prompt section: it costs nothing until a visual helps, as `arc:design` does.
 - **Only a Claude agent's Chat draws it.** Councils draw agent text through the same `MarkdownMessage` but provide no

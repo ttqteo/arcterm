@@ -13,8 +13,9 @@ export const PROMPT_MAX = 4000;
 // two prompts from one frame closer than this: the second goes into the box instead of being sent
 export const PROMPT_GAP_MS = 1500;
 export const FRAME_MIN = 120;
-export const FRAME_MAX = 640;
-export const FRAME_EXPANDED_MAX = 4000;
+// the frame is as tall as the page, so the chat scrolls past it and nothing scrolls inside it; this only stops a page that
+// reports a runaway height (a layout that grows with its own frame) from pushing the chat apart
+export const FRAME_MAX = 4000;
 // the column has held its width this long: the frame takes it. While the column slides (the details rail folding,
 // 360 ms) the frame keeps the width it had, so the page lays out and paints once at the end, not on every frame of the
 // slide, which WebKit drew as a flicker of the frame
@@ -88,12 +89,12 @@ export function promptAction(i: {
     return "send";
 }
 
-// the frame's height in px: what the page reported, kept between FRAME_MIN and the cap (higher once expanded)
-export function frameHeight(reported: number | undefined, expanded: boolean): number {
+// the frame's height in px: what the page reported, kept between FRAME_MIN and FRAME_MAX
+export function frameHeight(reported: number | undefined): number {
     if (reported === undefined || !Number.isFinite(reported)) {
         return FRAME_DEFAULT;
     }
-    return Math.min(Math.max(reported, FRAME_MIN), expanded ? FRAME_EXPANDED_MAX : FRAME_MAX);
+    return Math.min(Math.max(reported, FRAME_MIN), FRAME_MAX);
 }
 
 // the frame's address: the served page, with the app's color-scheme in its hash for the bridge (htmlserve.go) to set on

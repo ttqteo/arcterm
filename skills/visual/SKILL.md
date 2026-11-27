@@ -51,7 +51,8 @@ Use the app's colours. The page receives them as CSS custom properties on `:root
 `color: var(--arc-ink, #e6e6e6)`, so the page still reads when opened on its own, and leave the page background
 transparent so it sits in the chat.
 
-Size to content. The frame grows to the page's height up to 640 px, then offers Show all.
+Size to content. The frame takes the page's whole height, so the chat scrolls past it and nothing scrolls inside it:
+a long page is a long stretch of the reply, so keep it as short as what it explains.
 
 Never set `html` or `body` to `height: 100%`, `100vh` or a `min-height` of either. The page then fills the frame, so
 the frame never shrinks below the height it loaded at. Let the content set the height.

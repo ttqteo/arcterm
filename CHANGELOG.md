@@ -58,6 +58,8 @@ and a picture given to a line that is not big.
 - An agent can now fix a drawing on a board in place, or delete one, instead of drawing a corrected copy beside it:
   ask it to fix "Part 1" and the drawer edits that drawing.
 - A board's Tidy button is gone.
+- A visual in Chat shows at its whole height, so you scroll the chat past it rather than inside it; the icon row over
+  it and its Show all button are gone. The visual's HTML file no longer shows up in the turn's changed-files card.
 - Copy image on a diagram in Chat (its toolbar and the enlarged viewer) shows a camera, as Copy screenshot does
   elsewhere, so it no longer looks like copying the text.
 - The part stepper in a board's header (‹ 3/13 ›) stays in one place beside the header's buttons: stepping through

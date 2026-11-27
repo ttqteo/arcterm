@@ -9,11 +9,9 @@
 // (docs/superpowers/specs/2026-11-10-chat-inline-visuals-design.md). Outside a host (a council's messages) a block stays code.
 
 import { getWebServerEndpoint } from "@/util/endpoints";
-import { Maximize2, Minimize2, Shapes } from "lucide-react";
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { appendToChatBox, chatBoxText, submitIntoChatBox } from "./chatinsert";
 import {
-    FRAME_MAX,
     FRAME_WIDTH_SETTLE_MS,
     VISUAL_LANG,
     frameHeight,
@@ -104,7 +102,7 @@ export function VisualBlock({ raw }: { raw: string }) {
     if (host.visualsDir == null) {
         return (
             <div className="my-2 overflow-hidden rounded-[10px]">
-                <LoadingBox height={frameHeight(undefined, false)} />
+                <LoadingBox height={frameHeight(undefined)} />
             </div>
         );
     }
@@ -132,7 +130,6 @@ function ChatVisual({ path, agentId }: { path: string; agentId: string }) {
     // true once the figure has been within 600px of the scroller's view; the frame is then kept, not unmounted again
     const [near, setNear] = useState(false);
     const [reported, setReported] = useState<number | undefined>(() => reportedHeights.get(path));
-    const [expanded, setExpanded] = useState(false);
     // the frame's width in px: the figure's, taken at once the first time and then only once the figure has held a width
     // for FRAME_WIDTH_SETTLE_MS (null: the full width, before the figure is measured)
     const [frameWidth, setFrameWidth] = useState<number | null>(null);
@@ -265,36 +262,17 @@ function ChatVisual({ path, agentId }: { path: string; agentId: string }) {
         return () => observer.disconnect();
     }, []);
 
-    const height = frameHeight(reported, expanded);
-    const tall = reported !== undefined && reported > FRAME_MAX;
+    // the frame is the page's own height, so the chat scrolls past it and nothing scrolls inside it; no header over it,
+    // as the page is plainly a visual and its file name is in the block the agent wrote
+    const height = frameHeight(reported);
     return (
         <figure ref={figureRef} data-chat-visual={path} className="my-2 overflow-hidden">
-            <div className="flex h-7 items-center gap-2 text-[11.5px] text-muted">
-                <Shapes size={12} strokeWidth={1.8} aria-label="Visual" />
-                <span className="flex-1" />
-                {tall ? (
-                    <button
-                        type="button"
-                        data-chat-visual-expand
-                        aria-label={expanded ? "Show less" : "Show all of the visual"}
-                        title={expanded ? "Show less" : "Show all of the visual"}
-                        onClick={() => setExpanded(!expanded)}
-                        className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-[6px] hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent"
-                    >
-                        {expanded ? (
-                            <Minimize2 size={12} strokeWidth={1.8} aria-hidden />
-                        ) : (
-                            <Maximize2 size={12} strokeWidth={1.8} aria-hidden />
-                        )}
-                    </button>
-                ) : null}
-            </div>
             {missing ? (
                 <div data-chat-visual-missing className="py-2.5 text-[12.5px] text-muted">
                     Visual not found: <code>{path}</code>
                 </div>
             ) : src == null ? (
-                <LoadingBox height={frameHeight(undefined, false)} />
+                <LoadingBox height={frameHeight(undefined)} />
             ) : near ? (
                 <iframe
                     ref={frameRef}
