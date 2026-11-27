@@ -122,7 +122,7 @@ type CommandEffortDeleteData struct {
 // EffortOp is one typed mutation. Op selects the behavior; the remaining fields are the op's
 // arguments (validation picks which are required per op).
 type EffortOp struct {
-	Op        string `json:"op"`                  // rename | setProject | setTicket | setStatus | unarchive | link | addChunk | removeChunk | renameChunk | recheckChunk | moveChunk | setChunkStatus | setChunkStage | setChunkDue | appendNote | editNote | removeNote | setOwner | advance | reopen
+	Op        string `json:"op"`                  // rename | setProject | setTicket | setStatus | unarchive | link | addChunk | removeChunk | renameChunk | recheckChunk | moveChunk | setChunkStatus | setChunkStage | setChunkDue | setChunkPriority | appendNote | editNote | removeNote | setOwner | advance | reopen
 	Title     string `json:"title,omitempty"`     // rename
 	Project   string `json:"project,omitempty"`   // setProject ("" clears)
 	Ticket    string `json:"ticket,omitempty"`    // setTicket ("" clears)
@@ -134,6 +134,7 @@ type EffortOp struct {
 	Owner     string `json:"owner,omitempty"`     // addChunk / setOwner ("" clears)
 	Stage     string `json:"stage,omitempty"`     // addChunk / setChunkStage ("" clears)
 	Due       string `json:"due,omitempty"`       // addChunk / setChunkDue: a local date, YYYY-MM-DD ("" clears)
+	Priority  string `json:"priority,omitempty"`  // addChunk / setChunkPriority: critical | high | medium | low | information ("" clears)
 	Note      string `json:"note,omitempty"`      // appendNote text; also honored by setChunkStatus/advance/reopen as extra text; editNote new text
 	NoteTs    int64  `json:"notets,omitempty"`    // editNote/removeNote: the note's ts, a stale guard beside At
 	Kind      string `json:"kind,omitempty"`      // attachWork: "run" | "agent"
@@ -249,6 +250,7 @@ type EffortChunkSummary struct {
 	Status   string                 `json:"status"`
 	Stage    string                 `json:"stage,omitempty"`
 	Owner    string                 `json:"owner,omitempty"`
+	Priority string                 `json:"priority,omitempty"` // critical | high | medium | low | information; "" when unset (ranks as medium)
 	WorkRefs []waveobj.ChunkWorkRef `json:"workrefs,omitempty"`
 	Blocked  *EffortChunkBlocked    `json:"blocked,omitempty"` // set only on a blocked chunk
 }
