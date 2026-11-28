@@ -41,16 +41,9 @@ and a picture given to a line that is not big.
   back to Try, and one Send saves a picture per screen and tells the agent which screen and option each mark is on. A
   prototype's screen files no longer show up as boards of their own. <!-- big -->
   <!-- shot: 1.13.0-proto-pane.webp -->
-### Changed
-
-- Settings → Storage lists build output at once and sizes a project when you open its row, or all of them with Size all.
-  A project not sized yet reads `not sized`, and one sized more than a day ago says how long ago.
-- A Storage scan finishes in seconds: the package caches are measured in the background, and their card fills in when
-  their sizes are known.
-- Sleep now works on an agent that is asking you a question or waiting for a permission: its question waits for you, an
-  answer you give while it sleeps reaches it when it wakes.
-### Added
-
+- In a brainstorm, the prototype opened from the rail takes the same Try | Mark switch. When the question is about one
+  part of the screen, that part's A/B/C chip lights the matching option, and picking under the board takes the option
+  the chip shows.
 - `wsh jobslot forget <command>` drops the largest RAM peak measured for a command in the current project, so one
   bad measurement no longer makes the heavy-job queue hold that command back for its next five runs. `--all` drops
   every measured peak.
@@ -58,11 +51,6 @@ and a picture given to a line that is not big.
   the urgent work without opening the initiative.
 - When All initiatives has many projects, the three you used last sit as buttons left of the project menu: one press
   shows that project, a second press shows every project again.
-
-### Fixed
-
-- A question an agent in a paused run had open no longer disappears when the run pauses: you can answer it while the
-  run is paused, and the agent gets your answer when the run resumes.
 - The chat box's `/` menu and `@` list show the rest of the highlighted name faintly after what you typed (`/co` shows
   `ntext`); Tab or → takes it.
 - Snap layouts for a split, as Windows has: rest the pointer on the layout button in the agent header (Focus board's,
@@ -81,6 +69,12 @@ and a picture given to a line that is not big.
 
 ### Changed
 
+- Settings → Storage lists build output at once and sizes a project when you open its row, or all of them with Size all.
+  A project not sized yet reads `not sized`, and one sized more than a day ago says how long ago.
+- A Storage scan finishes in seconds: the package caches are measured in the background, and their card fills in when
+  their sizes are known.
+- Sleep now works on an agent that is asking you a question or waiting for a permission: its question waits for you, an
+  answer you give while it sleeps reaches it when it wakes.
 - One letter after `@` picks a kind: `@a` lists agents, `@r` runs, `@c` councils, `@s` conversations, `@e` initiatives
   and `@b` boards, ahead of the files.
 - The folded Agent tree shows splits: the peek card frames a split's agents and its board together, and the strip runs
@@ -88,6 +82,8 @@ and a picture given to a line that is not big.
 
 ### Fixed
 
+- A question an agent in a paused run had open no longer disappears when the run pauses: you can answer it while the
+  run is paused, and the agent gets your answer when the run resumes.
 - A split keeps its agents across a restart of arcterm: an agent coming back used to drop out of its split until it
   spoke, and a board beside it lost its split with it.
 - A judge arcterm starts for a pair is named "Judge: <agent>" on its replies in Chat, not the project's name, in
